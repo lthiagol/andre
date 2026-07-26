@@ -31,6 +31,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Fixed
 
+- E2E fixtures `08-defer-existing-target` and `09-override-existing-target` now ship a conflicting `target/.bashrc` so the conflict/FAILED assertions pass; re-enabled the three previously `#[ignore]`d e2e tests (08, 09, 14). Scenario 14 already resolved paths relative to the config file directory and needed no fixture change.
 - `make coverage-check` awk script was syntactically broken (unbalanced quote, no crate-level totals in `llvm-cov --summary-only` output) and would never exit 0 even with thresholds met; rewritten as `scripts/coverage-check.py` consuming `cargo llvm-cov report --json` (M08).
 - `test_add_group_then_save_persists` fails on minimal Linux CI images with empty `/root` (M01).
 - Hermetic home injection extended to `make_empty_app` / `make_two_group_app`; unit tests cover `App::new` default home and `with_home` override (M01 external review).

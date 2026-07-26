@@ -87,7 +87,6 @@ fn test_scenario_07_ignore_patterns() {
 }
 
 #[test]
-#[ignore = "fixture missing target/ directory with conflicting files — pre-existing test-data issue from Codeberg era. See migration report."]
 fn test_scenario_08_defer_existing_target() {
     let env = TestEnv::from_scenario("08-defer-existing-target");
     let result = env.run_awesome_stow(&["--yolo"]).unwrap();
@@ -96,7 +95,6 @@ fn test_scenario_08_defer_existing_target() {
 }
 
 #[test]
-#[ignore = "fixture missing target/ directory with conflicting files — pre-existing test-data issue from Codeberg era. See migration report."]
 fn test_scenario_09_override_existing_target() {
     let env = TestEnv::from_scenario("09-override-existing-target");
     let result = env.run_awesome_stow(&["--yolo"]).unwrap();
@@ -151,10 +149,11 @@ fn test_scenario_13_dotfiles() {
 }
 
 #[test]
-#[ignore = "fixture's config points to 'packages' but no packages dir exists at the temp location — pre-existing test-data issue from Codeberg era. See migration report."]
 fn test_scenario_14_config_relative_paths() {
     let env = TestEnv::from_scenario("14-config-relative-paths");
 
+    // Paths in andre.yml are relative to the config file's directory, not CWD.
+    // Run from /tmp so a CWD-relative resolution would fail.
     let binary = TestEnv::awesome_stow_binary();
     let mut cmd = std::process::Command::new(&binary);
     cmd.args(["--yolo", "--config"])

@@ -3,6 +3,9 @@ name: stable-ci
 on:
   push:
     branches: [stable]
+    # Tag convention: git tag = v<semver>, package version = <semver>.
+    # Pre-releases use bare rcN (not rc.N): v1.0.0-rc1 / 1.0.0-rc1.
+    # Filter is 'v*' — a tag without the v prefix will not fire this workflow.
     tags: ['v*']
   pull_request:
     branches: [stable]
