@@ -1,0 +1,38 @@
+# Rust build artifacts (DO NOT COMMIT)
+/target/
+
+# Distribution artifacts
+/dist/
+
+# CI/CD artifacts
+/runner-data/
+
+# Test artifacts
+/e2e-tests/
+
+# cargo-llvm-cov raw profile files
+**/*.profraw
+
+# OS files
+.DS_Store
+
+# Environment files (defense-in-depth)
+.env
+
+# mp (master-plan) write lock
+.mp-project-write.lock
+
+# mp watch runtime (PIDs, local log paths)
+master-plan/.mp/
+
+# local agent scratch / PRDs (not plan source of truth)
+.local/
+
+# Session tooling (subagents) — never commit
+.pi-subagents/
+
+# Legacy CI config from Codeberg (replaced by .github/workflows/)
+.woodpecker/
+
+# Backup / archive directories
+master-plan-old/
