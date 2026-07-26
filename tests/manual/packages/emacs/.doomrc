@@ -1,0 +1,3 @@
+;; .doomrc - Doom Emacs configuration
+(setq doom-directory (expand-file-name “.doom.d/” user-emacs-directory))
+(load! “init.el” doom-directory)

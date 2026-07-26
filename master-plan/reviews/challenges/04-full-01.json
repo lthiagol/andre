@@ -1,0 +1,61 @@
+{
+  "challenge": {
+    "id": "CH-04-01",
+    "milestone_id": "04",
+    "scope": "full",
+    "status": "closed",
+    "created": "2026-07-23",
+    "closed": "2026-07-23",
+    "summary": ""
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "minor",
+      "category": "scope",
+      "title": "Footer/out_of_scope clash if 1-7 ship",
+      "description": "M02 out_of_scopes changing keybindings and may not update footer hints for 1-7. M04 should explicitly update MainMenu footer line or depend_on M02 breadcrumb only and own footer digit hint.",
+      "target": "M02",
+      "status": "dismissed",
+      "resolution": "Digits moved to TW-02 which owns footer hint",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-02",
+      "severity": "major",
+      "category": "scope",
+      "title": "Two unrelated features in one milestone",
+      "description": "Toasts (new chrome subsystem) and menu digit keys (one handle_key match) share no code path. Prefer split: M04 toasts only; promote number keys to track tweak OR keep both but order keys first as quick win with interaction tests.",
+      "target": "scope",
+      "status": "dismissed",
+      "resolution": "M04 toasts only; TW-02 for menu keys",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-03",
+      "severity": "major",
+      "category": "gap",
+      "title": "Toast placement and tick model unspecified",
+      "description": "No design_decision: App-level Option toast vs component field; who owns Instant deadline; does update tick need App loop change; which actions fire toast (config save only vs stow complete). Runner will invent inconsistently.",
+      "target": "WP1",
+      "status": "dismissed",
+      "resolution": "design_decisions for App toast + Instant deadline",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-04",
+      "severity": "major",
+      "category": "coverage",
+      "title": "Number keys have no interaction test AC",
+      "description": "Labels already show 1-7; handling is trivial. AC must require cargo test -p andre --test interaction for digit dispatch, not only manual press.",
+      "target": "AC-02",
+      "status": "dismissed",
+      "resolution": "Number-key AC left M04; covered by TW-02",
+      "action": "no-change",
+      "action_ref": ""
+    }
+  ]
+}

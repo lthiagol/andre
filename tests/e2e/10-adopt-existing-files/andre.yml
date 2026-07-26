@@ -1,0 +1,13 @@
+global:
+  engine: stow  # adopt moves existing files into the package (native v1 does not support adopt)
+  stow:
+    verbosity: 0
+    dry_run: false
+    no_folding: false
+    adopt: true
+    action: stow
+
+groups:
+  main:
+    source: packages
+    target: target

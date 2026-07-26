@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 300" width="100%" height="100%">
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#1a1b26"/>
+
+  <!-- Kaomoji -->
+  <text x="500" y="70" font-family="'JetBrains Mono', 'Fira Code', 'Courier New', monospace" font-size="28" fill="#ff9e64" text-anchor="middle">( •_• )</text>
+
+  <!-- Letter Boxes -->
+  <g font-family="'JetBrains Mono', 'Fira Code', 'Courier New', monospace" font-size="32" font-weight="bold" text-anchor="middle">
+    <!-- A -->
+    <rect x="82" y="100" width="60" height="60" fill="none" stroke="#f7768e" stroke-width="2"/>
+    <rect x="86" y="104" width="52" height="52" fill="none" stroke="#f7768e" stroke-width="1"/>
+    <text x="112" y="132" dominant-baseline="middle" fill="#f7768e">A</text>
+
+    <!-- W -->
+    <rect x="157" y="100" width="60" height="60" fill="none" stroke="#ff9e64" stroke-width="2"/>
+    <rect x="161" y="104" width="52" height="52" fill="none" stroke="#ff9e64" stroke-width="1"/>
+    <text x="187" y="132" dominant-baseline="middle" fill="#ff9e64">W</text>
+
+    <!-- E -->
+    <rect x="232" y="100" width="60" height="60" fill="none" stroke="#e0af68" stroke-width="2"/>
+    <rect x="236" y="104" width="52" height="52" fill="none" stroke="#e0af68" stroke-width="1"/>
+    <text x="262" y="132" dominant-baseline="middle" fill="#e0af68">E</text>
+
+    <!-- S -->
+    <rect x="307" y="100" width="60" height="60" fill="none" stroke="#9ece6a" stroke-width="2"/>
+    <rect x="311" y="104" width="52" height="52" fill="none" stroke="#9ece6a" stroke-width="1"/>
+    <text x="337" y="132" dominant-baseline="middle" fill="#9ece6a">S</text>
+
+    <!-- O -->
+    <rect x="382" y="100" width="60" height="60" fill="none" stroke="#7dcfff" stroke-width="2"/>
+    <rect x="386" y="104" width="52" height="52" fill="none" stroke="#7dcfff" stroke-width="1"/>
+    <text x="412" y="132" dominant-baseline="middle" fill="#7dcfff">O</text>
+
+    <!-- M -->
+    <rect x="457" y="100" width="60" height="60" fill="none" stroke="#7aa2f7" stroke-width="2"/>
+    <rect x="461" y="104" width="52" height="52" fill="none" stroke="#7aa2f7" stroke-width="1"/>
+    <text x="487" y="132" dominant-baseline="middle" fill="#7aa2f7">M</text>
+
+    <!-- E -->
+    <rect x="532" y="100" width="60" height="60" fill="none" stroke="#bb9af7" stroke-width="2"/>
+    <rect x="536" y="104" width="52" height="52" fill="none" stroke="#bb9af7" stroke-width="1"/>
+    <text x="562" y="132" dominant-baseline="middle" fill="#bb9af7">E</text>
+
+    <!-- S -->
+    <rect x="632" y="100" width="60" height="60" fill="none" stroke="#9ece6a" stroke-width="2"/>
+    <rect x="636" y="104" width="52" height="52" fill="none" stroke="#9ece6a" stroke-width="1"/>
+    <text x="662" y="132" dominant-baseline="middle" fill="#9ece6a">S</text>
+
+    <!-- T -->
+    <rect x="707" y="100" width="60" height="60" fill="none" stroke="#f7768e" stroke-width="2"/>
+    <rect x="711" y="104" width="52" height="52" fill="none" stroke="#f7768e" stroke-width="1"/>
+    <text x="737" y="132" dominant-baseline="middle" fill="#f7768e">T</text>
+
+    <!-- O -->
+    <rect x="782" y="100" width="60" height="60" fill="none" stroke="#7dcfff" stroke-width="2"/>
+    <rect x="786" y="104" width="52" height="52" fill="none" stroke="#7dcfff" stroke-width="1"/>
+    <text x="812" y="132" dominant-baseline="middle" fill="#7dcfff">O</text>
+
+    <!-- W -->
+    <rect x="857" y="100" width="60" height="60" fill="none" stroke="#e0af68" stroke-width="2"/>
+    <rect x="861" y="104" width="52" height="52" fill="none" stroke="#e0af68" stroke-width="1"/>
+    <text x="887" y="132" dominant-baseline="middle" fill="#e0af68">W</text>
+  </g>
+
+  <!-- Subtitle -->
+  <text x="500" y="240" font-family="'JetBrains Mono', 'Fira Code', 'Courier New', monospace" font-size="24" fill="#bb9af7" text-anchor="middle">The ultimate dotfiles manager</text>
+</svg>

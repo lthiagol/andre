@@ -1,0 +1,9 @@
+# ~/.gitconfig - Global Git configuration
+[user]
+    name = Test User
+    email = test@example.com
+[core]
+    editor = vim
+    excludesfile = ~/.gitignore_global
+[pull]
+    rebase = false

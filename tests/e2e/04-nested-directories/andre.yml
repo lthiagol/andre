@@ -1,0 +1,13 @@
+global:
+  engine: stow  # exercises directory folding (native v1 is file-level only)
+  stow:
+    verbosity: 0
+    dry_run: false
+    no_folding: false
+    adopt: false
+    action: stow
+
+groups:
+  main:
+    source: packages
+    target: target

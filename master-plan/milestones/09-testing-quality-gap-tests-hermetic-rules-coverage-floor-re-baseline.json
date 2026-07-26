@@ -1,0 +1,285 @@
+{
+  "milestone": {
+    "id": "09",
+    "title": "Testing quality: gap tests, hermetic rules, coverage floor re-baseline",
+    "slug": "testing-quality-gap-tests-hermetic-rules-coverage-floor-re-baseline",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [
+      "08"
+    ],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-24",
+    "updated": "2026-07-24",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "",
+    "lifecycle_at": "2026-07-24T18:56:11.191370+00:00"
+  },
+  "intent": {
+    "outcome": "StowEngine missing-binary and dry-run behaviors are unit-tested without requiring a happy-path stow install for those cases; doctor script behavior without stow on PATH is asserted; --help smoke test exists; AGENTS documents the testing cheat sheet; coverage floors are re-measured and raised only if safe. Depends on testing infrastructure milestone so nextest/coverage tooling is in place."
+  },
+  "problem": {
+    "description": "After M01–M07, known test gaps remain: StowEngine has almost no unit coverage (relies on stow e2e fixtures); doctor optional-stow messaging is untested; CLI --help has no binary smoke test; AGENTS lacks a short which-target-when testing cheat sheet; coverage floors may be stale after native engine landed. Without explicit gap tests and docs, regressions slip past green suites (L1)."
+  },
+  "scope": {
+    "in_scope": [
+      "andre-core unit tests: StowEngine missing-binary (PATH isolation) and dry_run no FS writes",
+      "Process smoke: andre --help exit 0 + Usage/OPTIONS",
+      "Doctor: check_dependencies.sh exit 0 without stow on PATH (optional messaging OK); wire into make test/ci or dedicated target",
+      "AGENTS.md Testing cheat sheet aligned with M08 targets",
+      "make coverage-check; raise floors only with headroom; else record measured % in evidence",
+      "Optional: nextest filterset or make target for stow-required e2e only"
+    ],
+    "out_of_scope": [
+      "Product features (engine parity, adopt via LinkEngine, regex ignore)",
+      "Rewriting interaction/render harnesses",
+      "Mutation testing / proptest / cargo-fuzz",
+      "Forcing 90% TUI line coverage",
+      "Makefile nextest/CI wiring (M08)"
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "StowEngine unit tests cover (1) missing stow binary → clear error and (2) dry_run apply does not create/remove files; tests do not require a successful stow install for the missing-binary case",
+      "verification": "make test",
+      "status": "passed",
+      "evidence": "All 5 steps done; 5/5 ACs passed with non-prose evidence. 6 new tests (2 StowEngine missing-binary + dry-run + 3 CLI smoke + 1 doctor-without-stow); full suite now 288 tests (was 282). make ci → 288/288 pass via cargo-nextest --profile ci --locked. make coverage-check → andre-core 91.78% (≥90% new floor) / andre 54.17% (≥38% unchanged). No self-findings; all drift (awk→python in M08, coverage floor bump, AGENTS.md rewording) was recorded in CHANGELOG Unreleased."
+    },
+    {
+      "id": "AC-02",
+      "description": "Binary or integration smoke: andre --help exits 0 and output mentions Usage or OPTIONS",
+      "verification": "make test",
+      "status": "passed",
+      "evidence": "All 5 steps done; 5/5 ACs passed with non-prose evidence. 6 new tests (2 StowEngine missing-binary + dry-run + 3 CLI smoke + 1 doctor-without-stow); full suite now 288 tests (was 282). make ci → 288/288 pass via cargo-nextest --profile ci --locked. make coverage-check → andre-core 91.78% (≥90% new floor) / andre 54.17% (≥38% unchanged). No self-findings; all drift (awk→python in M08, coverage floor bump, AGENTS.md rewording) was recorded in CHANGELOG Unreleased."
+    },
+    {
+      "id": "AC-03",
+      "description": "Automated check that check_dependencies.sh exits 0 when stow is not on PATH (optional engine messaging may appear)",
+      "verification": "make doctor",
+      "status": "passed",
+      "evidence": "All 5 steps done; 5/5 ACs passed with non-prose evidence. 6 new tests (2 StowEngine missing-binary + dry-run + 3 CLI smoke + 1 doctor-without-stow); full suite now 288 tests (was 282). make ci → 288/288 pass via cargo-nextest --profile ci --locked. make coverage-check → andre-core 91.78% (≥90% new floor) / andre 54.17% (≥38% unchanged). No self-findings; all drift (awk→python in M08, coverage floor bump, AGENTS.md rewording) was recorded in CHANGELOG Unreleased."
+    },
+    {
+      "id": "AC-04",
+      "description": "AGENTS.md has a Testing cheat sheet (targets + hermetic rules + nextest note)",
+      "verification": "manual: AGENTS.md Testing section present",
+      "status": "passed",
+      "evidence": "All 5 steps done; 5/5 ACs passed with non-prose evidence. 6 new tests (2 StowEngine missing-binary + dry-run + 3 CLI smoke + 1 doctor-without-stow); full suite now 288 tests (was 282). make ci → 288/288 pass via cargo-nextest --profile ci --locked. make coverage-check → andre-core 91.78% (≥90% new floor) / andre 54.17% (≥38% unchanged). No self-findings; all drift (awk→python in M08, coverage floor bump, AGENTS.md rewording) was recorded in CHANGELOG Unreleased."
+    },
+    {
+      "id": "AC-05",
+      "description": "coverage-check run recorded; floors either raised with justification or left unchanged with measured % in milestone evidence",
+      "verification": "make coverage-check",
+      "status": "passed",
+      "evidence": "All 5 steps done; 5/5 ACs passed with non-prose evidence. 6 new tests (2 StowEngine missing-binary + dry-run + 3 CLI smoke + 1 doctor-without-stow); full suite now 288 tests (was 282). make ci → 288/288 pass via cargo-nextest --profile ci --locked. make coverage-check → andre-core 91.78% (≥90% new floor) / andre 54.17% (≥38% unchanged). No self-findings; all drift (awk→python in M08, coverage floor bump, AGENTS.md rewording) was recorded in CHANGELOG Unreleased."
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "ordering",
+      "choice": "depends_on testing infrastructure milestone (nextest + coverage CI)",
+      "rationale": "Gap tests and floor bumps assume runner/coverage tooling already exist"
+    },
+    {
+      "area": "StowEngine missing binary",
+      "choice": "Isolate PATH in the test process (or inject command name) rather than skipping when stow is installed",
+      "rationale": "L2: must reproduce missing-binary on developer machines that have stow"
+    },
+    {
+      "area": "doctor test",
+      "choice": "Prefer a small shell or Rust test that runs check_dependencies.sh with PATH stripped of stow; do not require interactive TTY colors",
+      "rationale": "Matches AC-03 spirit from M07 without flaking on color codes"
+    },
+    {
+      "area": "effort-risk",
+      "choice": "effort S–M, risk low",
+      "rationale": "Test-only + docs; PATH isolation needs care under nextest parallelism"
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "Gap unit tests",
+      "goal": "StowEngine missing-binary + dry_run; --help smoke; doctor without stow",
+      "rollback": "Remove new tests"
+    },
+    {
+      "id": "WP2",
+      "name": "Docs + coverage floors",
+      "goal": "AGENTS testing cheat sheet; re-measure coverage floors",
+      "rollback": "Revert AGENTS section and Makefile floors"
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "In andre-core engine tests: (1) StowEngine apply with PATH stripped of stow (or Command override) returns clear missing-binary error; (2) StowEngine dry_run apply does not create/remove files under a temp target. Do not skip when host has stow installed.",
+      "files": [
+        "andre-core/src/engine.rs"
+      ],
+      "tests": "make test",
+      "done_when": "two StowEngine unit tests green without requiring successful stow for missing-binary case",
+      "status": "done",
+      "covers_ac": [
+        "AC-01"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP1",
+      "order": 2,
+      "action": "Add process-level smoke test: run built andre binary with --help, assert exit 0 and stdout contains Usage or OPTIONS (can live in andre/tests or bin test helper).",
+      "files": [
+        "andre/src/main.rs",
+        "andre/tests"
+      ],
+      "tests": "make test",
+      "done_when": "help smoke green under make test",
+      "status": "done",
+      "covers_ac": [
+        "AC-02"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP1",
+      "order": 3,
+      "action": "Add automated check (Makefile target or Rust/shell test) that runs check_dependencies.sh with PATH without stow and asserts exit 0; optional-engine messaging may appear on stdout/stderr. Wire into make test or make ci if cheap.",
+      "files": [
+        "check_dependencies.sh",
+        "Makefile",
+        "andre/tests",
+        "scripts"
+      ],
+      "tests": "make doctor",
+      "done_when": "doctor-without-stow check exits 0 and is invoked from test/ci path or documented make target",
+      "status": "done",
+      "covers_ac": [
+        "AC-03"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S4",
+      "work_package": "WP2",
+      "order": 4,
+      "action": "AGENTS.md Testing section (or extend Testing Tiers): when to run test-unit vs test-tui vs test-e2e vs make test; hermetic App::with_home rule; no process-global HOME/PATH mutation under nextest parallelism; coverage/coverage-check; note M08 nextest preference.",
+      "files": [
+        "AGENTS.md"
+      ],
+      "tests": "make test",
+      "done_when": "Testing cheat sheet present and accurate vs Makefile",
+      "status": "done",
+      "covers_ac": [
+        "AC-04"
+      ],
+      "depends_on_steps": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S5",
+      "work_package": "WP2",
+      "order": 5,
+      "action": "Install/run cargo-llvm-cov; make coverage-check. If measured line % exceeds floors with clear headroom (e.g. core >> 88, andre >> 38), raise Makefile thresholds modestly and note in CHANGELOG Unreleased. Else leave floors and record measured % in milestone complete evidence.",
+      "files": [
+        "Makefile",
+        "CHANGELOG.md"
+      ],
+      "tests": "make coverage-check",
+      "done_when": "floors updated with justification OR unchanged with measured numbers in evidence",
+      "status": "done",
+      "covers_ac": [
+        "AC-05"
+      ],
+      "depends_on_steps": [
+        "S1",
+        "S2",
+        "S3",
+        "S4"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-24",
+    "branch": "",
+    "evidence": "All 5 steps done; 5/5 ACs passed with non-prose evidence. 6 new tests (2 StowEngine missing-binary + dry-run + 3 CLI smoke + 1 doctor-without-stow); full suite now 288 tests (was 282). make ci → 288/288 pass via cargo-nextest --profile ci --locked. make coverage-check → andre-core 91.78% (≥90% new floor) / andre 54.17% (≥38% unchanged). No self-findings; all drift (awk→python in M08, coverage floor bump, AGENTS.md rewording) was recorded in CHANGELOG Unreleased."
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "andre/tests/smoke.rs header comment for doctor_exits_zero_when_stow_missing claims 'cargo test and nextest both serialize test functions that touch env' — this is FALSE. cargo test runs multiple test functions within a single binary in parallel threads (default test-threads = num-cpus). nextest 0.9+ runs each test in its own process (true serialization at the binary level, but multiple processes run in parallel). Empirically verified: in a 3-test binary where path_manipulator sleeps 500ms after setting PATH, the other two slow tests see the modified PATH in their env::var() output. The current smoke binary has only one env-mutating test so the race does not manifest, but the comment will mislead future developers who add a second PATH-touching test. Fix: replace the false claim with the truthful invariant: 'This test mutates PATH in the test binary's process. The andre::smoke binary currently has no other test that reads PATH, so no race in practice. Any future smoke test that reads PATH (e.g., a  check) MUST wrap its env::var() in the catch_unwind+set_var dance.' Also: andre-core/src/engine.rs has the analogous wrong comment ('nextest + cargo test both isolate binaries' — true at the binary level, but the implication that 'subsequent tests in this binary' won't observe the override is wrong under cargo test's intra-binary parallelism).",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "db7c9c9",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external"
+    },
+    {
+      "id": "F-02",
+      "severity": "low",
+      "category": "performance",
+      "description": ".woodpecker/base.yml test step installs cargo-llvm-cov but make ci (the only thing the test step runs) does not use llvm-cov — only the coverage step uses llvm-cov. The redundant install adds ~30-60s to CI runtime (cargo install cargo-llvm-cov pulls llvm-tools-preview if missing). Fix: remove the cargo install cargo-llvm-cov line from the test step's commands. Keep it in the coverage step. The header comment line 4 ('install python3 (used by scripts/coverage-check.py)') is also misleading because the test step doesn't install python3 — only the coverage step does. Either move that comment down to the coverage step description or remove it.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "db7c9c9",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external"
+    },
+    {
+      "id": "F-03",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "scripts/coverage-summary.sh and scripts/test-count.sh are now orphaned dead code. Both were introduced by M42-WP0 (commit e5e88b7) to support the awk-based 'cargo llvm-cov --summary-only' coverage-check target. M08 replaced that target with scripts/coverage-check.py (consuming 'cargo llvm-cov report --json'), and the Makefile no longer references the old scripts (verified: grep -r 'coverage-summary\\|test-count' Makefile scripts/ andre/ andre-core/ AGENTS.md returns nothing). They are still executable and tracked in git but unused. Fix: delete both files. They can always be recovered from git history if needed.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "db7c9c9",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external"
+    }
+  ]
+}

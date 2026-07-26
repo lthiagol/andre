@@ -1,0 +1,335 @@
+{
+  "milestone": {
+    "id": "04",
+    "title": "Action feedback toasts + number-key menu shortcuts",
+    "slug": "action-feedback-toasts-number-key-menu-shortcuts",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-23",
+    "updated": "2026-07-24",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "runner",
+    "lifecycle_at": "2026-07-24T03:40:29.213444+00:00"
+  },
+  "intent": {
+    "outcome": "Non-modal actions show a short-lived toast overlay that auto-dismisses and never blocks keyboard input."
+  },
+  "problem": {
+    "description": "Feedback for lightweight actions (e.g. config saved) is modal or buried in screen-local messages. There is no shared transient toast. Number-key menu shortcuts are split out to a track item so this milestone stays a single chrome subsystem."
+  },
+  "scope": {
+    "in_scope": [
+      "App-level toast state (message + deadline) owned outside individual screens.",
+      "Render toast as a non-blocking overlay in ui::render chrome.",
+      "Auto-dismiss on tick/deadline in the App update path.",
+      "Wire at least config save (and optionally one other non-modal success) to show a toast.",
+      "Interaction/render tests for show + dismiss + input still handled."
+    ],
+    "out_of_scope": [
+      "Replacing existing modal dialogs with toasts.",
+      "Toast stacking/queue (single toast only; newer replaces older).",
+      "Main Menu digit shortcuts (track item TW — separate).",
+      "Remapping existing global keys."
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "Toast appears for a wired non-modal action and auto-dismisses after the timeout",
+      "verification": "cargo test --test interaction",
+      "status": "passed",
+      "evidence": "M04 toast: AppContext toast + Clear overlay; config save wired; make lint ok; interaction 48 + render 33 + config_persistence 13 green."
+    },
+    {
+      "id": "AC-02",
+      "description": "While a toast is visible, normal key handling still works (toast does not capture input)",
+      "verification": "cargo test --test interaction",
+      "status": "passed",
+      "evidence": "M04 toast: AppContext toast + Clear overlay; config save wired; make lint ok; interaction 48 + render 33 + config_persistence 13 green."
+    },
+    {
+      "id": "AC-03",
+      "description": "Toast uses ThemeColors and renders without panic across themes",
+      "verification": "cargo test --test render",
+      "status": "passed",
+      "evidence": "M04 toast: AppContext toast + Clear overlay; config save wired; make lint ok; interaction 48 + render 33 + config_persistence 13 green."
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "toast ownership",
+      "choice": "Single optional toast on App (or AppContext), rendered in ui::render overlay; newer toast replaces older; no queue",
+      "rationale": "Matches out_of_scope stacking; one place for deadline tick; components call a small show_toast API."
+    },
+    {
+      "area": "dismiss timing",
+      "choice": "Store Instant deadline; App event/tick path clears toast when now >= deadline (no extra thread)",
+      "rationale": "Fits existing poll loop; testable by injecting Instant or short timeout in tests."
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "Toast subsystem",
+      "goal": "App-level auto-dismiss toast overlay wired to config save.",
+      "rollback": "Remove toast state, render, and wiring."
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "Add App-level toast state (message + Instant deadline), render overlay in ui::render, dismiss when Instant::now >= deadline on App tick/update.",
+      "files": [
+        "andre/src/app.rs",
+        "andre/src/ui/mod.rs",
+        "andre/src/components/mod.rs",
+        "andre/tests/render.rs",
+        "andre/tests/interaction.rs"
+      ],
+      "tests": "cargo test -p andre --test interaction",
+      "done_when": "Tests can show a toast and observe it gone after simulated time/tick.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01",
+        "AC-02"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP1",
+      "order": 2,
+      "action": "Wire config save success to push a toast (replace Settings-only message path or dual-write).",
+      "files": [
+        "andre/src/components/settings/persist.rs",
+        "andre/src/app.rs",
+        "andre/tests/interaction.rs"
+      ],
+      "tests": "cargo test -p andre --test config_persistence",
+      "done_when": "Saving config surfaces a toast via App state; suite green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP1",
+      "order": 3,
+      "action": "Theme/render coverage for toast overlay; confirm non-blocking input test remains green.",
+      "files": [
+        "andre/src/ui/mod.rs",
+        "andre/tests/render.rs",
+        "andre/tests/interaction.rs"
+      ],
+      "tests": "cargo test -p andre --test render",
+      "done_when": "AC-02 and AC-03 verifications green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-02",
+        "AC-03"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-24",
+    "branch": "",
+    "evidence": "M04 toast: AppContext toast + Clear overlay; config save wired; make lint ok; interaction 48 + render 33 + config_persistence 13 green."
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "low",
+      "category": "coverage",
+      "description": "TOAST_TTL is a const 3s; fine for M04. Future: config or kind-based TTL if needed.",
+      "status": "fixed",
+      "author": "runner",
+      "fixed_in": "accepted-residual: TTL const ok for M04",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self",
+      "summary": "Toast TTL not configurable"
+    },
+    {
+      "id": "F-02",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "save_config always show_toast(\"Config saved\") and ConfigMessage::Saved even when config.save returns Err. User sees success after a failed write.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "persist: toast only on successful save",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/settings/persist.rs",
+        "new_range": {
+          "start_line": 13,
+          "end_line": 13
+        },
+        "side": "new"
+      },
+      "summary": "Toast claims saved even when save fails"
+    },
+    {
+      "id": "F-03",
+      "severity": "low",
+      "category": "correctness",
+      "description": "show_toast(\"\") creates a Toast with empty message; render draws a 10-col empty box. No-op on empty/whitespace-only messages.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "show_toast: ignore empty messages",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/mod.rs",
+        "new_range": {
+          "start_line": 92,
+          "end_line": 92
+        },
+        "side": "new"
+      },
+      "summary": "Empty toast still allocates overlay"
+    },
+    {
+      "id": "F-04",
+      "severity": "low",
+      "category": "coverage",
+      "description": "Spec: single toast, newer replaces older. Not asserted in interaction tests.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "tests: newer replaces older + empty noop",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/tests/interaction.rs",
+        "new_range": {
+          "start_line": 618,
+          "end_line": 618
+        },
+        "side": "new"
+      },
+      "summary": "No test that newer toast replaces older"
+    },
+    {
+      "id": "F-05",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "Error toasts (e.g. Save failed) always render with colors.success + BOLD. Failed save is indistinguishable from success by color; add ToastKind (Success/Error) and theme error fg for errors.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "0a6028f",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/ui/toast.rs",
+        "new_range": {
+          "start_line": 55,
+          "end_line": 55
+        },
+        "side": "new"
+      },
+      "summary": "Error toast uses success color"
+    },
+    {
+      "id": "F-06",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "Confirm-discard 'y' always Transition::Pop after save_config even when save fails. User leaves Settings with in-memory apply_to already applied and no dirty UI to retry. save_config should return bool; only Pop on success.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "0a6028f",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/settings/mod.rs",
+        "new_range": {
+          "start_line": 163,
+          "end_line": 163
+        },
+        "side": "new"
+      },
+      "summary": "Discard-save y pops on save failure"
+    },
+    {
+      "id": "F-07",
+      "severity": "low",
+      "category": "coverage",
+      "description": "No interaction/config_persistence test that failed config.save surfaces error toast and keeps config_dirty true.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "0a6028f",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/tests/interaction.rs",
+        "new_range": {
+          "start_line": 649,
+          "end_line": 649
+        },
+        "side": "new"
+      },
+      "summary": "No failed-save toast test"
+    },
+    {
+      "id": "F-08",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "elide_toast_msg duplicates crate::ui::elide; call ui::elide directly.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "0a6028f",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/settings/persist.rs",
+        "new_range": {
+          "start_line": 27,
+          "end_line": 27
+        },
+        "side": "new"
+      },
+      "summary": "Duplicate elide helper in persist"
+    }
+  ]
+}

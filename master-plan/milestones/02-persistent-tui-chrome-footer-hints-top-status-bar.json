@@ -1,0 +1,208 @@
+{
+  "milestone": {
+    "id": "02",
+    "title": "Persistent TUI chrome: footer hints + top status bar",
+    "slug": "persistent-tui-chrome-footer-hints-top-status-bar",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-23",
+    "updated": "2026-07-23",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "",
+    "lifecycle_at": "2026-07-23T22:35:27.850287+00:00"
+  },
+  "intent": {
+    "outcome": "Status bar shows a navigation breadcrumb from the component stack; existing context-sensitive footer and live toggles are preserved and covered by automated render tests."
+  },
+  "problem": {
+    "description": "andre already has a context-sensitive footer (per-screen hints + global toggles + narrow fallback in ui/footer.rs) and a status bar with live toggles (ui/status_bar.rs). The remaining gap is a location breadcrumb built from the component stack so the user always sees where they are in navigation. Spec previously treated footer as greenfield — that work is already landed."
+  },
+  "scope": {
+    "in_scope": [
+      "Breadcrumb from component_stack rendered in render_status_bar (or adjacent chrome).",
+      "Wire breadcrumb from ui::render using stack ids/titles.",
+      "Automated render tests for breadcrumb and existing footer context line.",
+      "Confirm narrow-terminal and theme behavior still hold."
+    ],
+    "out_of_scope": [
+      "Reworking individual screen body contents.",
+      "Execute screen body (M03).",
+      "Changing existing keybindings.",
+      "Rebuilding the footer from scratch (already context-sensitive)."
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "Footer still shows key actions for the active component (regression guard on existing behavior)",
+      "verification": "cargo test --test render",
+      "status": "passed",
+      "evidence": "M02 chrome: breadcrumb from component_stack in status_bar (format_breadcrumb); footer regression tests for major screen families; themes+narrow chrome tests. Evidence: make lint exit 0; cargo test -p andre --test render — 23 passed exit 0. AC-01/02/03 criterion pass stamped."
+    },
+    {
+      "id": "AC-02",
+      "description": "Top status bar shows a breadcrumb that updates when the component stack changes; toggles (v/d/t) still update live",
+      "verification": "cargo test --test render",
+      "status": "passed",
+      "evidence": "M02 chrome: breadcrumb from component_stack in status_bar (format_breadcrumb); footer regression tests for major screen families; themes+narrow chrome tests. Evidence: make lint exit 0; cargo test -p andre --test render — 23 passed exit 0. AC-01/02/03 criterion pass stamped."
+    },
+    {
+      "id": "AC-03",
+      "description": "Chrome (breadcrumb + footer + status toggles) renders without panic across themes and degrades on narrow width",
+      "verification": "cargo test --test render",
+      "status": "passed",
+      "evidence": "M02 chrome: breadcrumb from component_stack in status_bar (format_breadcrumb); footer regression tests for major screen families; themes+narrow chrome tests. Evidence: make lint exit 0; cargo test -p andre --test render — 23 passed exit 0. AC-01/02/03 criterion pass stamped."
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "breadcrumb source",
+      "choice": "Derive labels from component_stack ids (or Component::id) joined with a separator; top-of-stack only is insufficient",
+      "rationale": "Status bar previously had no stack awareness; footer already uses top id only for hints."
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "Footer regression guard",
+      "goal": "Keep existing context-sensitive footer; add tests, fill only real gaps.",
+      "rollback": "Revert test-only changes to footer."
+    },
+    {
+      "id": "WP2",
+      "name": "Location breadcrumb",
+      "goal": "Add component-stack breadcrumb to status bar chrome.",
+      "rollback": "Remove breadcrumb from status_bar/mod render."
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "Audit existing render_footer: confirm per-screen_id hints + narrow fallback; add/adjust render tests only if gaps found. Do not rewrite footer.",
+      "files": [
+        "andre/src/ui/footer.rs",
+        "andre/tests/render.rs"
+      ],
+      "tests": "cargo test -p andre --test render",
+      "done_when": "Footer context behavior is covered by at least one render assertion per major screen family or documented as already covered.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP2",
+      "order": 2,
+      "action": "Build breadcrumb from component_stack and render it in render_status_bar (or chrome layout); pass stack labels from ui::render.",
+      "files": [
+        "andre/src/ui/status_bar.rs",
+        "andre/src/ui/mod.rs",
+        "andre/tests/render.rs"
+      ],
+      "tests": "cargo test -p andre --test render",
+      "done_when": "After push/pop navigation in a TestBackend draw, buffer contains breadcrumb segments for the stack.",
+      "status": "done",
+      "covers_ac": [
+        "AC-02"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP2",
+      "order": 3,
+      "action": "Add/extend render tests for themes and narrow width covering breadcrumb + footer; fix any overflow/panic.",
+      "files": [
+        "andre/src/ui/status_bar.rs",
+        "andre/src/ui/footer.rs",
+        "andre/tests/render.rs"
+      ],
+      "tests": "cargo test -p andre --test render",
+      "done_when": "Render suite green; narrow and multi-theme paths covered.",
+      "status": "done",
+      "covers_ac": [
+        "AC-03"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-23",
+    "branch": "",
+    "evidence": "M02 chrome: breadcrumb from component_stack in status_bar (format_breadcrumb); footer regression tests for major screen families; themes+narrow chrome tests. Evidence: make lint exit 0; cargo test -p andre --test render — 23 passed exit 0. AC-01/02/03 criterion pass stamped."
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "high",
+      "category": "correctness",
+      "description": "L1 dishonest test: render_app draws into a TestBackend of size WxH but never calls app.set_terminal_size. ui::render gates on ctx.terminal_size (default 80x24), so test_chrome_degrades_on_narrow_width(40,24) still lays out full chrome and is a false green for AC-03 narrow degradation. Fix: set_terminal_size in render_app; split too-small overlay vs min-size chrome assertions.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "render tests: set_terminal_size; honest too-small + min-width chrome",
+      "created": "2026-07-23",
+      "resolved": "2026-07-23",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/tests/render.rs",
+        "new_range": {
+          "start_line": 10,
+          "end_line": 10
+        },
+        "side": "new"
+      },
+      "summary": "render_app never syncs terminal_size"
+    },
+    {
+      "id": "F-02",
+      "severity": "low",
+      "category": "coverage",
+      "description": "test_footer_context_hints_per_screen_family covers Main/Group/Settings/Help/Confirm/Execute/Adopt but not UnstowTargetSelect or PackageSelect footer fragments.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "render: footer family covers Unstow + PackageSelect",
+      "created": "2026-07-23",
+      "resolved": "2026-07-23",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/tests/render.rs",
+        "new_range": {
+          "start_line": 265,
+          "end_line": 265
+        },
+        "side": "new"
+      },
+      "summary": "Footer family coverage misses Unstow/PackageSelect"
+    }
+  ]
+}

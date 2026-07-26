@@ -1,0 +1,18 @@
+[package]
+name = 'andre'
+version = '0.2.0'
+edition = '2021'
+
+[[bin]]
+name = 'andre'
+path = 'src/main.rs'
+
+[dependencies]
+andre-core = { path = '../andre-core' }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true, features = ['process', 'rt-multi-thread', 'time', 'sync'] }
+unicode-width = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

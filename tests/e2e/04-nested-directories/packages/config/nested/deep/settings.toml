@@ -1,0 +1,4 @@
+[settings]
+debug = false
+log_level = info
+database_path = ~/.local/share/app/data.db

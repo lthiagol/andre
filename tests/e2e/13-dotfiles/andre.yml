@@ -1,0 +1,9 @@
+global:
+  engine: stow  # --dotfiles renames dot-foo -> .foo (native v1 does not support dotfiles)
+  stow:
+    verbosity: 0
+    dotfiles: true
+groups:
+  home:
+    source: packages
+    target: target

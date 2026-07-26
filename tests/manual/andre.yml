@@ -1,0 +1,16 @@
+global:
+  theme: catppuccin-mocha
+  ignore:
+  - .DS_Store
+  - __MACOSX
+  stow:
+    verbosity: 3
+    dry_run: false
+    no_folding: false
+    adopt: false
+    dotfiles: false
+    action: stow
+groups:
+  home:
+    source: packages
+    target: target

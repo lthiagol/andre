@@ -1,0 +1,22 @@
+global:
+  stow:
+    verbosity: 0
+    dry_run: false
+    no_folding: false
+    adopt: false
+    action: stow
+  ignore:
+    - .git
+
+groups:
+  home:
+    source: packages
+    target: target/home
+
+  config:
+    source: packages
+    target: target/config
+
+  emacs:
+    source: packages
+    target: target/emacs

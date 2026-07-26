@@ -1,0 +1,53 @@
+# andre configuration template
+# See: https://codeberg.org/lthiagol/andre
+
+# Global settings that apply to all groups
+global:
+  # Optional: override the default theme (default, dracula, catppuccin-latte,
+  # catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha)
+  # theme: default
+
+  # Optional: patterns to ignore globally (supports glob syntax)
+  # ignore:
+  #   - .git
+  #   - .DS_Store
+  #   - '*.swp'
+
+  # Default stow options (can be overridden per-group, or via TUI flags)
+  stow:
+    # Verbosity level: 0 (quiet), 1 (-v), 2 (-vv), 3 (-vvv)
+    verbosity: 0
+
+    # Enable dry-run mode (simulate without making changes)
+    dry_run: false
+
+    # Disable folding of newly-stowed directories into existing ones
+    no_folding: false
+
+    # Adopt existing files that conflict with stow
+    adopt: false
+
+    # Default action: stow, restow, delete, or simulate
+    action: stow
+
+# Package groups - each group maps to a stow target directory
+groups:
+  # Example: dotfiles in ~/.dotfiles stowing to $HOME
+  dotfiles:
+    source: packages/dotfiles
+    target: target/home
+    # Optional: group-specific ignore patterns (merged with global.ignore)
+    # ignore:
+    #   - '.gitignore'
+
+  # Example: emacs config
+  # emacs:
+  #   source: packages/emacs
+  #   target: target/emacs
+
+  # Example: shell configs
+  # shell:
+  #   source: packages/shell
+  #   target: target/home
+
+  # Add more groups as needed...

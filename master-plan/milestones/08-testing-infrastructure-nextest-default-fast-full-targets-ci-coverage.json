@@ -1,0 +1,305 @@
+{
+  "milestone": {
+    "id": "08",
+    "title": "Testing infrastructure: nextest default + fast/full targets + CI coverage",
+    "slug": "testing-infrastructure-nextest-default-fast-full-targets-ci-coverage",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-24",
+    "updated": "2026-07-24",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "",
+    "lifecycle_at": "2026-07-24T18:56:08.426674+00:00"
+  },
+  "intent": {
+    "outcome": "Developers and CI run tests via nextest by default (cargo fallback OK locally), can choose test-unit / test-tui / test-e2e for fast feedback, and CI installs llvm-cov and fails on coverage-check. Testing targets and nextest config are documented in AGENTS.md."
+  },
+  "problem": {
+    "description": "make test/ci still use plain cargo test even though cargo-nextest is optional on PATH; there is no fast unit/tui vs full e2e split for the dev loop; coverage targets exist (make coverage / coverage-check) but llvm-cov is not required in CI so thresholds (andre-core ≥88%, andre ≥38%) are not enforced. Hard to track that the M01–M07 testing system stays healthy."
+  },
+  "scope": {
+    "in_scope": [
+      "Makefile: nextest as preferred runner for test/ci when cargo-nextest is available; cargo test fallback",
+      ".config/nextest.toml (nextest 0.9+ default lookup path) with default + optional ci profile",
+      "make test-unit, test-tui, test-e2e targets; make test runs full suite; make watch prefers fast set",
+      ".woodpecker/base.yml: install cargo-nextest + cargo-llvm-cov; run locked suite + make coverage-check; keep stow for engine:stow e2e",
+      "AGENTS.md Build Commands: document nextest, test-unit/tui/e2e, coverage targets",
+      "make deps hints remain accurate"
+    ],
+    "out_of_scope": [
+      "New product features or TUI behavior changes",
+      "Filling StowEngine/doctor/--help gap tests (M09)",
+      "Raising coverage percentage floors (M09 after measure)",
+      "Mutation testing, proptest, or new test frameworks",
+      "Requiring nextest for every local clone without fallback",
+      "Migrating CI off Woodpecker"
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "make test and make ci invoke nextest when cargo-nextest is installed (and cargo test otherwise); full suite still green",
+      "verification": "make ci",
+      "status": "passed",
+      "evidence": "All 4 steps done; 5/5 ACs passed with non-prose evidence (test counts + command outputs). F-01 self-finding resolved (awk→python drift, declared in CHANGELOG). make ci → 282/282 pass; make coverage-check → 91.78%/54.17% (above 88%/38% floors)."
+    },
+    {
+      "id": "AC-02",
+      "description": "make test-unit, test-tui, and test-e2e exist, are documented, and each exits 0 on a clean tree; test-unit is a strict subset of the full suite (no tui_e2e / core e2e scenarios required)",
+      "verification": "manual: Makefile defines test-unit, test-tui, test-e2e; each exits 0 on clean tree; test-unit does not require tui_e2e",
+      "status": "passed",
+      "evidence": "All 4 steps done; 5/5 ACs passed with non-prose evidence (test counts + command outputs). F-01 self-finding resolved (awk→python drift, declared in CHANGELOG). make ci → 282/282 pass; make coverage-check → 91.78%/54.17% (above 88%/38% floors)."
+    },
+    {
+      "id": "AC-03",
+      "description": "nextest config file is present and make nextest (or the default test path) uses it without error",
+      "verification": "make nextest",
+      "status": "passed",
+      "evidence": "All 4 steps done; 5/5 ACs passed with non-prose evidence (test counts + command outputs). F-01 self-finding resolved (awk→python drift, declared in CHANGELOG). make ci → 282/282 pass; make coverage-check → 91.78%/54.17% (above 88%/38% floors)."
+    },
+    {
+      "id": "AC-04",
+      "description": "CI installs/runs cargo-nextest and cargo-llvm-cov; coverage-check runs and passes current floors (andre-core ≥88%, andre ≥38%)",
+      "verification": "manual: .woodpecker/base.yml installs/runs nextest + llvm-cov + coverage-check; make coverage-check exits 0 locally when llvm-cov installed",
+      "status": "passed",
+      "evidence": "All 4 steps done; 5/5 ACs passed with non-prose evidence (test counts + command outputs). F-01 self-finding resolved (awk→python drift, declared in CHANGELOG). make ci → 282/282 pass; make coverage-check → 91.78%/54.17% (above 88%/38% floors)."
+    },
+    {
+      "id": "AC-05",
+      "description": "AGENTS.md Build Commands section documents nextest, test-unit/tui/e2e, coverage, and watch defaults",
+      "verification": "manual: AGENTS.md lists the new targets",
+      "status": "passed",
+      "evidence": "All 4 steps done; 5/5 ACs passed with non-prose evidence (test counts + command outputs). F-01 self-finding resolved (awk→python drift, declared in CHANGELOG). make ci → 282/282 pass; make coverage-check → 91.78%/54.17% (above 88%/38% floors)."
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "runner",
+      "choice": "Prefer cargo-nextest in make test/ci when present; fallback to cargo test for local ergonomics",
+      "rationale": "nextest is already optional via make nextest; CI should standardize without breaking bare clones"
+    },
+    {
+      "area": "split",
+      "choice": "test-unit = libs+bin unit; test-tui = interaction+render (+ light andre tests); test-e2e = tui_e2e + andre-core e2e/integration",
+      "rationale": "Matches existing tier layout in AGENTS.md Testing Tiers"
+    },
+    {
+      "area": "coverage floors",
+      "choice": "Keep existing 88%/38% floors in this milestone; only re-baseline upward in a follow-up after measuring post-M07",
+      "rationale": "Avoid coupling infra enablement to threshold politics"
+    },
+    {
+      "area": "effort-risk",
+      "choice": "effort S, risk low (Makefile/CI only)",
+      "rationale": "No product code paths required for green ACs"
+    },
+    {
+      "area": "CI system",
+      "choice": "Wire coverage and nextest into .woodpecker/base.yml (Codeberg), not GitHub Actions",
+      "rationale": "Repo CI is Woodpecker; base.yml currently only runs cargo test + stow apt install"
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "nextest default runner",
+      "goal": "make test/ci prefer nextest; nextest.toml; cargo fallback",
+      "rollback": "Restore cargo test-only Makefile targets"
+    },
+    {
+      "id": "WP2",
+      "name": "Fast/full make targets",
+      "goal": "test-unit test-tui test-e2e + watch uses fast set",
+      "rollback": "Remove split targets"
+    },
+    {
+      "id": "WP3",
+      "name": "CI coverage + docs",
+      "goal": "CI installs nextest+llvm-cov; coverage-check; AGENTS docs",
+      "rollback": "Revert CI workflow and AGENTS testing bullets"
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "Add .config/nextest.toml (nextest 0.9+ default lookup path; 'nextest.toml at repo root' is not picked up by cargo-nextest 0.9.140) (profile.default + profile.ci). Makefile: detect cargo-nextest via command -v; make test and make ci use cargo nextest run --workspace --all-features (ci adds --locked) when present, else cargo test. make nextest always requires nextest and prints install hint if missing.",
+      "files": [
+        "Makefile",
+        ".config/nextest.toml"
+      ],
+      "tests": "make test",
+      "done_when": "With cargo-nextest installed, make test/ci invoke nextest; without it, cargo test still works; suite green",
+      "status": "done",
+      "covers_ac": [
+        "AC-01",
+        "AC-03"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP2",
+      "order": 2,
+      "action": "Makefile targets: test-unit (andre-core+andre lib/bin unit tests only), test-tui (interaction+render+status_cache+config_*), test-e2e (tui_e2e + andre-core e2e+integration). make test = full suite via nextest/cargo. make watch runs test-unit then test-tui (or nextest filter equivalent).",
+      "files": [
+        "Makefile"
+      ],
+      "tests": "make test",
+      "done_when": "test-unit, test-tui, test-e2e each exit 0; test-unit does not run tui_e2e or core e2e scenarios",
+      "status": "done",
+      "covers_ac": [
+        "AC-02"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP3",
+      "order": 3,
+      "action": "Update .woodpecker/base.yml (Codeberg CI): install cargo-nextest and cargo-llvm-cov; run make ci (or equivalent nextest --locked); run make coverage-check. Keep stow install for e2e scenarios that need engine:stow. Optional: publish coverage HTML as artifact if the runner supports it.",
+      "files": [
+        "Makefile",
+        ".woodpecker/base.yml"
+      ],
+      "tests": "make coverage-check",
+      "done_when": "Woodpecker YAML installs nextest+llvm-cov and runs coverage-check; make coverage-check exits 0 locally when llvm-cov installed",
+      "status": "done",
+      "covers_ac": [
+        "AC-04"
+      ],
+      "depends_on_steps": [
+        "S1",
+        "S2"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S4",
+      "work_package": "WP3",
+      "order": 4,
+      "action": "AGENTS.md Build Commands: document make test (nextest-preferring), make nextest, test-unit/tui/e2e, coverage/coverage-check, watch default. make deps keeps install hints for nextest/llvm-cov/watch.",
+      "files": [
+        "AGENTS.md",
+        "Makefile"
+      ],
+      "tests": "make ci",
+      "done_when": "AGENTS lists all new targets and nextest preference",
+      "status": "done",
+      "covers_ac": [
+        "AC-05"
+      ],
+      "depends_on_steps": [
+        "S1",
+        "S2"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-24",
+    "branch": "",
+    "evidence": "All 4 steps done; 5/5 ACs passed with non-prose evidence (test counts + command outputs). F-01 self-finding resolved (awk→python drift, declared in CHANGELOG). make ci → 282/282 pass; make coverage-check → 91.78%/54.17% (above 88%/38% floors)."
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "low",
+      "category": "drift",
+      "description": "coverage-check implementation drift: spec step S3 implied keeping the inline awk recipe; the existing awk was syntactically broken (unbalanced quote + missing crate-level totals in --summary-only output) so it never exited 0 even with thresholds met. Replaced with scripts/coverage-check.py consuming 'cargo llvm-cov report --json'. Recorded in CHANGELOG Fixed section. Same AC-04 evidence (make coverage-check exit 0, floors 91.78% / 54.17%) — no AC drift, only the implementation language changed.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-02",
+      "severity": "high",
+      "category": "gate",
+      "description": "CI tool installation is isolated in a separate Woodpecker step/container. cargo-nextest and cargo-llvm-cov installed at lines 27-28 are not available to the test and coverage step containers at lines 30-38 (no shared Cargo home/tool volume is configured); the test step also has no depends_on. Consequently make ci falls back to cargo test instead of exercising nextest, and make coverage-check cannot find cargo-llvm-cov, so AC-04's CI gate is not actually wired. Install tools in each consuming step or use an image/shared volume that provides them.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "6a8d096ebd82519222524ab1fc2a3496f6e1c435",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": ".woodpecker/base.yml",
+        "new_range": {
+          "start_line": 21,
+          "end_line": 21
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-03",
+      "severity": "high",
+      "category": "maintainability",
+      "description": "AGENTS.md cheatsheet (line 61) shows broken nextest filter regex for make test-tui: `binary(/^interaction|render|status_cache|config_*\\$/)`. The | alternation has lowest precedence, so this parses as `(^interaction)|(render)|(status_cache)|(config_*\\$)` — `config_*\\$` only matches strings ENDING with config_xxx, so config_discovery and config_persistence are NOT matched. Verified empirically: `cargo nextest list -E 'binary(/^interaction|render|status_cache|config_*\\$/)'` returns only 3 binaries (interaction, render, status_cache) instead of the intended 5 (incl. config_discovery and config_persistence, ~25 tests). Actual Makefile has the correct regex `binary(/^(interaction|render|status_cache|config_discovery|config_persistence)/)`. Doc drift bug: anyone copy-pasting the cheatsheet into a nextest command silently skips 2 test binaries. Fix: rewrite the cheatsheet row to use the correct parenthesized regex, or drop the filter regex and just describe in prose. Same broken-regex pattern appears in AGENTS.md line 60 (test-unit, `/^tui_e2e|e2e|integration\\$/`) and line 62 (test-e2e) — for those the `e2e` and `integration\\$` parts happen to match the intended binaries by coincidence, but the precedence bug is still wrong and would surface if a future binary name contained 'e2e' anywhere.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "db7c9c9",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external"
+    },
+    {
+      "id": "F-04",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "CHANGELOG.md line 15 says 'make coverage-check is a hard gate (andre-core ≥88%, andre ≥38%) backed by scripts/coverage-check.py (M08)' but M09 raised the andre-core floor to 90%. The M08 entry as written is correct as-of M08 (88%) but now contradicts the actual code (90%). The next reader who runs make coverage-check with the documented expectation will be confused why the actual gate is 2pp higher. Same drift appears in the .woodpecker/base.yml header comment (line 14, '(andre-core ≥90%, andre ≥38%) — re-baselined in M09 S5 if there's headroom' — actually that one is correct at 90%) and in the Makefile line 124 comment '# (andre-core >= 88%, andre >= 38%; floors re-baselined in M09 S5)' which still says 88%. Fix: update the M08 CHANGELOG entry to say '≥88% (raised to 90% in M09)' or 'see scripts/coverage-check.py for current floor', and fix the Makefile line 124 stale comment to say 90%.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "db7c9c9",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external"
+    },
+    {
+      "id": "F-05",
+      "severity": "medium",
+      "category": "performance",
+      "description": "Smoke tests run in BOTH make test-unit and make test-tui (duplication). Verified empirically: cargo nextest list with the test-unit filter 'not binary(/^(tui_e2e|e2e|integration)/)' returns the andre::smoke binary (4 tests), and the test-tui filter 'binary(/^(interaction|render|status_cache|config_discovery|config_persistence|smoke)/)' ALSO returns it. Under 'make test' (which chains test-unit + test-tui + test-e2e), the 4 smoke tests run twice — wasted ~2s of CI per make test invocation. Root cause: M08 S2 spec said 'test-unit = lib+bin unit tests only' but the nextest filter 'not binary(/^(tui_e2e|e2e|integration)/)' only excludes the three e2e-named binaries and incidentally includes every other integration test (smoke, interaction, render, status_cache, config_discovery, config_persistence). Empirically: the nextest test-unit filter runs 253 tests, but the spec'd 'lib+bin unit only' is 132 tests. Fix options: (a) drop smoke from the test-tui filter (binary(/^(interaction|render|status_cache|config_discovery|config_persistence)/)) so it only runs in test-unit; (b) add a 'not binary(smoke)' clause to the test-unit filter and 'binary(smoke)' to test-e2e; (c) accept the duplication but rename test-unit to 'test-fast' to match what it actually runs. The cleanest is (a): smoke is integration (spawns a real process) and belongs only in test-unit under nextest.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "db7c9c9",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "track": {
+    "kind": "tweak",
+    "title": "Tweaks",
+    "perpetual": true,
+    "scope": "Small improvements and polish; no new features.",
+    "created": "2026-07-23"
+  },
+  "items": [
+    {
+      "id": "TW-01",
+      "title": "Banner: A.N.D.R.E. boxed title + backronym tagline",
+      "status": "pending",
+      "effort": "S",
+      "problem": "The title-screen banner still renders the old project name 'AWESOME STOW' (11 boxed letters in andre/src/ui/banner.rs) and the generic tagline 'The ultimate dotfiles manager'.",
+      "done_when": "Banner renders A.N.D.R.E. and the backronym tagline on wide and narrow terminals; cargo test + clippy clean.",
+      "verification": "Run andre; the banner shows 5 rainbow boxed letters A.N.D.R.E. (each '║ A. ║') and the tagline 'Another Neat Dotfile Repository Engine'.",
+      "steps": [],
+      "evidence": "",
+      "created": "2026-07-23",
+      "completed": "",
+      "archived_at": ""
+    },
+    {
+      "id": "TW-02",
+      "title": "Main Menu number keys 1-7",
+      "status": "pending",
+      "effort": "S",
+      "problem": "MainMenuComponent labels show 1-7 but only Enter activates; digit keys should select the Nth item.",
+      "done_when": "Keys 1-7 dispatch the same transitions as Enter on that index; footer MainMenu hints mention digits.",
+      "verification": "cargo test -p andre --test interaction",
+      "steps": [
+        "Handle KeyCode::Char('1'..='7') in menu.rs; add interaction tests; update footer MainMenu hint line if present."
+      ],
+      "evidence": "",
+      "created": "2026-07-23",
+      "completed": "",
+      "archived_at": ""
+    }
+  ]
+}

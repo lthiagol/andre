@@ -1,0 +1,61 @@
+{
+  "challenge": {
+    "id": "CH-02-01",
+    "milestone_id": "02",
+    "scope": "full",
+    "status": "closed",
+    "created": "2026-07-23",
+    "closed": "2026-07-23",
+    "summary": ""
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "minor",
+      "category": "gap",
+      "title": "No files[] on any step",
+      "description": "Steps lack files: targets (ui/footer.rs, ui/status_bar.rs, ui/mod.rs, tests/render.rs). Decompose should pin paths.",
+      "target": "steps",
+      "status": "dismissed",
+      "resolution": "Pinned files[] on all steps",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-02",
+      "severity": "blocker",
+      "category": "gap",
+      "title": "Problem statement is stale vs codebase",
+      "description": "Context-sensitive footer already exists in andre/src/ui/footer.rs (per-screen_id line + narrow fallback + render test). Spec reads as greenfield chrome work; real remaining gap is status_bar breadcrumb from component_stack. Runner will re-implement or thrash if not rewritten.",
+      "target": "problem",
+      "status": "dismissed",
+      "resolution": "Rewrote problem/intent for breadcrumb-only remaining gap",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-03",
+      "severity": "major",
+      "category": "step-quality",
+      "title": "WP1/S1 already largely landed",
+      "description": "S1 action 'Refactor render_footer to take active component id' is done. Mark as done-with-evidence audit, shrink to gap-fill only, or drop WP1 and retitle milestone to breadcrumb-focused.",
+      "target": "WP1",
+      "status": "dismissed",
+      "resolution": "S1 is footer audit only; WP1 renamed",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-04",
+      "severity": "major",
+      "category": "coverage",
+      "title": "ACs are all manual only",
+      "description": "Project has andre/tests/render.rs TestBackend pattern. ACs should require cargo test -p andre --test render assertions for breadcrumb and footer, not only manual navigate.",
+      "target": "AC",
+      "status": "dismissed",
+      "resolution": "ACs use cargo test --test render",
+      "action": "no-change",
+      "action_ref": ""
+    }
+  ]
+}

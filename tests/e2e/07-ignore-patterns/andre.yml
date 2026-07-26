@@ -1,0 +1,17 @@
+global:
+  engine: stow  # exercises regex ignore patterns (native v1 ignore is literal-substring)
+  stow:
+    verbosity: 0
+    dry_run: false
+    no_folding: false
+    adopt: false
+    action: stow
+  ignore:
+    - .git
+    - .DS_Store
+    - '.*\.log'
+
+groups:
+  main:
+    source: packages
+    target: target

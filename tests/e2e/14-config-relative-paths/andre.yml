@@ -1,0 +1,7 @@
+global:
+  stow:
+    verbosity: 1
+groups:
+  home:
+    source: packages
+    target: target

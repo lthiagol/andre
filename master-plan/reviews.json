@@ -1,0 +1,127 @@
+{
+  "reviews": [
+    {
+      "milestone_id": "01",
+      "verdict": "ok",
+      "reviewer": "external-reviewer",
+      "reviewed_at": "2026-07-23",
+      "notes": "External review + remediation: F-03 hermetic helpers, F-04 App home unit tests. Probe F-02 retracted. make lint + targeted tests green.",
+      "milestone_completed_at": "2026-07-23"
+    },
+    {
+      "milestone_id": "02",
+      "verdict": "ok",
+      "reviewer": "external-reviewer",
+      "reviewed_at": "2026-07-23",
+      "notes": "External review + remediation: F-01 terminal_size sync (L1 dishonest narrow test), F-02 footer family coverage. make lint + render 24 ok.",
+      "milestone_completed_at": "2026-07-23"
+    },
+    {
+      "milestone_id": "03",
+      "verdict": "ok",
+      "reviewer": "grok",
+      "reviewed_at": "2026-07-24",
+      "notes": "External review: 5 findings filed and remediated (F-01..F-05). verify ACs green; render 29 + tui_e2e 6.",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "03",
+      "verdict": "ok",
+      "reviewer": "external-reviewer",
+      "reviewed_at": "2026-07-24",
+      "notes": "Round-2 external review: F-06..F-09 filed and remediated. Prior F-01..F-05 verified still fixed. cargo test render 31 + tui_e2e 6; make lint ok.",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "04",
+      "verdict": "ok",
+      "reviewer": "external-reviewer",
+      "reviewed_at": "2026-07-24",
+      "notes": "External review F-02..F-04 fixed; make lint + interaction/render/config_persistence green.",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "04",
+      "verdict": "ok",
+      "reviewer": "external-agent",
+      "reviewed_at": "2026-07-24",
+      "notes": "External review F-05..F-08 remediated: ToastKind error styling; save returns bool and does not apply/pop on failure; failed-save tests; drop duplicate elide.",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "05",
+      "verdict": "ok",
+      "reviewer": "external-agent",
+      "reviewed_at": "2026-07-24",
+      "notes": "External F-05..F-08 remediated in-session (user requested review+fix): CHANGELOG M05 entry; Transition::Replace carries Option<AsyncExecutor> (removed pending_executor); abort-ownership comments corrected; help/status/package_select/group_select viewport moved to prepare. make test green (lint + all suites). Residual: StatusComponent still discovers content_len during paint (list build).",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "06",
+      "verdict": "ok",
+      "reviewer": "external-agent",
+      "reviewed_at": "2026-07-24",
+      "notes": "External F-02..F-05 remediated: macOS Application Support discovery back-compat + XDG-first docs; reject empty --config=/--log-file=/-c=; main uses Display errors via try_main; Cargo.toml trailing newlines. make test green.",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "07",
+      "verdict": "ok",
+      "reviewer": "external-agent",
+      "reviewed_at": "2026-07-24",
+      "notes": "External F-05..F-07 remediated: NativeEngine package-owned symlink checks (unstow/stow conflict regression test); doctor optional-stow guidance; confirm preview passes effective_ignores. make test green. Prior self F-01 fixed; F-02..F-04 accepted residuals unchanged.",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "09",
+      "verdict": "ok",
+      "reviewer": "independent-coordinator",
+      "reviewed_at": "2026-07-24",
+      "notes": "External review: StowEngine tests pass under cargo test and nextest; all four smoke tests pass; coverage gate passes at 91.78%/54.17% and synthetic below-floor input exits 1. Documentation matches implementation.",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "09",
+      "verdict": "ok",
+      "reviewer": "independent-coordinator",
+      "reviewed_at": "2026-07-24",
+      "notes": "Independent review verified ACs: 6 new tests pass under both cargo test and cargo nextest; coverage gate exits 0 with 91.78% / 54.17%; AGENTS.md updates accurate; all ACs have non-prose evidence. Spec drift on nextest.toml location was self-fixed in M08.",
+      "milestone_completed_at": "2026-07-24"
+    },
+    {
+      "milestone_id": "08",
+      "verdict": "ok",
+      "reviewer": "independent-coordinator",
+      "reviewed_at": "2026-07-24",
+      "notes": "F-02 fix verified: .woodpecker/base.yml restructured — install-tools step removed; each consuming step (test, coverage) installs its own cargo-nextest + cargo-llvm-cov + stow + python3 before invoking make. Woodpecker step isolation documented in the YAML header so future maintainers don't recreate the original mistake. YAML parses cleanly. F-02 closed.",
+      "milestone_completed_at": "2026-07-24"
+    }
+  ],
+  "comments": [],
+  "handoffs": [
+    {
+      "id": "H-01",
+      "milestone_id": "01",
+      "from_session": "ext-review-m01-m02",
+      "to_session": "",
+      "from_role": "coordinator",
+      "to_role": "runner",
+      "data": "Stage 8 external findings filed and remediated in-session per operator request (apply fixes). auto_remediate=none but operator ordered fixes. Evidence: cargo test render/interaction/config_persistence + lib app tests; make lint exit 0.",
+      "session_boundary": "",
+      "evidence": "",
+      "created_at": "2026-07-23T22:35:35.328086+00:00"
+    },
+    {
+      "id": "H-02",
+      "milestone_id": "02",
+      "from_session": "ext-review-m01-m02",
+      "to_session": "",
+      "from_role": "coordinator",
+      "to_role": "runner",
+      "data": "Stage 8 external findings filed and remediated in-session per operator request. Evidence: cargo test -p andre --test render 24 ok; make lint exit 0.",
+      "session_boundary": "",
+      "evidence": "",
+      "created_at": "2026-07-23T22:35:35.429157+00:00"
+    }
+  ]
+}

@@ -1,0 +1,414 @@
+{
+  "milestone": {
+    "id": "07",
+    "title": "Optional link engine: native default, GNU stow opt-in",
+    "slug": "optional-link-engine-native-default-gnu-stow-opt-in",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [
+      "05",
+      "06"
+    ],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-24",
+    "updated": "2026-07-24",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "",
+    "lifecycle_at": "2026-07-24T16:24:42.621735+00:00"
+  },
+  "intent": {
+    "outcome": "Default install runs without GNU stow: native engine creates/removes package symlinks (stow/unstow/restow, dry-run, ignores). Users may set global.engine: stow for the classic backend. doctor only requires stow when that engine is selected."
+  },
+  "problem": {
+    "description": "Bulk apply shells out to stow, forcing GNU stow on every host. Status/single unstow are already native. Need native-by-default LinkEngine with stow opt-in. This is a behavior default change: document for users who rely on folding. Execute wiring must land after M05 App-owned runtime to avoid double-rewrites of Confirm/Execute."
+  },
+  "scope": {
+    "in_scope": [
+      "Config: global.engine native|stow (default native). Flags under global.stow.* apply where engine supports them.",
+      "LinkEngine trait in andre-core (plan + apply): stow, unstow, restow; dry_run; ignores; structured results.",
+      "NativeEngine v1: no_folding-first file-level symlinks; dry_run plans without writes; ignores honored.",
+      "Unsupported native flags (folding/adopt/dotfiles when they would change behavior): explicit error recommending engine: stow — not silent wrong links.",
+      "StowEngine wraps existing build_stow_args/execute_stow; clear error if stow missing.",
+      "Wire Confirm/yolo/execute through engine selection after M05 App ownership lands.",
+      "doctor/deps: stow required only when engine is stow.",
+      "Automated tests for native stow/unstow/restow/dry_run that do not invoke the stow binary (unit/integration in andre-core preferred).",
+      "CHANGELOG: breaking note that default engine is native (folding users should set engine: stow); demo config example.",
+      "Config-only for engine in S1; Settings TUI picker is optional stretch, not required for AC-05."
+    ],
+    "out_of_scope": [
+      "Full GNU stow parity (folding, adopt matrices, --dotfiles renames) in v1.",
+      "Windows junction/elevated-symlink UX beyond std.",
+      "Execute TUI chrome rewrite (M03 done).",
+      "Deleting stow engine.",
+      "M06 Cargo DIY.",
+      "Ctrl+C cancel product.",
+      "Settings engine picker UI (unless free).",
+      "Starting before M05+M06 complete (depends_on enforces)."
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "Default engine native: fixture stow creates expected symlinks; tests must not require stow on PATH for the native path",
+      "verification": "cargo test --test tui_e2e",
+      "status": "passed",
+      "evidence": "make ci exit 0 (281 passed: fmt-check + clippy -D warnings + cargo test --locked). AC-01..AC-06 passed. NativeEngine default (file-level relative symlinks via pathdiff), StowEngine wraps execute_stow, config global.engine native|stow. F-01 fixed (engine-aware confirm preview + test); F-02/F-03/F-04 accepted residuals (adopt bypass / substring-ignore / spawn_blocking no-cancel — documented)."
+    },
+    {
+      "id": "AC-02",
+      "description": "When global.engine is stow, apply path invokes GNU stow (or fails with a clear missing-binary error); existing stow-backed behavior remains available when stow is installed",
+      "verification": "make ci",
+      "status": "passed",
+      "evidence": "make ci exit 0 (281 passed: fmt-check + clippy -D warnings + cargo test --locked). AC-01..AC-06 passed. NativeEngine default (file-level relative symlinks via pathdiff), StowEngine wraps execute_stow, config global.engine native|stow. F-01 fixed (engine-aware confirm preview + test); F-02/F-03/F-04 accepted residuals (adopt bypass / substring-ignore / spawn_blocking no-cancel — documented)."
+    },
+    {
+      "id": "AC-03",
+      "description": "doctor/deps treats stow as required only for engine stow; native default does not fail solely because stow is absent",
+      "verification": "manual: make doctor / deps messaging matches engine; native path does not require stow binary",
+      "status": "passed",
+      "evidence": "make ci exit 0 (281 passed: fmt-check + clippy -D warnings + cargo test --locked). AC-01..AC-06 passed. NativeEngine default (file-level relative symlinks via pathdiff), StowEngine wraps execute_stow, config global.engine native|stow. F-01 fixed (engine-aware confirm preview + test); F-02/F-03/F-04 accepted residuals (adopt bypass / substring-ignore / spawn_blocking no-cancel — documented)."
+    },
+    {
+      "id": "AC-04",
+      "description": "Native dry_run plans link create/remove ops without writing the filesystem; covered by andre-core tests (not only tui_e2e)",
+      "verification": "make ci",
+      "status": "passed",
+      "evidence": "make ci exit 0 (281 passed: fmt-check + clippy -D warnings + cargo test --locked). AC-01..AC-06 passed. NativeEngine default (file-level relative symlinks via pathdiff), StowEngine wraps execute_stow, config global.engine native|stow. F-01 fixed (engine-aware confirm preview + test); F-02/F-03/F-04 accepted residuals (adopt bypass / substring-ignore / spawn_blocking no-cancel — documented)."
+    },
+    {
+      "id": "AC-05",
+      "description": "Config accepts global.engine native|stow (default native); invalid value is rejected or warned per existing config style",
+      "verification": "cargo test --test config_persistence",
+      "status": "passed",
+      "evidence": "make ci exit 0 (281 passed: fmt-check + clippy -D warnings + cargo test --locked). AC-01..AC-06 passed. NativeEngine default (file-level relative symlinks via pathdiff), StowEngine wraps execute_stow, config global.engine native|stow. F-01 fixed (engine-aware confirm preview + test); F-02/F-03/F-04 accepted residuals (adopt bypass / substring-ignore / spawn_blocking no-cancel — documented)."
+    },
+    {
+      "id": "AC-06",
+      "description": "Native unstow and restow implemented for no_folding-first model OR restow documented as stow-then-unstow composition; automated tests without stow binary",
+      "verification": "make ci",
+      "status": "passed",
+      "evidence": "make ci exit 0 (281 passed: fmt-check + clippy -D warnings + cargo test --locked). AC-01..AC-06 passed. NativeEngine default (file-level relative symlinks via pathdiff), StowEngine wraps execute_stow, config global.engine native|stow. F-01 fixed (engine-aware confirm preview + test); F-02/F-03/F-04 accepted residuals (adopt bypass / substring-ignore / spawn_blocking no-cancel — documented)."
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "default engine",
+      "choice": "native is default; stow is opt-in via config",
+      "rationale": "Matches product goal: no hard dependency on external stow for the common path."
+    },
+    {
+      "area": "seam placement",
+      "choice": "andre-core LinkEngine trait used by execute/yolo; TUI stays engine-agnostic",
+      "rationale": "Deep module: one place for link semantics; UI only shows progress/results."
+    },
+    {
+      "area": "parity strategy",
+      "choice": "Ship native with no_folding-first semantics and explicit unsupported/partial flags for adopt/folding/dotfiles; stow engine remains escape hatch",
+      "rationale": "Avoid false full-parity claims; keep users unblocked."
+    },
+    {
+      "area": "config key",
+      "choice": "global.engine: native | stow (default native). Stow-specific flags stay under global.stow.*",
+      "rationale": "Short, discoverable; avoids burying engine under stow.* which implies GNU-only."
+    },
+    {
+      "area": "native v1 semantics",
+      "choice": "no_folding-first file-level symlinks only; folding/adopt/dotfiles unsupported or explicit error pointing at engine: stow",
+      "rationale": "Correct simple model first; stow remains escape hatch for advanced flags."
+    },
+    {
+      "area": "ordering",
+      "choice": "No hard depends_on M05/M06; prefer after M05 if Execute ownership changes land first, but core LinkEngine can land independently",
+      "rationale": "Engine is andre-core; TUI wire is thin."
+    },
+    {
+      "area": "execution order",
+      "choice": "depends_on M05 and M06. Execute only after both complete.",
+      "rationale": "Needs App-owned execute runtime (M05) and stable config/error stack (M06) before LinkEngine + default flip."
+    },
+    {
+      "area": "effort-risk",
+      "choice": "effort L, risk medium-high (symlink correctness, default behavior change)",
+      "rationale": "Largest product change; under-scoping as S would make execution unpredictable."
+    },
+    {
+      "area": "breaking default",
+      "choice": "Default native is intentional breaking change for folding-dependent users; CHANGELOG + docs must say set global.engine: stow to keep GNU behavior",
+      "rationale": "Predictable migration path beats silent wrong links."
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "LinkEngine seam + config",
+      "goal": "Config global.engine + trait/API in andre-core; stow backend wrapped; selection of engine at runtime.",
+      "rollback": "Remove engine field and trait; restore direct execute_stow calls."
+    },
+    {
+      "id": "WP2",
+      "name": "Native engine v1",
+      "goal": "no_folding-first native plan/apply for stow/unstow/restow + dry_run + ignores; tests without stow binary.",
+      "rollback": "Delete native module; default back to stow-only path."
+    },
+    {
+      "id": "WP3",
+      "name": "Wire TUI, yolo, doctor",
+      "goal": "Execute/yolo/doctor use LinkEngine; doctor requires stow only for engine stow; docs/CHANGELOG.",
+      "rollback": "Restore Command::new(stow) call sites and prior doctor checks."
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "Add global.engine (native|stow, default native) to config load/save/validate only (no Settings picker required). Tests for default and invalid values.",
+      "files": [
+        "andre-core/src/config.rs",
+        "andre/tests/config_persistence.rs",
+        "demo/andre.yml"
+      ],
+      "tests": "cargo test --test config_persistence",
+      "done_when": "engine field round-trips; default native.",
+      "status": "done",
+      "covers_ac": [
+        "AC-05"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP1",
+      "order": 2,
+      "action": "LinkEngine trait + StowEngine wrapping build_stow_args/execute_stow; factory from config.engine. No Command::new(stow) outside StowEngine.",
+      "files": [
+        "andre-core/src/lib.rs",
+        "andre-core/src/stow.rs",
+        "andre-core/src/yolo.rs",
+        "andre/src/execute.rs",
+        "andre/src/components/confirm.rs"
+      ],
+      "tests": "make ci",
+      "done_when": "Stow engine path works when stow installed; clear error when missing.",
+      "status": "done",
+      "covers_ac": [
+        "AC-02"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP2",
+      "order": 3,
+      "action": "NativeEngine no_folding-first: plan/apply stow/unstow/restow; dry_run no writes; ignores; unsupported adopt/folding/dotfiles -> explicit error. Core tests MUST NOT invoke stow binary.",
+      "files": [
+        "andre-core/src/engine.rs",
+        "andre-core/src/stow.rs",
+        "andre-core/tests"
+      ],
+      "tests": "make ci",
+      "done_when": "Native unit/integration tests green without stow; AC-01/04/06 evidence from core tests + later tui_e2e.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01",
+        "AC-04",
+        "AC-06"
+      ],
+      "depends_on_steps": [
+        "S2"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S4",
+      "work_package": "WP3",
+      "order": 4,
+      "action": "Wire Confirm/yolo to LinkEngine from config; tui_e2e under native default; CHANGELOG breaking note for default engine + demo andre.yml engine key.",
+      "files": [
+        "andre/src/components/confirm.rs",
+        "andre/src/main.rs",
+        "andre/tests/tui_e2e.rs",
+        "CHANGELOG.md",
+        "demo/andre.yml"
+      ],
+      "tests": "cargo test --test tui_e2e",
+      "done_when": "tui_e2e creates symlinks with native default.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01",
+        "AC-04"
+      ],
+      "depends_on_steps": [
+        "S3"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S5",
+      "work_package": "WP3",
+      "order": 5,
+      "action": "doctor/check_dependencies: stow required only when engine is stow (read demo or default config policy documented). Native default passes without stow.",
+      "files": [
+        "check_dependencies.sh",
+        "Makefile",
+        "andre/src/main.rs"
+      ],
+      "tests": "make ci",
+      "done_when": "AC-03 satisfied; manual doctor check documented in step evidence.",
+      "status": "done",
+      "covers_ac": [
+        "AC-03"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-24",
+    "branch": "",
+    "evidence": "make ci exit 0 (281 passed: fmt-check + clippy -D warnings + cargo test --locked). AC-01..AC-06 passed. NativeEngine default (file-level relative symlinks via pathdiff), StowEngine wraps execute_stow, config global.engine native|stow. F-01 fixed (engine-aware confirm preview + test); F-02/F-03/F-04 accepted residuals (adopt bypass / substring-ignore / spawn_blocking no-cancel — documented)."
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "ui::render_confirm builds a 'stow ...' command preview per package regardless of engine. Under the native default this misleads users into thinking GNU stow will run (it will not). render_confirm already receives &Config, so make the preview engine-aware (show a native preview when config.effective_engine()==native).",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-02",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "The legacy Adopt flow (andre_core::adopt::execute_adoption) and ui::render_confirm still call build_stow_args directly, bypassing the LinkEngine seam (S2 goal: no Command::new(stow) outside StowEngine). Adopt is stow-only by design (NativeEngine rejects adopt=true); accepted residual — gate/route the Adopt UI through the engine in a follow-up.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-03",
+      "severity": "low",
+      "category": "correctness",
+      "description": "Native engine v1 --ignore matches each ignore as a literal substring of the relative path, NOT the regex stow uses (e.g. '.*\\.log' will not match debug.log). Documented in engine.rs + AGENTS notes; recommend engine: stow for regex ignores. Accepted v1 limitation.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-04",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "AsyncExecutor wraps engine.apply in tokio::task::spawn_blocking with a 60s timeout; on timeout the blocking thread (and any spawned stow child) cannot be cancelled and lingers until it finishes. Minor regression from the prior async-process cancel. Native (default) fs ops do not hang; affects only engine: stow.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-05",
+      "severity": "high",
+      "category": "correctness",
+      "description": "NativeEngine unstow/restow/stow treat any symlink at the target path as removable: apply RemoveSymlink deletes any is_symlink path, and CreateSymlink removes any existing symlink before recreate. Stow only touches links that resolve into the package. Reproducing: stow pkg A (.bashrc), then unstow pkg B that also lists .bashrc removes A's link. Fix: only remove/replace symlinks whose resolved target is under the package source (same ownership check as check_stowed_status); foreign symlinks and real files must conflict on create and be no-ops on unstow. Add a regression test.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre-core/src/engine.rs",
+        "new_range": {
+          "start_line": 200,
+          "end_line": 200
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-06",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "check_dependencies.sh still has a RUN_MET=false recommendation block telling users to install GNU Stow, but stow is no longer a hard runtime dep and nothing sets RUN_MET=false for missing stow. Dead/misleading residual from the optional-engine change. Update the recommendation text to match AC-03 (stow optional; only needed for global.engine: stow) or remove the stow-specific install guidance from the hard-fail path.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "check_dependencies.sh",
+        "new_range": {
+          "start_line": 189,
+          "end_line": 189
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-07",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "ui::render_confirm stow-engine preview still passes &[] ignores into build_stow_args, so the Review Commands screen omits --ignore flags the real StowEngine apply will use (via config.effective_ignores). Misleading preview under engine: stow. Pass config.effective_ignores(group_name).",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/ui/confirm.rs",
+        "new_range": {
+          "start_line": 73,
+          "end_line": 73
+        },
+        "side": "new"
+      }
+    }
+  ]
+}

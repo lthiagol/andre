@@ -1,0 +1,233 @@
+{
+  "milestone": {
+    "id": "01",
+    "title": "Make config-persistence test hermetic for Linux CI",
+    "slug": "make-config-persistence-test-hermetic-for-linux-ci",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-23",
+    "updated": "2026-07-23",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "",
+    "lifecycle_at": "2026-07-23T22:35:27.632334+00:00"
+  },
+  "intent": {
+    "outcome": "andre's CI is green on both Linux and macOS, and the config-persistence test passes deterministically regardless of the host home directory's contents."
+  },
+  "problem": {
+    "description": "The integration test `test_add_group_then_save_persists` (andre/tests/config_persistence.rs) browses the real OS home dir to pick a source/target directory during the add-group flow. On the developer's macOS machine it passes (home has subdirs), but in the minimal `rust:latest` Linux CI container `/root` has no subdirectories, so the browse selects nothing, no group is added, and the assertion `groups.len() == groups_before + 1` fails (`1 == 2`). This reds andre's base Woodpecker pipeline on wip/stable and blocks the wip->stable promotion."
+  },
+  "scope": {
+    "in_scope": [
+      "Add a home_dir injection seam so tests can supply a controlled home (e.g. an optional home parameter on App::new or a test-only override), without changing production resolution behavior.",
+      "Update make_test_app / helpers to point the app at a temp home containing a known subdirectory the file browser can select.",
+      "Confirm the full suite (cargo test --all --all-features) and clippy stay green."
+    ],
+    "out_of_scope": [
+      "Changing production home-directory resolution for real users.",
+      "Rewriting other tests that happen to pass today.",
+      "Any new user-facing feature."
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "test_add_group_then_save_persists passes with hermetic temp home (no dependency on host home contents)",
+      "verification": "cargo test --test config_persistence test_add_group_then_save_persists",
+      "status": "passed",
+      "evidence": "S1-S3 done. make ci exit 0 (fmt-check, clippy -D warnings, cargo test --all --all-features --locked). Hermetic config_persistence covered. Production home default unchanged (App::new). Self F-01 resolved as accepted residual."
+    },
+    {
+      "id": "AC-02",
+      "description": "Full workspace suite and clippy stay green after the hermetic fixture change",
+      "verification": "cargo test --all --all-features",
+      "status": "passed",
+      "evidence": "S1-S3 done. make ci exit 0 (fmt-check, clippy -D warnings, cargo test --all --all-features --locked). Hermetic config_persistence covered. Production home default unchanged (App::new). Self F-01 resolved as accepted residual."
+    },
+    {
+      "id": "AC-03",
+      "description": "Production App::new path still resolves the real system home (no forced test home)",
+      "verification": "cargo test --test interaction",
+      "status": "passed",
+      "evidence": "S1-S3 done. make ci exit 0 (fmt-check, clippy -D warnings, cargo test --all --all-features --locked). Hermetic config_persistence covered. Production home default unchanged (App::new). Self F-01 resolved as accepted residual."
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "production home default",
+      "choice": "App::new keeps real dirs::home_dir; only App::with_home / tests inject temp home",
+      "rationale": "Satisfies production-unchanged without a manual TUI run; type-safe seam from Q-01."
+    }
+  ],
+  "open_questions": [
+    {
+      "id": "Q-01",
+      "question": "Least-invasive seam: a new optional parameter on App::new vs. a test-only cfg/env hook. Prefer whichever keeps the public API clean.",
+      "status": "resolved",
+      "answer": "Use an explicit optional home_dir parameter on App::new (threaded into AppContext), defaulting to the real system home. Chosen over an env/cfg test hook because env vars are process-global and unsafe under parallel cargo tests; an explicit parameter is type-safe and keeps the public API change minimal and obvious."
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "Home-dir injection seam",
+      "goal": "Let callers (tests) supply a controlled home directory to App/AppContext while production home resolution stays unchanged.",
+      "rollback": "Revert the added parameter/threading; the production App::new path is untouched."
+    },
+    {
+      "id": "WP2",
+      "name": "Hermetic test fixture",
+      "goal": "make_test_app points andre at a temp home containing a known subdirectory so the add-group file browser selects deterministically on every platform.",
+      "rollback": "Revert helper changes and remove the temp-home setup."
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "Add an optional home_dir override to App::new (threaded into AppContext), defaulting to the real system home; production behavior unchanged.",
+      "files": [
+        "andre/src/app.rs"
+      ],
+      "tests": "cargo test --all --all-features — existing suite passes with the default (real) home; the seam changes no production behavior.",
+      "done_when": "App::new accepts an optional home dir and the default path still resolves the real system home exactly as before.",
+      "status": "done",
+      "covers_ac": [
+        "AC-03"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP2",
+      "order": 2,
+      "action": "Update make_test_app/helpers to create a temp home with a known subdirectory and pass it into App::new.",
+      "files": [
+        "andre/tests/helpers.rs"
+      ],
+      "tests": "cargo test -p andre --test config_persistence test_add_group_then_save_persists — passes on macOS and in a minimal Linux container (empty /root).",
+      "done_when": "make_test_app builds the app against a temp home containing at least one selectable subdirectory.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP2",
+      "order": 3,
+      "action": "Run full suite and clippy locally (make ci or equivalent). CI Woodpecker green is a human follow-up, not a runner gate.",
+      "files": [],
+      "tests": "make ci",
+      "done_when": "Local cargo test --all --all-features and clippy -D warnings are green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01",
+        "AC-02"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-23",
+    "branch": "",
+    "evidence": "S1-S3 done. make ci exit 0 (fmt-check, clippy -D warnings, cargo test --all --all-features --locked). Hermetic config_persistence covered. Production home default unchanged (App::new). Self F-01 resolved as accepted residual."
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "low",
+      "category": "coverage",
+      "description": "AC-03 evidence is design/code-path review rather than a dedicated unit test asserting dirs::home_dir default; a tiny unit test would be stronger.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "accepted-residual: AC-03 stronger unit test deferred",
+      "created": "2026-07-23",
+      "resolved": "2026-07-23",
+      "phase": "self"
+    },
+    {
+      "id": "F-02",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "test probe",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "retracted-probe",
+      "created": "2026-07-23",
+      "resolved": "2026-07-23",
+      "phase": "external",
+      "summary": "probe"
+    },
+    {
+      "id": "F-03",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "make_empty_app and make_two_group_app still call App::new (real host home). M01 only hermeticized make_test_app, so interaction/render paths that use the other helpers still resolve ~ against host HOME and can flake or touch the real home on Linux CI.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "helpers: with_home for make_empty_app/make_two_group_app",
+      "created": "2026-07-23",
+      "resolved": "2026-07-23",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/tests/helpers.rs",
+        "new_range": {
+          "start_line": 90,
+          "end_line": 90
+        },
+        "side": "new"
+      },
+      "summary": "Incomplete hermetic home in test helpers"
+    },
+    {
+      "id": "F-04",
+      "severity": "low",
+      "category": "coverage",
+      "description": "Self F-01 residual: AC-03 is design/code-path review only. Add a unit test that App::new uses dirs::home_dir (when present) and App::with_home injects the override.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "app: unit tests for new home default + with_home inject",
+      "created": "2026-07-23",
+      "resolved": "2026-07-23",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/app.rs",
+        "new_range": {
+          "start_line": 17,
+          "end_line": 17
+        },
+        "side": "new"
+      },
+      "summary": "No unit test for App::new home default"
+    }
+  ]
+}

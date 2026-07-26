@@ -1,0 +1,242 @@
+{
+  "project": {
+    "name": "andre",
+    "description": "A TUI wrapper for GNU Stow — manage dotfiles visually: select groups and packages, toggle options, execute with live feedback, adopt existing files, unstow interactively, and edit the config in place.",
+    "stack": [
+      "rust"
+    ],
+    "platforms": [
+      "macOS",
+      "Linux"
+    ],
+    "created": "2026-07-23",
+    "target_version": "1.0.0",
+    "planning_status": "in-execution",
+    "planning_phase": "charter"
+  },
+  "charter": {
+    "goals": [
+      "Visual, interactive management of GNU Stow dotfiles from the terminal.",
+      "Cover the everyday flows: stow, guided adoption, interactive unstow, status, and config editing.",
+      "Provide a headless --yolo mode for scripting and automation.",
+      "Reach a stable v1.0 with a frozen, documented andre.yml config format."
+    ],
+    "non_goals": [
+      "No GUI — terminal/TUI only.",
+      "No cloud sync or remote/multi-machine management.",
+      "Not a replacement for GNU Stow — a wrapper around it.",
+      "No always-on automation daemon.",
+      "No Windows support."
+    ],
+    "deferred": [
+      "Post-1.0 feature ideas: more themes, richer config validation, adoption-UX expansions."
+    ],
+    "principles": [
+      "No breaking andre.yml config changes after v1.0.",
+      "Tests before code — every fix ships a regression test that would have caught it.",
+      "Deep module separation: andre-core (logic, no TUI deps) vs andre (TUI binary).",
+      "Unit tests must not depend on the real host environment (deterministic, hermetic).",
+      "Each release documents breaking changes, features, and fixes in a changelog."
+    ]
+  },
+  "metrics": {
+    "lines_of_code": 0,
+    "unit_tests": 0,
+    "integration_tests": 0,
+    "coverage_percent": 0.0,
+    "checked_at": ""
+  },
+  "execution": {
+    "strategy": "resume_then_ready",
+    "interleave": "milestone",
+    "mode": "autonomous",
+    "handoff_at": "2026-07-23T20:22:51.311987+00:00",
+    "handoff_by": "user",
+    "focus_milestone": "",
+    "focus_through_step": "",
+    "adoption_order": [],
+    "handoff_changed_milestones": [],
+    "handoff_baseline": {
+      "planning_status": "in-execution",
+      "execution_mode": "autonomous",
+      "milestone_index": [
+        {
+          "id": "01",
+          "title": "Make config-persistence test hermetic for Linux CI",
+          "spec_status": "ready",
+          "execution_status": "planned"
+        },
+        {
+          "id": "02",
+          "title": "Persistent TUI chrome: footer hints + top status bar",
+          "spec_status": "ready",
+          "execution_status": "planned"
+        },
+        {
+          "id": "03",
+          "title": "Execute screen overhaul: progress gauge + per-package status",
+          "spec_status": "ready",
+          "execution_status": "planned"
+        },
+        {
+          "id": "04",
+          "title": "Action feedback toasts + number-key menu shortcuts",
+          "spec_status": "ready",
+          "execution_status": "planned"
+        }
+      ],
+      "milestones": [
+        {
+          "id": "01",
+          "title": "Make config-persistence test hermetic for Linux CI",
+          "spec_status": "ready",
+          "execution_status": "planned",
+          "updated": "2026-07-23",
+          "steps": [
+            {
+              "id": "S1",
+              "status": "done"
+            },
+            {
+              "id": "S2",
+              "status": "done"
+            },
+            {
+              "id": "S3",
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "id": "02",
+          "title": "Persistent TUI chrome: footer hints + top status bar",
+          "spec_status": "ready",
+          "execution_status": "planned",
+          "updated": "2026-07-23",
+          "steps": [
+            {
+              "id": "S1",
+              "status": "pending"
+            },
+            {
+              "id": "S2",
+              "status": "pending"
+            },
+            {
+              "id": "S3",
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "id": "03",
+          "title": "Execute screen overhaul: progress gauge + per-package status",
+          "spec_status": "ready",
+          "execution_status": "planned",
+          "updated": "2026-07-23",
+          "steps": [
+            {
+              "id": "S1",
+              "status": "pending"
+            },
+            {
+              "id": "S2",
+              "status": "pending"
+            },
+            {
+              "id": "S3",
+              "status": "pending"
+            }
+          ]
+        },
+        {
+          "id": "04",
+          "title": "Action feedback toasts + number-key menu shortcuts",
+          "spec_status": "ready",
+          "execution_status": "planned",
+          "updated": "2026-07-23",
+          "steps": [
+            {
+              "id": "S1",
+              "status": "pending"
+            },
+            {
+              "id": "S2",
+              "status": "pending"
+            },
+            {
+              "id": "S3",
+              "status": "pending"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "milestones": [
+    {
+      "id": "01",
+      "title": "Make config-persistence test hermetic for Linux CI",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    },
+    {
+      "id": "02",
+      "title": "Persistent TUI chrome: footer hints + top status bar",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    },
+    {
+      "id": "03",
+      "title": "Execute screen overhaul: progress gauge + per-package status",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    },
+    {
+      "id": "04",
+      "title": "Action feedback toasts + number-key menu shortcuts",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    },
+    {
+      "id": "05",
+      "title": "TUI architecture hardening (herdr-inspired seams)",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    },
+    {
+      "id": "06",
+      "title": "Dependency cleanup and supply-chain hygiene",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    },
+    {
+      "id": "07",
+      "title": "Optional link engine: native default, GNU stow opt-in",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    },
+    {
+      "id": "08",
+      "title": "Testing infrastructure: nextest default + fast/full targets + CI coverage",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    },
+    {
+      "id": "09",
+      "title": "Testing quality: gap tests, hermetic rules, coverage floor re-baseline",
+      "spec_status": "verified",
+      "execution_status": "done",
+      "blocked_by": ""
+    }
+  ],
+  "releases": []
+}

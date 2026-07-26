@@ -1,0 +1,350 @@
+{
+  "milestone": {
+    "id": "03",
+    "title": "Execute screen overhaul: progress gauge + per-package status",
+    "slug": "execute-screen-overhaul-progress-gauge-per-package-status",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-23",
+    "updated": "2026-07-24",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "",
+    "lifecycle_at": "2026-07-24T03:04:37.937027+00:00"
+  },
+  "intent": {
+    "outcome": "Execute screen shows a ratatui Gauge for packages completed/total while keeping the existing spinner, per-package result rows, and completion summary."
+  },
+  "problem": {
+    "description": "Execute already renders a braille spinner, per-package success/fail rows (group/package + error text), textual n/total progress, and a completion summary (ui/execute.rs). The missing piece is a visual ratatui Gauge driven by completed/total. Spec previously claimed there was no per-package status — that is stale."
+  },
+  "scope": {
+    "in_scope": [
+      "ratatui Gauge reflecting packages completed vs total (use ExecuteComponent.current/results.len and total).",
+      "Pass current progress into ui::render_execute.",
+      "Keep existing spinner, rows, and completion summary; polish layout under the gauge if needed.",
+      "Automated render and/or tui_e2e coverage for gauge/progress."
+    ],
+    "out_of_scope": [
+      "Changing the Status screen or StowStatus icon semantics.",
+      "Forcing StowStatus icons onto execute rows (different domain: check vs run outcome).",
+      "Adopt/unstow flow UI.",
+      "Async execution model changes."
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "Gauge reflects completed/total packages during a run",
+      "verification": "cargo test --test render",
+      "status": "passed",
+      "evidence": "make lint ok; cargo test -p andre --test render: 27 passed; cargo test -p andre --test tui_e2e: 6 passed. Gauge completed/total above spinner+rows; completion summary preserved (render + e2e)."
+    },
+    {
+      "id": "AC-02",
+      "description": "Each package row still shows icon, name, and result (existing behavior preserved under gauge layout)",
+      "verification": "cargo test --test render",
+      "status": "passed",
+      "evidence": "make lint ok; cargo test -p andre --test render: 27 passed; cargo test -p andre --test tui_e2e: 6 passed. Gauge completed/total above spinner+rows; completion summary preserved (render + e2e)."
+    },
+    {
+      "id": "AC-03",
+      "description": "Completion summary still shown when finished",
+      "verification": "cargo test --test tui_e2e",
+      "status": "passed",
+      "evidence": "make lint ok; cargo test -p andre --test render: 27 passed; cargo test -p andre --test tui_e2e: 6 passed. Gauge completed/total above spinner+rows; completion summary preserved (render + e2e)."
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "execute row icons",
+      "choice": "Keep execute-local success/fail icons; do not reuse StowStatus::icon",
+      "rationale": "StowStatus encodes check-state (stowed/partial/conflict/missing); execute rows encode run outcome. Different domains."
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "Progress gauge",
+      "goal": "Add ratatui Gauge for completed/total on Execute.",
+      "rollback": "Remove Gauge; keep prior list+spinner layout."
+    },
+    {
+      "id": "WP2",
+      "name": "Rows + summary under gauge",
+      "goal": "Preserve existing rows and completion summary in the new layout.",
+      "rollback": "Revert layout polish only."
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "Add ratatui Gauge to execute UI from completed/total; thread current/results into render_execute.",
+      "files": [
+        "andre/src/ui/execute.rs",
+        "andre/src/components/execute.rs",
+        "andre/tests/render.rs"
+      ],
+      "tests": "cargo test -p andre --test render",
+      "done_when": "Gauge renders and ratio matches completed/total in a seeded ExecuteComponent draw.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP2",
+      "order": 2,
+      "action": "Keep per-package rows (exec success/fail icons — not StowStatus). Adjust layout so rows sit under the gauge without clipping.",
+      "files": [
+        "andre/src/ui/execute.rs",
+        "andre/tests/render.rs"
+      ],
+      "tests": "cargo test -p andre --test render",
+      "done_when": "Rows still show icon/name/result alongside gauge; no StowStatus remap required.",
+      "status": "done",
+      "covers_ac": [
+        "AC-02"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP2",
+      "order": 3,
+      "action": "Confirm completion summary still appears on Finished; extend tui_e2e/render assert if missing.",
+      "files": [
+        "andre/src/ui/execute.rs",
+        "andre/tests/tui_e2e.rs",
+        "andre/tests/render.rs"
+      ],
+      "tests": "cargo test -p andre --test render --test tui_e2e",
+      "done_when": "Summary assertion exists and suite green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-03"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-24",
+    "branch": "",
+    "evidence": "make lint ok; cargo test -p andre --test render: 27 passed; cargo test -p andre --test tui_e2e: 6 passed. Gauge completed/total above spinner+rows; completion summary preserved (render + e2e)."
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "Progress updates overwrite ExecuteComponent.total with commands-only count from AsyncExecutor, dropping skipped packages from the denominator. With skips, gauge label can show completed>total (e.g. 3/2) after the first Progress event.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/execute.rs",
+        "new_range": {
+          "start_line": 69,
+          "end_line": 69
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-02",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "viewport_height still uses area.height-2 (borders only) and does not subtract the new 1-row gauge. Scroll page size is one row too large vs list_area, so list scroll/scrollbar desync under the gauge layout.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/execute.rs",
+        "new_range": {
+          "start_line": 100,
+          "end_line": 100
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-03",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "L1: tui_e2e completion-summary assert is tautological — it rebuilds 'N succeeded, M failed' from the same results vector and compares to a constant, never rendering. Does not verify the Finished UI summary.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/tests/tui_e2e.rs",
+        "new_range": {
+          "start_line": 134,
+          "end_line": 134
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-04",
+      "severity": "low",
+      "category": "correctness",
+      "description": "Running spinner progress uses results.len()+1 without clamping to total, so after the last Result and before Complete the UI can show (total+1)/total.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/ui/execute.rs",
+        "new_range": {
+          "start_line": 79,
+          "end_line": 79
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-05",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "Scrollbar content_len still uses results.len()+HEADER_LINES (stale constant 4) instead of the actual items list length after the gauge split; mismatches real list height for Completed/Running.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/ui/execute.rs",
+        "new_range": {
+          "start_line": 199,
+          "end_line": 199
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-06",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "ExecuteComponent::render passes scroll_index: None when state==Completed, so ListState never selects and long completion result lists cannot scroll. handle_key still updates scroll_index on j/k/PgUp/PgDn, but the UI ignores it — dead scroll path on the Finished screen (AC-02 rows under gauge).",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "execute: scroll Completed list",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/execute.rs",
+        "new_range": {
+          "start_line": 107,
+          "end_line": 107
+        },
+        "side": "new"
+      },
+      "summary": "Completed execute list cannot scroll"
+    },
+    {
+      "id": "F-07",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "Skipped packages are ExecutionResult{success:false, error: Skipped:...}. Completion summary uses failed = len - succeeded, so skips inflate the failed count (e.g. 1 skip → '0 succeeded, 1 failed'). AC-03 summary should distinguish skipped vs failed.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "execute: summary distinguishes skipped",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/ui/execute.rs",
+        "new_range": {
+          "start_line": 130,
+          "end_line": 130
+        },
+        "side": "new"
+      },
+      "summary": "Completion summary counts skips as failed"
+    },
+    {
+      "id": "F-08",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "Running UI shows 'Press Ctrl+C to cancel' but (1) Confirm discards AsyncExecutor immediately so AbortHandle is gone, (2) ExecuteComponent never handles Ctrl+C. Misleading chrome on the M03 execute screen. Prefer removing the dead hint over async model changes (out of scope).",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "execute: drop dead Ctrl+C cancel hint",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/ui/execute.rs",
+        "new_range": {
+          "start_line": 110,
+          "end_line": 110
+        },
+        "side": "new"
+      },
+      "summary": "Ctrl+C cancel hint is dead"
+    },
+    {
+      "id": "F-09",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "test_execute_screen_shows_pending pushes a Running ExecuteComponent and asserts 'Executing' — name claims Pending. Rename or seed Pending state.",
+      "status": "fixed",
+      "author": "external-reviewer",
+      "fixed_in": "render: rename running execute test",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/tests/render.rs",
+        "new_range": {
+          "start_line": 218,
+          "end_line": 218
+        },
+        "side": "new"
+      },
+      "summary": "Misnamed pending execute render test"
+    }
+  ]
+}

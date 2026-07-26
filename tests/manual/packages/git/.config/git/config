@@ -1,0 +1,8 @@
+# gitconfig main configuration
+[color]
+    ui = auto
+[alias]
+    st = status
+    co = checkout
+    br = branch
+    lg = log --oneline

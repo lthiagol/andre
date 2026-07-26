@@ -1,0 +1,12 @@
+# aliasrc - Shell aliases
+
+# Git aliases
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline'
+
+# System aliases
+alias update='sudo apt update && sudo apt upgrade -y'
+alias ports='netstat -tulanp'

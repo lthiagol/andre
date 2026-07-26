@@ -1,0 +1,412 @@
+{
+  "milestone": {
+    "id": "06",
+    "title": "Dependency cleanup and supply-chain hygiene",
+    "slug": "dependency-cleanup-and-supply-chain-hygiene",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [
+      "05"
+    ],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-24",
+    "updated": "2026-07-24",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "",
+    "lifecycle_at": "2026-07-24T15:38:32.390219+00:00"
+  },
+  "intent": {
+    "outcome": "andre's direct Cargo graph is minimal: unused deps gone, deprecated YAML replaced or justified, small helpers (dirs/thiserror/anyhow/unicode-width/optional clap) replaced with std or local modules where cheaper than a crate, and every remaining direct dependency has a one-line reason. make ci stays green."
+  },
+  "problem": {
+    "description": "The workspace is small but un-audited: dead dev-deps, deprecated serde_yaml, and several crates used only as thin wrappers (dirs, thiserror, anyhow, unicode-width direct, clap for a handful of flags) that we can own ourselves. M06 cleans the graph before M07 native engine grows the core."
+  },
+  "scope": {
+    "in_scope": [
+      "Audit all direct deps in workspace/andre/andre-core Cargo.toml (prod + dev).",
+      "DIY-1: Remove unused crates/features and dead dev-deps (assert_cmd, andre-core crossterm, predicates if unused); trim tokio features if safe.",
+      "DIY-2: Replace dirs with a small local home/config path helper.",
+      "DIY-3: Replace thiserror with hand-written Display/Error on andre_core::Error.",
+      "DIY-4: Remove anyhow; binary uses andre_core::Error or a thin local Result alias (no anyhow type in signatures).",
+      "DIY-5: Replace clap with std::env::args for existing flags + -h/--help (preferred). Retain clap only if blocked, with one-line reason in dep table.",
+      "unicode-width direct dep: remove via tiny local helper OR keep and document in dep table (either OK).",
+      "Migrate serde_yaml to a maintained serde-compatible YAML crate; andre.yml shape unchanged.",
+      "Document dependency policy + one-line purpose table for every remaining direct prod dep + DIY notes.",
+      "ratatui/crossterm pin bump only in final S6 after M05 complete (this milestone depends_on 05).",
+      "make ci green; CHANGELOG note for dep removals / YAML crate / optional ratatui bump."
+    ],
+    "out_of_scope": [
+      "DIY ratatui or crossterm.",
+      "DIY full YAML parser (migrate crate only; keep serde).",
+      "Rewriting tokio async execute model (feature-trim only).",
+      "GNU stow / native engine (M07).",
+      "Adding tracing or other new major deps unless required by YAML migration.",
+      "Vendoring ratatui/crossterm.",
+      "Rewriting config format away from YAML.",
+      "Parallel execution with M05 (blocked by depends_on)."
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "Dead direct/dev deps removed; dirs+thiserror+anyhow DIY landed; make ci green",
+      "verification": "make ci",
+      "status": "passed",
+      "evidence": "make ci exit 0 (265 passed); AC-01..AC-05 passed; F-01 fixed (parse refactored + 12 cli unit tests). Removed: assert_cmd, predicates, dirs, thiserror, anyhow, clap, andre-core crossterm/anyhow dev-deps. Migrated serde_yaml->serde_yaml_ng. unicode-width retained (documented)."
+    },
+    {
+      "id": "AC-02",
+      "description": "YAML load/save still round-trips existing andre.yml fixtures after any serde_yaml migration; config_persistence green",
+      "verification": "cargo test --test config_persistence",
+      "status": "passed",
+      "evidence": "make ci exit 0 (265 passed); AC-01..AC-05 passed; F-01 fixed (parse refactored + 12 cli unit tests). Removed: assert_cmd, predicates, dirs, thiserror, anyhow, clap, andre-core crossterm/anyhow dev-deps. Migrated serde_yaml->serde_yaml_ng. unicode-width retained (documented)."
+    },
+    {
+      "id": "AC-03",
+      "description": "Dependency policy documents every remaining direct prod dep with a one-line purpose; DIY choices (dirs/thiserror/anyhow/clap/unicode-width) noted",
+      "verification": "manual: AGENTS.md or REFERENCE.md has direct-dep table and DIY notes for M06",
+      "status": "passed",
+      "evidence": "make ci exit 0 (265 passed); AC-01..AC-05 passed; F-01 fixed (parse refactored + 12 cli unit tests). Removed: assert_cmd, predicates, dirs, thiserror, anyhow, clap, andre-core crossterm/anyhow dev-deps. Migrated serde_yaml->serde_yaml_ng. unicode-width retained (documented)."
+    },
+    {
+      "id": "AC-04",
+      "description": "dirs crate is gone from Cargo.toml; home/config resolution uses local helper and existing tests/app paths still work",
+      "verification": "cargo test --test interaction",
+      "status": "passed",
+      "evidence": "make ci exit 0 (265 passed); AC-01..AC-05 passed; F-01 fixed (parse refactored + 12 cli unit tests). Removed: assert_cmd, predicates, dirs, thiserror, anyhow, clap, andre-core crossterm/anyhow dev-deps. Migrated serde_yaml->serde_yaml_ng. unicode-width retained (documented)."
+    },
+    {
+      "id": "AC-05",
+      "description": "clap removed (std::env::args CLI with equivalent flags and help) OR retained with explicit one-line reason in dep table; --config/--yolo/--onboard/--debug still work",
+      "verification": "cargo test --test tui_e2e",
+      "status": "passed",
+      "evidence": "make ci exit 0 (265 passed); AC-01..AC-05 passed; F-01 fixed (parse refactored + 12 cli unit tests). Removed: assert_cmd, predicates, dirs, thiserror, anyhow, clap, andre-core crossterm/anyhow dev-deps. Migrated serde_yaml->serde_yaml_ng. unicode-width retained (documented)."
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "YAML crate",
+      "choice": "Prefer a maintained serde-compatible YAML crate with deny_unknown_fields parity; keep on-disk andre.yml shape unchanged",
+      "rationale": "User-facing config must not break; only the parser implementation swaps."
+    },
+    {
+      "area": "DIY shortlist",
+      "choice": "M06 includes DIY-1..5: drop unused; replace dirs, thiserror, anyhow; optional clap→std args; optional unicode-width local helper. Not DIY: ratatui, crossterm, full YAML, tokio rewrite, stow binary.",
+      "rationale": "Low-risk ownership of thin wrappers without rebuilding the TUI or config stack."
+    },
+    {
+      "area": "clap",
+      "choice": "Prefer removing clap if flag surface stays small; retain only if --help/completions ergonomics win the tradeoff, documented in the dep table",
+      "rationale": "DIY-5 is optional by design; either outcome is valid if justified."
+    },
+    {
+      "area": "effort",
+      "choice": "Treat M06 as medium effort (M): DIY path/error/CLI plus YAML migrate, not a drive-by prune",
+      "rationale": "Multiple crate removals touch core error paths and main CLI; needs full ci."
+    },
+    {
+      "area": "ordering vs M05",
+      "choice": "No hard depends_on M05; may run after or parallel. If ratatui bump conflicts, finish M05 pure-render first or bump only in S6.",
+      "rationale": "Dep DIY does not require pure-render seams; coordinate pin bumps only."
+    },
+    {
+      "area": "execution order",
+      "choice": "depends_on M05. Run only after M05 complete. Do not start in parallel with M05/M07.",
+      "rationale": "app.rs/main.rs/error paths shared with M05; config/YAML shared with M07."
+    },
+    {
+      "area": "effort-risk",
+      "choice": "effort M, risk medium (error-type and CLI surface churn)",
+      "rationale": "Multiple crate removals touch binary Result types and main."
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "Drop unused and DIY thin crates",
+      "goal": "Remove dead dev-deps; replace dirs, thiserror, anyhow; optional unicode-width helper; trim features.",
+      "rollback": "Restore Cargo.toml pins and prior error/path modules."
+    },
+    {
+      "id": "WP2",
+      "name": "CLI surface (clap DIY-5)",
+      "goal": "Remove clap via std::env::args or retain with documented reason; flags stay equivalent.",
+      "rollback": "Restore clap derive CLI."
+    },
+    {
+      "id": "WP3",
+      "name": "YAML migrate and dep policy",
+      "goal": "Migrate serde_yaml to maintained crate; document remaining direct deps + DIY notes; optional ratatui pin bump.",
+      "rollback": "Revert YAML crate and AGENTS dep table."
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "Audit Cargo.toml; remove unused direct/dev deps (assert_cmd, andre-core crossterm, predicates if unused); trim tokio/clap features if still present and safe.",
+      "files": [
+        "Cargo.toml",
+        "andre/Cargo.toml",
+        "andre-core/Cargo.toml",
+        "Cargo.lock"
+      ],
+      "tests": "make ci",
+      "done_when": "cargo tree shows no dead direct deps; make ci green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP1",
+      "order": 2,
+      "action": "Replace dirs with local home/config path helper; replace thiserror with hand-written andre_core::Error Display/Error; remove anyhow from binary in favor of core errors.",
+      "files": [
+        "andre-core/src/error.rs",
+        "andre/src/app.rs",
+        "andre/src/discovery.rs",
+        "andre/src/main.rs",
+        "Cargo.toml",
+        "andre/Cargo.toml",
+        "andre-core/Cargo.toml"
+      ],
+      "tests": "make ci",
+      "done_when": "dirs, thiserror, anyhow absent from direct deps; home/config paths and errors work; make ci green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01",
+        "AC-04"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP1",
+      "order": 3,
+      "action": "unicode-width: either drop direct dep (local width helper or ratatui-only) OR keep and list in dep table. Not a blocker if documented.",
+      "files": [
+        "andre/src/ui/mod.rs",
+        "andre/Cargo.toml",
+        "Cargo.toml"
+      ],
+      "tests": "cargo test --test render",
+      "done_when": "Direct unicode-width absent from Cargo.toml OR listed in dep policy table; render tests green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S4",
+      "work_package": "WP2",
+      "order": 4,
+      "action": "DIY-5 preferred: replace clap with std::env::args for --config/-c, --yolo, --onboard, --debug, --log-file, -h/--help. If blocked, keep clap and document reason in dep table.",
+      "files": [
+        "andre/src/main.rs",
+        "andre/Cargo.toml",
+        "Cargo.toml",
+        "AGENTS.md"
+      ],
+      "tests": "cargo test --test tui_e2e",
+      "done_when": "AC-05 satisfied; tui_e2e green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-05"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S5",
+      "work_package": "WP3",
+      "order": 5,
+      "action": "Migrate serde_yaml to a maintained serde-compatible YAML crate; keep andre.yml on-disk shape; round-trip config_persistence and core load tests.",
+      "files": [
+        "andre-core/Cargo.toml",
+        "Cargo.toml",
+        "andre-core/src/config.rs",
+        "Cargo.lock"
+      ],
+      "tests": "cargo test --test config_persistence",
+      "done_when": "serde_yaml deprecated crate gone or justified; config round-trip green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-02"
+      ],
+      "depends_on_steps": [
+        "S1"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S6",
+      "work_package": "WP3",
+      "order": 6,
+      "action": "Write direct-dep one-line purpose table + DIY notes in AGENTS.md; bump ratatui/crossterm only if desired after M05; make ci; CHANGELOG Unreleased entry.",
+      "files": [
+        "AGENTS.md",
+        "REFERENCE.md",
+        "CHANGELOG.md",
+        "Cargo.toml",
+        "andre/Cargo.toml",
+        "Cargo.lock"
+      ],
+      "tests": "make ci",
+      "done_when": "Dep table complete; make ci green.",
+      "status": "done",
+      "covers_ac": [
+        "AC-03",
+        "AC-01"
+      ],
+      "depends_on_steps": [
+        "S2",
+        "S4",
+        "S5"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-24",
+    "branch": "",
+    "evidence": "make ci exit 0 (265 passed); AC-01..AC-05 passed; F-01 fixed (parse refactored + 12 cli unit tests). Removed: assert_cmd, predicates, dirs, thiserror, anyhow, clap, andre-core crossterm/anyhow dev-deps. Migrated serde_yaml->serde_yaml_ng. unicode-width retained (documented)."
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "parse_args replaced clap but reads std::env::args and calls process::exit inline, so it has no unit tests. Only 3 e2e binary tests cover a subset of flag forms. --help, unknown args, --config=VALUE, -cVALUE, missing-value, and --log-file are uncovered (L1: green tests do not imply correct behavior; L2: reproducers catch what suites miss). clap provided this coverage for free. Refactor to a pure parse(argv) -> Result<Args, UsageError> and add unit tests locking each flag form + error path.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-02",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "paths::config_dir claims to replace dirs::config_dir but on macOS dirs returned ~/Library/Application Support while DIY returns ~/.config (XDG). Docs already advertise XDG, so primary is correct, but macOS users who relied on the old dirs path lose silent discovery. ConfigSearch should also probe ~/Library/Application Support/andre on macOS (back-compat) and CHANGELOG should note the dual path; clarify paths.rs docs that product semantics are XDG-first, not full dirs parity.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/paths.rs",
+        "new_range": {
+          "start_line": 24,
+          "end_line": 24
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-03",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "CLI equals-attached forms accept empty values: --config=, --log-file=, and -c= (after '=' strip) set PathBuf::from(\"\") instead of Usage error. Space form correctly rejects empty via take_value. L2: empty path later fails confusingly at config load. Reject empty values for all value-taking forms and add unit tests.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/main.rs",
+        "new_range": {
+          "start_line": 104,
+          "end_line": 104
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-04",
+      "severity": "medium",
+      "category": "correctness",
+      "description": "fn main() -> Result<()> relies on std Termination which prints errors with Debug ({err:?}), not Display. Hand-written andre_core::Error Debug shows enum variants (e.g. Io(Os {..})) instead of the user-facing Display strings. Pre-anyhow this was softened by anyhow's Debug; now worse. Use try_main + eprintln!(\"{e}\") + exit(1) so users see Display messages.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/main.rs",
+        "new_range": {
+          "start_line": 202,
+          "end_line": 202
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-05",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "Workspace/crate Cargo.toml files lost trailing newlines (Cargo.toml, andre/Cargo.toml, andre-core/Cargo.toml). POSIX text files should end with newline; some tools and git diffs are noisier without it. Restore final newlines.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "Cargo.toml",
+        "new_range": {
+          "start_line": 1,
+          "end_line": 1
+        },
+        "side": "new"
+      }
+    }
+  ]
+}

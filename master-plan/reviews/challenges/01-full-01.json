@@ -1,0 +1,49 @@
+{
+  "challenge": {
+    "id": "CH-01-01",
+    "milestone_id": "01",
+    "scope": "full",
+    "status": "closed",
+    "created": "2026-07-23",
+    "closed": "2026-07-23",
+    "summary": ""
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "major",
+      "category": "gap",
+      "title": "AC-01 verification not machine-resolvable",
+      "description": "verify-ac status=unknown: compound prose (Woodpecker + cargo). Runner cannot auto-verify. Split into cargo test target + optional CI note, or use a single resolvable command.",
+      "target": "AC-01",
+      "status": "dismissed",
+      "resolution": "Rewrote AC-01 verification to cargo test config_persistence",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-02",
+      "severity": "major",
+      "category": "gap",
+      "title": "AC-03 is pure manual, untestable in CI",
+      "description": "Manual andre run cannot gate complete. Prefer design_decision + code assertion that App::new defaults to dirs::home_dir / with_home is test-only, or drop AC-03 and cover via unit test of default path.",
+      "target": "AC-03",
+      "status": "dismissed",
+      "resolution": "Reframed AC-03 + design_decision for production home default",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-03",
+      "severity": "minor",
+      "category": "scope",
+      "title": "S3 bundles local suite + remote CI push",
+      "description": "done_when requires Woodpecker green on wip and stable — agent cannot complete without network/CI access and may need human. Split: S3 local make ci; optional S4 or track for CI confirmation.",
+      "target": "S3",
+      "status": "dismissed",
+      "resolution": "S3 local-only; CI is human follow-up",
+      "action": "no-change",
+      "action_ref": ""
+    }
+  ]
+}

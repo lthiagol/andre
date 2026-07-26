@@ -1,0 +1,12 @@
+[package]
+name = 'andre-core'
+version = '0.2.0'
+edition = '2021'
+
+[dependencies]
+serde = { workspace = true, features = ['derive'] }
+serde_yaml_ng = { workspace = true }
+pathdiff = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

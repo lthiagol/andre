@@ -1,0 +1,376 @@
+{
+  "milestone": {
+    "id": "05",
+    "title": "TUI architecture hardening (herdr-inspired seams)",
+    "slug": "tui-architecture-hardening-herdr-inspired-seams",
+    "lifecycle": "complete",
+    "spec_status": "verified",
+    "execution_status": "done",
+    "blocked": false,
+    "needs_regrooming": false,
+    "cancelled": false,
+    "deferred": false,
+    "deferred_reason": "",
+    "depends_on": [],
+    "effort": "S",
+    "risk": "low",
+    "change_kind": "",
+    "priority": "high",
+    "created": "2026-07-24",
+    "updated": "2026-07-24",
+    "blocked_at": "",
+    "block_reason": "",
+    "blocked_by": "",
+    "target_version": "",
+    "executed_by": "",
+    "lifecycle_at": "2026-07-24T14:36:22.062600+00:00"
+  },
+  "intent": {
+    "outcome": "Execute and chrome can be tested and extended without mutate-during-paint and without dropping async runtime handles at navigation boundaries. Render is effectively a pure draw of prepared state; App owns long-lived execute runtime."
+  },
+  "problem": {
+    "description": "ui::render takes &mut App and components mutate viewport/scroll during paint; Confirm discards AsyncExecutor so abort cannot be owned for Execute lifetime. That caused false-green tests and dead cancel paths. M04 landed toast on AppContext; deeper seams remain. Predictable fix: pure-ish paint for execute/chrome path + App-owned execute runtime before dep cleanup and native engine touch the same files."
+  },
+  "scope": {
+    "in_scope": [
+      "prepare/layout vs paint for the main ui::render path and ExecuteComponent at minimum (viewport/scroll bookkeeping not only inside paint)",
+      "Other screens: batch cheap prepare if touched; full conversion of every screen is nice-to-have, not a gate",
+      "Keep Component stack; adjust trait only as needed for snapshot paint",
+      "App owns AsyncExecutor or AbortHandle while Execute is on the stack; Confirm must not drop the only handle",
+      "App::update_components drains ExecutionUpdate into active ExecuteComponent; toast tick remains on App update",
+      "Add at least one automated assertion that execute progress advances via App-owned drain (tui_e2e and/or a focused test)",
+      "Render + interaction + tui_e2e green",
+      "AGENTS principles already present — S4 only tweaks if code diverges; gitignore already set"
+    ],
+    "out_of_scope": [
+      "ratatui major version bump (M06 S6 only, after this milestone)",
+      "Full AppEvent enum for every future feature",
+      "Ctrl+C cancel product UX (ownership only)",
+      "Server/client, plugins, IPC",
+      "Native link engine (M07)",
+      "Dependency DIY / serde_yaml (M06)",
+      "Rewriting screen body UIs or toast product (M04 done)",
+      "Converting every Component to pure &self paint in one PR if Execute + ui::render are fixed"
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "description": "ui::render paint path and ExecuteComponent do not rely on mutating viewport/scroll only during paint; prepare/update owns bookkeeping; cargo test --test render green",
+      "verification": "cargo test --test render",
+      "status": "passed",
+      "evidence": "make test exit 0 (lint + 250 tests green); per-AC evidence recorded via ac pass; F-04 fixed (regression test), F-01 accepted residual (in-scope nice-to-have), F-02/F-03 accidental-probe disposal"
+    },
+    {
+      "id": "AC-02",
+      "description": "AsyncExecutor (or its AbortHandle) is owned by App for the lifetime of Execute; Confirm does not drop the only handle; tui_e2e stow flow still completes",
+      "verification": "cargo test --test tui_e2e",
+      "status": "passed",
+      "evidence": "make test exit 0 (lint + 250 tests green); per-AC evidence recorded via ac pass; F-04 fixed (regression test), F-01 accepted residual (in-scope nice-to-have), F-02/F-03 accidental-probe disposal"
+    },
+    {
+      "id": "AC-03",
+      "description": "App drains ExecutionUpdate on update into Execute; toast tick still runs; proven by tui_e2e completion and/or interaction/unit assertion of progress after App::update_components",
+      "verification": "cargo test --test tui_e2e",
+      "status": "passed",
+      "evidence": "make test exit 0 (lint + 250 tests green); per-AC evidence recorded via ac pass; F-04 fixed (regression test), F-01 accepted residual (in-scope nice-to-have), F-02/F-03 accidental-probe disposal"
+    },
+    {
+      "id": "AC-04",
+      "description": "AGENTS.md documents state/runtime/render principles and ratatui references; master-plan/.mp/ and .local/ remain gitignored",
+      "verification": "manual: AGENTS.md has state/runtime/render principles and Ratatui references section; .gitignore contains master-plan/.mp/ and .local/",
+      "status": "passed",
+      "evidence": "make test exit 0 (lint + 250 tests green); per-AC evidence recorded via ac pass; F-04 fixed (regression test), F-01 accepted residual (in-scope nice-to-have), F-02/F-03 accidental-probe disposal"
+    }
+  ],
+  "design_decisions": [
+    {
+      "area": "scope vs herdr",
+      "choice": "Borrow seams only (pure state, actions, pure render, AppEvent). Do not adopt server/client or plugins.",
+      "rationale": "andre is a single-process stow TUI; depth without herdr's product surface."
+    },
+    {
+      "area": "Component trait",
+      "choice": "Keep Component stack; thin adapters call pure actions and render from snapshots",
+      "rationale": "Lowest-churn path; existing navigation/Transition model stays."
+    },
+    {
+      "area": "ratatui version",
+      "choice": "Defer ratatui major bump to M06 unless a WP1 API forces it; M05 stays on current pin",
+      "rationale": "Keeps architecture seams reviewable without coupling to a dependency bump; M06 owns supply-chain."
+    },
+    {
+      "area": "AppEvent scope",
+      "choice": "Minimal: drain ExecutionUpdate (+ existing toast tick). Full enum for all future events optional/later.",
+      "rationale": "Avoid over-design; fix Confirm/Execute ownership first."
+    },
+    {
+      "area": "Component trait",
+      "choice": "Keep Component stack and Transition; thin adapters over pure paint/prepare",
+      "rationale": "Lowest churn; matches existing tests and navigation."
+    },
+    {
+      "area": "execution order",
+      "choice": "M05 first; M06 depends_on 05; M07 depends_on 05 and 06. Do not parallelize file-heavy work across these three.",
+      "rationale": "Shared app.rs/confirm.rs/execute.rs/config.rs; predictable single-writer execution."
+    },
+    {
+      "area": "effort-risk",
+      "choice": "effort M, risk medium (trait/signature churn + async ownership)",
+      "rationale": "Under-scoped as S/low would mislead runners."
+    }
+  ],
+  "work_packages": [
+    {
+      "id": "WP1",
+      "name": "Pure render seam",
+      "goal": "Separate prepare/layout mutations from paint so draw uses stable state.",
+      "rollback": "Restore viewport/scroll updates inside component.render / ui::render &mut path."
+    },
+    {
+      "id": "WP2",
+      "name": "App-owned execute runtime",
+      "goal": "App owns AsyncExecutor/AbortHandle while Execute is active; drains ExecutionUpdate on update.",
+      "rollback": "Confirm drops executor again; Execute owns rx only."
+    },
+    {
+      "id": "WP3",
+      "name": "Docs consistency",
+      "goal": "Keep AGENTS architecture notes aligned with the new seams; gitignore already set.",
+      "rollback": "Revert AGENTS wording if needed."
+    }
+  ],
+  "steps": [
+    {
+      "id": "S1",
+      "work_package": "WP1",
+      "order": 1,
+      "action": "Introduce prepare/layout path for ui::render + ExecuteComponent at minimum: move viewport_height and scroll page bookkeeping out of paint. Other screens only if cheap. Prefer & paint where practical.",
+      "files": [
+        "andre/src/ui/mod.rs",
+        "andre/src/components/mod.rs",
+        "andre/src/components/execute.rs",
+        "andre/src/app.rs",
+        "andre/tests/render.rs"
+      ],
+      "tests": "cargo test --test render",
+      "done_when": "Execute prepare/paint split done; render suite green; no Execute viewport mutation solely inside paint.",
+      "status": "done",
+      "covers_ac": [
+        "AC-01"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S2",
+      "work_package": "WP2",
+      "order": 2,
+      "action": "Store AsyncExecutor or AbortHandle on App when Confirm starts execute; ExecuteComponent receives rx (and applies drained updates); Confirm must not drop the only handle.",
+      "files": [
+        "andre/src/app.rs",
+        "andre/src/components/confirm.rs",
+        "andre/src/components/execute.rs",
+        "andre/src/execute.rs",
+        "andre/tests/tui_e2e.rs"
+      ],
+      "tests": "cargo test --test tui_e2e",
+      "done_when": "Confirm keeps App-owned handle alive; tui_e2e full stow completes.",
+      "status": "done",
+      "covers_ac": [
+        "AC-02",
+        "AC-03"
+      ],
+      "depends_on_steps": [],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S3",
+      "work_package": "WP2",
+      "order": 3,
+      "action": "Wire App::update_components to drain ExecutionUpdate into active Execute after S2; keep toast tick; add assertion if tui_e2e alone is insufficient.",
+      "files": [
+        "andre/src/app.rs",
+        "andre/tests/interaction.rs"
+      ],
+      "tests": "cargo test --test tui_e2e",
+      "done_when": "Progress/results advance via App drain; tui_e2e green; toast still auto-dismisses.",
+      "status": "done",
+      "covers_ac": [
+        "AC-03"
+      ],
+      "depends_on_steps": [
+        "S2"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    },
+    {
+      "id": "S4",
+      "work_package": "WP3",
+      "order": 4,
+      "action": "Align AGENTS.md architecture notes with implemented seams if signatures/ownership changed; confirm .gitignore still has master-plan/.mp/ and .local/.",
+      "files": [
+        "AGENTS.md",
+        ".gitignore"
+      ],
+      "tests": "cargo test --test render",
+      "done_when": "AGENTS principles match code; gitignore entries present.",
+      "status": "done",
+      "covers_ac": [
+        "AC-04"
+      ],
+      "depends_on_steps": [
+        "S1",
+        "S2"
+      ],
+      "claimed_by": "",
+      "claimed_at": "",
+      "lease_expires_at": "",
+      "evidence": ""
+    }
+  ],
+  "verification": {
+    "date": "2026-07-24",
+    "branch": "",
+    "evidence": "make test exit 0 (lint + 250 tests green); per-AC evidence recorded via ac pass; F-04 fixed (regression test), F-01 accepted residual (in-scope nice-to-have), F-02/F-03 accidental-probe disposal"
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "The prepare seam is introduced and wired into ui::render, but only Execute and Confirm migrate viewport bookkeeping out of paint. help, status, package_select, and group_select still assign self.viewport_height inside render(). Explicitly within M05 scope (full conversion is nice-to-have, not a gate; out-of-scope: converting every Component in one PR), but recorded so the seam is not left half-finished. Follow-up for a later milestone.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-02",
+      "severity": "high",
+      "category": "maintainability",
+      "description": "probe",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-03",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "probe",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-04",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "AC-01 'no Execute viewport mutation during paint' is guaranteed only by code inspection, not by an automated test. render.rs stays green even if a future refactor moves the viewport_height assignment back into ExecuteComponent::render (L1: green tests do not imply correct behavior). Add a regression test asserting prepare owns viewport_height and render does not reassign it.",
+      "status": "fixed",
+      "author": "",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "self"
+    },
+    {
+      "id": "F-05",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "CHANGELOG.md Unreleased has no M05 entry. AGENTS.md requires each feature/change on wip to add an Unreleased changelog note; prepare/paint seam + App-owned AsyncExecutor are user-visible architecture changes. Add a Changed bullet under Unreleased.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "CHANGELOG.md",
+        "new_range": {
+          "start_line": 10,
+          "end_line": 10
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-06",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "AsyncExecutor hand-off uses AppContext.pending_executor side-channel: (1) couples every AppContext fixture to execute runtime, (2) process_transition takes pending then immediately drops it when top!=Execute (silent abort-handle loss if staging is wrong), (3) Confirm mutates ctx as a second return path beside Transition. Carry the executor on Transition::Replace (Option<AsyncExecutor>) and remove pending_executor from AppContext.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/mod.rs",
+        "new_range": {
+          "start_line": 74,
+          "end_line": 74
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-07",
+      "severity": "low",
+      "category": "maintainability",
+      "description": "App::process_transition comments claim releasing executor closes the spawned task sender so the channel shuts down. False: AsyncExecutor::spawn keeps tx_clone inside the task; dropping App.executor only drops an extra Sender + AbortHandle (abort capability). Rewrite comments to describe abort ownership, not channel liveness.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/app.rs",
+        "new_range": {
+          "start_line": 106,
+          "end_line": 106
+        },
+        "side": "new"
+      }
+    },
+    {
+      "id": "F-08",
+      "severity": "medium",
+      "category": "maintainability",
+      "description": "Self F-01 residual still open in code: prepare seam is wired in ui::render, but help, status, package_select, and group_select still assign self.viewport_height inside render(). M05 in-scope allowed partial migration; external review closes the seam for all viewport-owning list screens so paint is consistently prepare-then-draw.",
+      "status": "fixed",
+      "author": "external-agent",
+      "fixed_in": "",
+      "created": "2026-07-24",
+      "resolved": "2026-07-24",
+      "phase": "external",
+      "anchor": {
+        "path": "andre/src/components/help/mod.rs",
+        "new_range": {
+          "start_line": 51,
+          "end_line": 51
+        },
+        "side": "new"
+      }
+    }
+  ]
+}

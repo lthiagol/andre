@@ -1,0 +1,61 @@
+{
+  "challenge": {
+    "id": "CH-03-01",
+    "milestone_id": "03",
+    "scope": "full",
+    "status": "closed",
+    "created": "2026-07-23",
+    "closed": "2026-07-23",
+    "summary": ""
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "blocker",
+      "category": "gap",
+      "title": "Problem overstates current execute UI gap",
+      "description": "Execute already has spinner, per-package rows, n/total text, completion summary (ui/execute.rs). Only ratatui Gauge is clearly missing. 'no at-a-glance per-package status' is false.",
+      "target": "problem",
+      "status": "dismissed",
+      "resolution": "Rewrote problem; Gauge is remaining gap",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-02",
+      "severity": "major",
+      "category": "risk",
+      "title": "StowStatus icon reuse is a design conflict",
+      "description": "Status icons are stow-check semantics (stowed/partial/conflict/missing). Execute rows are success/fail of a run. Blind reuse is wrong. Need design_decision: map exec outcomes to a small icon set, or keep exec-local icons and drop 'reuse Status icon set' from in_scope.",
+      "target": "AC-02",
+      "status": "dismissed",
+      "resolution": "design_decision keeps exec icons; StowStatus out of scope",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-03",
+      "severity": "major",
+      "category": "step-quality",
+      "title": "S2 and S3 are already implemented",
+      "description": "S2 rows and S3 summary exist. Leave as verify/polish steps with done evidence, or remove and keep Gauge-only scope so effort matches remaining work.",
+      "target": "steps",
+      "status": "dismissed",
+      "resolution": "S2/S3 are preserve/verify under gauge",
+      "action": "no-change",
+      "action_ref": ""
+    },
+    {
+      "id": "F-04",
+      "severity": "major",
+      "category": "coverage",
+      "title": "ACs lack automated verification",
+      "description": "Seed ExecuteComponent in render/e2e tests and assert gauge/summary text. manual alone is weak for approved ready milestone.",
+      "target": "AC",
+      "status": "dismissed",
+      "resolution": "ACs use render + tui_e2e",
+      "action": "no-change",
+      "action_ref": ""
+    }
+  ]
+}
