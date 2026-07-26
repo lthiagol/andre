@@ -9,6 +9,10 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ## [Unreleased]
 
+### Changed
+
+- Package version bumped to `1.0.0-rc1` (git tag `v1.0.0-rc1`) for the GitHub release line.
+
 ### Added
 
 - Makefile ergonomics: `fmt-check`, `ci`, `run`, `screenshots`, `doctor`, `deps`, `nextest`, `watch`, `release-assets`, plus a `demo/` fixture for local TUI runs.
