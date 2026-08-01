@@ -24,7 +24,7 @@
     {
       "id": "TW-02",
       "title": "Main Menu number keys 1-7",
-      "status": "in-progress",
+      "status": "done",
       "effort": "S",
       "problem": "MainMenuComponent labels show 1-7 but only Enter activates; digit keys should select the Nth item.",
       "done_when": "Keys 1-7 dispatch the same transitions as Enter on that index; footer MainMenu hints mention digits.",
@@ -32,9 +32,9 @@
       "steps": [
         "Handle KeyCode::Char('1'..='7') in menu.rs; add interaction tests; update footer MainMenu hint line if present."
       ],
-      "evidence": "",
+      "evidence": "Commit 1e3b875. make ci: 291 tests run, 291 passed (was 288; +3 new interaction tests: test_digit_key_jumps_and_activates, test_digit_key_out_of_range_is_ignored, test_digit_key_updates_highlight_for_next_enter). Footer hint test extended (test_footer_context_hints_per_screen_family asserts 'jump' fragment renders). GitHub Actions wip-ci.yml run 30711114758 on push to wip: green.",
       "created": "2026-07-23",
-      "completed": "",
+      "completed": "2026-08-01",
       "archived_at": ""
     }
   ]
