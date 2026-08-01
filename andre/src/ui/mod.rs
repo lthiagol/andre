@@ -84,8 +84,14 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_banner(frame, v[0], &colors);
     let stack_ids: Vec<&'static str> = app.component_stack.iter().map(|c| c.id()).collect();
     let screen_id = stack_ids.last().copied().unwrap_or("");
-    // Refresh the breadcrumb so panel titles below can read it via ctx.
-    app.ctx.breadcrumb = format_breadcrumb(&stack_ids);
+    // Refresh the breadcrumb only when the stack actually changes — the
+    // rendered chrome stays correct on every frame and `format_breadcrumb`
+    // doesn't allocate a fresh Vec + String on the ~10 fps redraw path.
+    if app.ctx.breadcrumb_cache != stack_ids {
+        app.ctx.breadcrumb = format_breadcrumb(&stack_ids);
+        app.ctx.breadcrumb_cache.clear();
+        app.ctx.breadcrumb_cache.extend(stack_ids.iter().copied());
+    }
     render_status_bar(
         frame,
         v[2],

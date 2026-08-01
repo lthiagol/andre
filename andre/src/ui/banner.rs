@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Style},
@@ -20,49 +22,57 @@ const LETTERS: [char; 5] = ['A', 'N', 'D', 'R', 'E'];
 
 const TAGLINE: &str = "Another Neat Dotfile Repository Engine";
 
-fn big_title() -> Vec<Line<'static>> {
-    let bw = "\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}"
-        .chars()
-        .count();
-    let n = LETTERS.len();
-    let top_count = n.div_ceil(2);
-    let stride = TAGLINE.chars().count().saturating_sub(bw) / top_count.saturating_sub(1).max(1);
-    let offset = stride / 2;
-    let total_width = stride * top_count.saturating_sub(1) + bw;
+/// Built once per process. The banner content is fully static — rebuilding
+/// it on every render frame was pure waste (5 `format!()` calls + Vec
+/// allocations per row × 4 rows × every redraw).
+static TITLE: OnceLock<Vec<Line<'static>>> = OnceLock::new();
 
-    let mut lines: Vec<Line<'static>> = Vec::with_capacity(4);
-    for r in 0..4usize {
-        let mut items: Vec<(usize, Color, String)> = Vec::new();
-        for (i, &color) in BIG_COLORS.iter().enumerate() {
-            let base_row = i % 2;
-            let rib = r as isize - base_row as isize;
-            if !(0..=2).contains(&rib) {
-                continue;
+fn big_title() -> &'static [Line<'static>] {
+    TITLE.get_or_init(|| {
+        let bw = "\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}"
+            .chars()
+            .count();
+        let n = LETTERS.len();
+        let top_count = n.div_ceil(2);
+        let stride =
+            TAGLINE.chars().count().saturating_sub(bw) / top_count.saturating_sub(1).max(1);
+        let offset = stride / 2;
+        let total_width = stride * top_count.saturating_sub(1) + bw;
+
+        let mut lines: Vec<Line<'static>> = Vec::with_capacity(4);
+        for r in 0..4usize {
+            let mut items: Vec<(usize, Color, String)> = Vec::new();
+            for (i, &color) in BIG_COLORS.iter().enumerate() {
+                let base_row = i % 2;
+                let rib = r as isize - base_row as isize;
+                if !(0..=2).contains(&rib) {
+                    continue;
+                }
+                let col = (i / 2) * stride + (i % 2) * offset;
+                let text = match rib {
+                    0 => "\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}".to_string(),
+                    1 => format!("\u{2551} {}. \u{2551}", LETTERS[i]),
+                    _ => "\u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}".to_string(),
+                };
+                items.push((col, color, text));
             }
-            let col = (i / 2) * stride + (i % 2) * offset;
-            let text = match rib {
-                0 => "\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}".to_string(),
-                1 => format!("\u{2551} {}. \u{2551}", LETTERS[i]),
-                _ => "\u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}".to_string(),
-            };
-            items.push((col, color, text));
-        }
-        items.sort_by_key(|(c, _, _)| *c);
-        let mut spans: Vec<Span> = Vec::new();
-        let mut cursor = 0usize;
-        for (col, color, text) in items {
-            if col > cursor {
-                spans.push(Span::raw(" ".repeat(col - cursor)));
+            items.sort_by_key(|(c, _, _)| *c);
+            let mut spans: Vec<Span> = Vec::new();
+            let mut cursor = 0usize;
+            for (col, color, text) in items {
+                if col > cursor {
+                    spans.push(Span::raw(" ".repeat(col - cursor)));
+                }
+                spans.push(Span::styled(text, Style::default().fg(color)));
+                cursor = col + bw;
             }
-            spans.push(Span::styled(text, Style::default().fg(color)));
-            cursor = col + bw;
+            if cursor < total_width {
+                spans.push(Span::raw(" ".repeat(total_width - cursor)));
+            }
+            lines.push(Line::from(spans));
         }
-        if cursor < total_width {
-            spans.push(Span::raw(" ".repeat(total_width - cursor)));
-        }
-        lines.push(Line::from(spans));
-    }
-    lines
+        lines
+    })
 }
 
 pub fn render_banner(frame: &mut Frame, area: Rect, colors: &ThemeColors) {
@@ -84,8 +94,9 @@ pub fn render_banner(frame: &mut Frame, area: Rect, colors: &ThemeColors) {
     }
 
     let title = big_title();
-    let mut rows = vec![Line::from("")];
-    rows.extend(title);
+    let mut rows: Vec<Line<'static>> = Vec::with_capacity(title.len() + 3);
+    rows.push(Line::from(""));
+    rows.extend(title.iter().cloned());
     rows.push(Line::from(""));
     rows.push(Line::from(TAGLINE));
 

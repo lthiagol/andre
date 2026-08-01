@@ -71,6 +71,11 @@ pub struct AppContext {
     /// `"Main > Groups > bash-env"`). Refreshed each frame in
     /// `ui::render`; components read it when building panel titles.
     pub breadcrumb: String,
+    /// Last component stack we formatted `breadcrumb` for. The render loop
+    /// compares the live stack to this Vec and only re-runs `format_breadcrumb`
+    /// (which allocates a Vec + String) when it changes — typically rare
+    /// (Enter/Esc transitions), not per-frame.
+    pub breadcrumb_cache: Vec<&'static str>,
 }
 
 /// Input mode for a component. Controls whether global shortcuts are active.
