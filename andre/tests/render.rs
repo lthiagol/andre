@@ -572,6 +572,16 @@ fn test_footer_context_hints_per_screen_family() {
             "footer hint missing for {name:?}: expected fragment {fragment:?}"
         );
     }
+
+    // MainMenu advertises 1–7 jump alongside the arrows + Enter.
+    // Guarded separately so the digit-key feature is observable from
+    // rendered output, not just dispatch logic.
+    let (mut app, _tmp) = make_test_app();
+    let buf = render_app(&mut app, 120, 24);
+    assert!(
+        line_contains(&buf, "jump"),
+        "MainMenu footer must advertise the 1–7 jump hint"
+    );
 }
 
 #[test]

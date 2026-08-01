@@ -41,19 +41,25 @@ impl Component for MainMenuComponent {
             self.index = (self.index + items_len - 1) % items_len;
         } else if input::Input::is_down(&key) {
             self.index = (self.index + 1) % items_len;
-        } else if key.code == KeyCode::Enter {
-            return match self.index {
-                0 => Transition::Push(Box::new(GroupSelectComponent::default())),
-                1 => Transition::Push(Box::new(AdoptTargetSelectComponent::default())),
-                2 => Transition::Push(Box::new(UnstowTargetSelectComponent::default())),
-                3 => Transition::Push(Box::new(StatusComponent::default())),
-                4 => Transition::Push(Box::new(SettingsComponent::default())),
-                5 => Transition::Push(Box::new(HelpComponent::default())),
-                6 => Transition::Quit,
-                _ => Transition::None,
-            };
         } else if input::Input::is_quit_key(&key) {
+            // q and Ctrl+C: checked before the Char arm so the digit
+            // dispatcher never swallows Ctrl+C / Ctrl+1 / etc.
             return Transition::Quit;
+        } else if key.code == KeyCode::Enter {
+            return self.activate(self.index);
+        } else if let KeyCode::Char(c) = key.code {
+            // Unmodified digit keys 1..=7 jump to and activate the Nth menu
+            // item, matching the labels rendered in `render`. '0' and '8'..='9'
+            // are out of range and ignored so they cannot crash input.
+            if key.modifiers.is_empty() {
+                if let Some(d) = c.to_digit(10) {
+                    if (1..=items_len as u32).contains(&d) {
+                        let idx = (d - 1) as usize;
+                        self.index = idx;
+                        return self.activate(idx);
+                    }
+                }
+            }
         }
 
         Transition::None
@@ -83,5 +89,22 @@ impl Component for MainMenuComponent {
         state.select(Some(self.index));
 
         frame.render_stateful_widget(list, area, &mut state);
+    }
+}
+
+impl MainMenuComponent {
+    /// Activate the Nth menu item. Extracted so digit-key dispatch and
+    /// Enter share the same transition table.
+    fn activate(&self, index: usize) -> Transition {
+        match index {
+            0 => Transition::Push(Box::new(GroupSelectComponent::default())),
+            1 => Transition::Push(Box::new(AdoptTargetSelectComponent::default())),
+            2 => Transition::Push(Box::new(UnstowTargetSelectComponent::default())),
+            3 => Transition::Push(Box::new(StatusComponent::default())),
+            4 => Transition::Push(Box::new(SettingsComponent::default())),
+            5 => Transition::Push(Box::new(HelpComponent::default())),
+            6 => Transition::Quit,
+            _ => Transition::None,
+        }
     }
 }

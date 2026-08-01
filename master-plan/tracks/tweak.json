@@ -24,7 +24,7 @@
     {
       "id": "TW-02",
       "title": "Main Menu number keys 1-7",
-      "status": "pending",
+      "status": "in-progress",
       "effort": "S",
       "problem": "MainMenuComponent labels show 1-7 but only Enter activates; digit keys should select the Nth item.",
       "done_when": "Keys 1-7 dispatch the same transitions as Enter on that index; footer MainMenu hints mention digits.",

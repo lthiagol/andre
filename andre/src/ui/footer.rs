@@ -50,6 +50,8 @@ pub fn render_footer(frame: &mut Frame, area: Rect, colors: &ThemeColors, screen
             "MainMenu" => vec![
                 arrows,
                 Span::raw(" navigate  "),
+                key_span("1\u{2013}7", colors),
+                Span::raw(" jump  "),
                 enter,
                 Span::raw(" select"),
             ],

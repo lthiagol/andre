@@ -139,6 +139,68 @@ fn test_enter_on_quit_sets_quit() {
     assert!(app.quitting);
 }
 
+#[test]
+fn test_digit_key_jumps_and_activates() {
+    // Each digit 1..=7 should jump straight to the Nth menu item and
+    // produce the same transition as Enter on that index. Mirrors the
+    // `test_enter_on_*` block above but exercises the digit-key path.
+    let cases: [(char, &str); 7] = [
+        ('1', "GroupSelect"),
+        ('2', "AdoptTargetSelect"),
+        ('3', "UnstowTargetSelect"),
+        ('4', "Status"),
+        ('5', "Settings"),
+        ('6', "Help"),
+        ('7', "MainMenu"), // Quit pops to the still-mounted MainMenu via quitting
+    ];
+    for (digit, expected) in cases {
+        let (mut app, _) = make_test_app();
+        app.component_dispatch(key_char(digit));
+        // '7' quits; on quit the top remains MainMenu and `quitting` is true.
+        if digit == '7' {
+            assert!(app.quitting, "digit '7' should set quitting");
+            assert_eq!(component_id(&app), expected);
+        } else {
+            assert_eq!(component_id(&app), expected, "digit '{digit}'");
+        }
+    }
+}
+
+#[test]
+fn test_digit_key_out_of_range_is_ignored() {
+    // '0' and '8'..='9' fall outside the 7-item menu and must not panic
+    // or change the highlighted index.
+    for c in ['0', '8', '9'] {
+        let (mut app, _) = make_test_app();
+        let before = menu(&app).index;
+        app.component_dispatch(key_char(c));
+        assert_eq!(
+            menu(&app).index,
+            before,
+            "digit '{c}' should not move the cursor"
+        );
+        assert_eq!(
+            component_id(&app),
+            "MainMenu",
+            "digit '{c}' should not push a screen"
+        );
+        assert!(!app.quitting, "digit '{c}' should not quit");
+    }
+}
+
+#[test]
+fn test_digit_key_updates_highlight_for_next_enter() {
+    // Pressing a digit must also move the highlight so a subsequent Enter
+    // confirms the same item. (Activate-on-press already gives feedback via
+    // the transition; this guards the index update itself.)
+    let (mut app, _) = make_test_app();
+    app.component_dispatch(key_char('4'));
+    // '4' would push Status — pop back, then press Enter and confirm Status again.
+    app.component_dispatch(esc_key());
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Status");
+}
+
 // --- Esc Back-Navigation ---
 
 #[test]
