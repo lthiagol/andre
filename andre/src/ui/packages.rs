@@ -29,10 +29,12 @@ pub struct FlatItem {
     pub preview: Vec<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_package_select(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     flat_items: &[FlatItem],
     cursor: usize,
     entered_at: Option<std::time::Instant>,
@@ -150,7 +152,7 @@ pub fn render_package_select(
         })
         .collect();
 
-    let list = List::new(items).block(crate::ui::themed_panel(colors).title("Select Packages"));
+    let list = List::new(items).block(crate::ui::themed_panel(colors).title(title));
 
     let page_size = list_area.height.saturating_sub(2).max(1) as usize;
 

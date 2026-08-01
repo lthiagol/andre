@@ -65,6 +65,7 @@ impl Component for StatusComponent {
             frame,
             area,
             &colors,
+            &ctx.breadcrumb,
             &ctx.core.config,
             &ctx.config_dir,
             &ctx.home_dir,

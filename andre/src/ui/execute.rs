@@ -88,13 +88,14 @@ pub fn render_execute(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     state: ExecutionState,
     results: &[ExecutionResult],
     spinner_frame: usize,
     total: usize,
     scroll_index: Option<usize>,
 ) {
-    let block = crate::ui::themed_panel(colors).title("Execution");
+    let block = crate::ui::themed_panel(colors).title(title);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 

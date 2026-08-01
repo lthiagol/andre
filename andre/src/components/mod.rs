@@ -67,6 +67,10 @@ pub struct AppContext {
     pub event_log: RefCell<Vec<LogEntry>>,
     /// Single toast; newer replaces older. Cleared by `tick_toast`.
     pub toast: Option<Toast>,
+    /// Pre-formatted breadcrumb for the current component stack (e.g.
+    /// `"Main > Groups > bash-env"`). Refreshed each frame in
+    /// `ui::render`; components read it when building panel titles.
+    pub breadcrumb: String,
 }
 
 /// Input mode for a component. Controls whether global shortcuts are active.

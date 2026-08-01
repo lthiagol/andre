@@ -100,10 +100,12 @@ impl Component for ConfirmComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
+        let title = format!(" {} > Review Commands ", ctx.breadcrumb);
         crate::ui::render_confirm(
             frame,
             area,
             &colors,
+            &title,
             &self.selected_packages,
             &self.action,
             &ctx.core.config,

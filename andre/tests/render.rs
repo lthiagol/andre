@@ -589,8 +589,8 @@ fn test_breadcrumb_shows_root() {
     let (mut app, _) = make_test_app();
     let buf = render_app(&mut app, 120, 24);
     assert!(
-        status_bar_contains(&buf, "Main"),
-        "root breadcrumb segment missing on status bar"
+        line_contains(&buf, "Main > Main Menu"),
+        "root breadcrumb segment missing from panel title"
     );
 }
 
@@ -600,7 +600,7 @@ fn test_breadcrumb_updates_on_stack_push() {
     push_screen(&mut app, "Settings");
     let buf = render_app(&mut app, 120, 24);
     assert!(
-        status_bar_contains(&buf, "Main > Config"),
+        line_contains(&buf, "Main > Config"),
         "breadcrumb did not reflect MainMenu > Settings stack"
     );
 }
@@ -611,8 +611,8 @@ fn test_breadcrumb_updates_on_deeper_stack() {
     push_screen(&mut app, "Help");
     let buf = render_app(&mut app, 120, 24);
     assert!(
-        status_bar_contains(&buf, "Main > Help"),
-        "breadcrumb missing Help segment on status bar"
+        line_contains(&buf, "Main > Help"),
+        "breadcrumb missing Help segment from panel title"
     );
 }
 
@@ -622,9 +622,10 @@ fn test_status_toggles_still_live_with_breadcrumb() {
     app.ctx.core.verbosity = 2;
     app.ctx.core.dry_run = true;
     let buf = render_app(&mut app, 140, 24);
+    // Breadcrumb now lives in the panel title; toggles still live in the status bar.
     assert!(
-        status_bar_contains(&buf, "Main"),
-        "breadcrumb missing on status bar"
+        line_contains(&buf, "Main > Main Menu"),
+        "breadcrumb missing from panel title"
     );
     assert!(status_bar_contains(&buf, "2"), "verbosity toggle not live");
     assert!(
@@ -654,7 +655,7 @@ fn test_chrome_renders_across_themes() {
         push_screen(&mut app, "Settings");
         let buf = render_app(&mut app, 120, 24);
         assert!(
-            status_bar_contains(&buf, "Main > Config"),
+            line_contains(&buf, "Main > Config"),
             "breadcrumb missing under theme {:?}",
             theme.name()
         );

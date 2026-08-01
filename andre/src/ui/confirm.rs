@@ -17,6 +17,7 @@ pub fn render_confirm(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     selected_packages: &HashMap<String, Vec<String>>,
     action: &str,
     config: &Config,
@@ -98,7 +99,7 @@ pub fn render_confirm(
     );
 
     let total = items.len();
-    let list = List::new(items).block(crate::ui::themed_panel(colors).title("Review Commands"));
+    let list = List::new(items).block(crate::ui::themed_panel(colors).title(title));
 
     if total > viewport_height && area.width > 4 {
         let chunks = Layout::default()

@@ -105,10 +105,18 @@ impl Component for AdoptPreviewComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
+        // Title differs between preview and result states; both prepended
+        // with the breadcrumb so the panel tells you where you are.
+        let title = if self.execution_result.is_some() {
+            format!(" {} > Adoption Result ", ctx.breadcrumb)
+        } else {
+            format!(" {} > Adoption Plan Preview ", ctx.breadcrumb)
+        };
         crate::ui::render_adopt_preview(
             frame,
             area,
             &colors,
+            &title,
             self.cached_plan.as_ref(),
             self.execution_result.as_deref(),
         );

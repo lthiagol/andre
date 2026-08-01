@@ -170,10 +170,12 @@ impl Component for PackageSelectComponent {
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let flat_items = self.build_items(ctx);
         let colors = ThemeColors::from_theme(ctx.core.theme);
+        let title = format!(" {} > Select Packages ", ctx.breadcrumb);
         render_package_select(
             frame,
             area,
             &colors,
+            &title,
             &flat_items,
             self.cursor,
             self.entered_at,

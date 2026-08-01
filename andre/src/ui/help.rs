@@ -115,11 +115,12 @@ pub fn render_help(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     scroll_index: usize,
     viewport_height: usize,
 ) {
     let total = items(colors).len();
-    let list = List::new(items(colors)).block(crate::ui::themed_panel(colors).title("Help"));
+    let list = List::new(items(colors)).block(crate::ui::themed_panel(colors).title(title));
 
     if total > viewport_height && area.width > 4 {
         let chunks = Layout::default()

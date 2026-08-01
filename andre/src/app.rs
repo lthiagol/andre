@@ -62,6 +62,7 @@ impl App {
                 log_file,
                 event_log: std::cell::RefCell::new(Vec::new()),
                 toast: None,
+                breadcrumb: String::from("Main"),
             },
             quitting: false,
             onboard_mode: false,

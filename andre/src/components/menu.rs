@@ -83,7 +83,9 @@ impl Component for MainMenuComponent {
             .highlight_symbol(">> ")
             .highlight_style(Style::default().fg(colors.highlight))
             .style(Style::default().fg(colors.primary))
-            .block(crate::ui::themed_panel(&colors).title(" Main Menu "));
+            .block(
+                crate::ui::themed_panel(&colors).title(format!(" {} > Main Menu ", ctx.breadcrumb)),
+            );
 
         let mut state = ListState::default();
         state.select(Some(self.index));

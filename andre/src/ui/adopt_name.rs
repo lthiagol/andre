@@ -12,6 +12,7 @@ pub fn render_adopt_name(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     package_name: &str,
     existing_packages: &[String],
 ) {
@@ -55,7 +56,7 @@ pub fn render_adopt_name(
     }
 
     let paragraph = Paragraph::new(Text::from(lines))
-        .block(crate::ui::themed_panel(colors).title("Package Name"))
+        .block(crate::ui::themed_panel(colors).title(title))
         .alignment(Alignment::Left);
 
     frame.render_widget(paragraph, area);

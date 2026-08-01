@@ -12,6 +12,7 @@ pub fn render_adopt_confirm(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     selected_files: &[std::path::PathBuf],
 ) {
     let mut lines: Vec<Line> = Vec::new();
@@ -40,7 +41,7 @@ pub fn render_adopt_confirm(
     )));
 
     let paragraph = Paragraph::new(Text::from(lines))
-        .block(crate::ui::themed_panel(colors).title("Confirm Adoption"))
+        .block(crate::ui::themed_panel(colors).title(title))
         .alignment(Alignment::Left);
 
     frame.render_widget(paragraph, area);

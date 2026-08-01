@@ -80,10 +80,11 @@ impl Component for GroupSelectComponent {
                 .constraints([Constraint::Min(1), Constraint::Length(1)])
                 .split(area);
             let mut state = ListState::default();
+            let title = format!(" {} > Select Groups ", ctx.breadcrumb);
             let widget = GroupListWidget::new(
                 &ctx.core.config,
                 &colors,
-                "Select Groups",
+                &title,
                 self.cursor,
                 &ctx.config_dir,
                 &ctx.home_dir,
@@ -93,10 +94,11 @@ impl Component for GroupSelectComponent {
             render_scrollbar(frame, chunks[1], &colors, group_count, self.cursor);
         } else {
             let mut state = ListState::default();
+            let title = format!(" {} > Select Groups ", ctx.breadcrumb);
             let widget = GroupListWidget::new(
                 &ctx.core.config,
                 &colors,
-                "Select Groups",
+                &title,
                 self.cursor,
                 &ctx.config_dir,
                 &ctx.home_dir,

@@ -70,10 +70,12 @@ impl Component for UnstowConfirmComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
+        let title = format!(" {} > Unlink ", ctx.breadcrumb);
         crate::ui::render_unstow_confirm(
             frame,
             area,
             &colors,
+            &title,
             self.selected_path.as_ref(),
             self.unlink_error.as_deref(),
             self.unlink_success,

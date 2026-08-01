@@ -177,6 +177,7 @@ mod tests {
             log_file: None,
             event_log: std::cell::RefCell::new(Vec::new()),
             toast: None,
+            breadcrumb: String::from("Main"),
         };
 
         component.update(&mut ctx);

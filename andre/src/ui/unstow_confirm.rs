@@ -12,6 +12,7 @@ pub fn render_unstow_confirm(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     selected_path: Option<&std::path::PathBuf>,
     unlink_error: Option<&str>,
     unlink_success: bool,
@@ -29,7 +30,7 @@ pub fn render_unstow_confirm(
             Style::default().fg(colors.muted),
         )));
         let paragraph = Paragraph::new(Text::from(lines))
-            .block(crate::ui::themed_panel(colors).title("Unlink Result"))
+            .block(crate::ui::themed_panel(colors).title(title))
             .alignment(Alignment::Left);
         frame.render_widget(paragraph, area);
         return;
@@ -46,7 +47,7 @@ pub fn render_unstow_confirm(
             Style::default().fg(colors.muted),
         )));
         let paragraph = Paragraph::new(Text::from(lines))
-            .block(crate::ui::themed_panel(colors).title("Unlink Result"))
+            .block(crate::ui::themed_panel(colors).title(title))
             .alignment(Alignment::Left);
         frame.render_widget(paragraph, area);
         return;
@@ -86,7 +87,7 @@ pub fn render_unstow_confirm(
     )));
 
     let paragraph = Paragraph::new(Text::from(lines))
-        .block(crate::ui::themed_panel(colors).title("Confirm Unlink"))
+        .block(crate::ui::themed_panel(colors).title(title))
         .alignment(Alignment::Left);
 
     frame.render_widget(paragraph, area);

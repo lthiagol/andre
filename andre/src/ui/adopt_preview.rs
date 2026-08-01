@@ -13,6 +13,7 @@ pub fn render_adopt_preview(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     plan: Option<&AdoptionPlan>,
     result: Option<&str>,
 ) {
@@ -30,7 +31,7 @@ pub fn render_adopt_preview(
                 Style::default().fg(colors.muted),
             )),
         ]))
-        .block(crate::ui::themed_panel(colors).title("Adoption Result"))
+        .block(crate::ui::themed_panel(colors).title(title))
         .alignment(Alignment::Left);
         frame.render_widget(paragraph, area);
         return;
@@ -111,7 +112,7 @@ pub fn render_adopt_preview(
     )));
 
     let paragraph = Paragraph::new(Text::from(lines))
-        .block(crate::ui::themed_panel(colors).title("Adoption Plan Preview"))
+        .block(crate::ui::themed_panel(colors).title(title))
         .alignment(Alignment::Left);
 
     frame.render_widget(paragraph, area);

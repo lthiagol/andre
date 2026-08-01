@@ -31,7 +31,7 @@ pub use packages::build_flat_items;
 pub use packages::render_package_select;
 pub use settings::render_settings;
 pub use status::render_status;
-pub use status_bar::{format_breadcrumb, render_status_bar};
+pub use status_bar::{breadcrumb_label, format_breadcrumb, render_status_bar};
 pub use toast::render_toast;
 pub use unstow_browse::render_unstow_browse;
 pub use unstow_confirm::render_unstow_confirm;
@@ -84,6 +84,8 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_banner(frame, v[0], &colors);
     let stack_ids: Vec<&'static str> = app.component_stack.iter().map(|c| c.id()).collect();
     let screen_id = stack_ids.last().copied().unwrap_or("");
+    // Refresh the breadcrumb so panel titles below can read it via ctx.
+    app.ctx.breadcrumb = format_breadcrumb(&stack_ids);
     render_status_bar(
         frame,
         v[2],
@@ -96,7 +98,6 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         app.ctx.core.effective_action().as_str(),
         app.ctx.core.theme.name(),
         app.ctx.debug,
-        &stack_ids,
     );
 
     let h = Layout::default()

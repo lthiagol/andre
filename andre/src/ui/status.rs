@@ -21,6 +21,7 @@ pub fn render_status(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    breadcrumb: &str,
     config: &Config,
     config_dir: &Path,
     home_dir: &Path,
@@ -82,9 +83,12 @@ pub fn render_status(
     }
 
     let title = if total_packages > 0 {
-        format!("Stow Status ({} packages)", total_packages)
+        format!(
+            " {} > Stow Status ({} packages) ",
+            breadcrumb, total_packages
+        )
     } else {
-        "Stow Status".to_string()
+        format!(" {} > Stow Status ", breadcrumb)
     };
 
     let area_has_room = area.height > LEGEND_HEIGHT + 3;

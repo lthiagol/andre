@@ -102,10 +102,12 @@ impl Component for ExecuteComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = crate::theme::ThemeColors::from_theme(ctx.core.theme);
+        let title = format!(" {} > Execution ", ctx.breadcrumb);
         crate::ui::render_execute(
             frame,
             area,
             &colors,
+            &title,
             self.state,
             &self.results,
             self.spinner_frame,
@@ -140,6 +142,7 @@ mod tests {
             log_file: None,
             event_log: std::cell::RefCell::new(Vec::new()),
             toast: None,
+            breadcrumb: String::from("Main"),
         }
     }
 

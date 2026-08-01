@@ -40,6 +40,7 @@ impl Component for AdoptConfirmComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
-        crate::ui::render_adopt_confirm(frame, area, &colors, &self.selected_files);
+        let title = format!(" {} > Confirm Adoption ", ctx.breadcrumb);
+        crate::ui::render_adopt_confirm(frame, area, &colors, &title, &self.selected_files);
     }
 }

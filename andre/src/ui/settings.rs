@@ -225,6 +225,7 @@ pub fn render_settings(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    title: &str,
     config: &Config,
     config_path: &Path,
     config_dir: &Path,
@@ -279,7 +280,7 @@ pub fn render_settings(
     let list = List::new(list_items)
         .highlight_symbol(">> ")
         .highlight_style(Style::default().fg(colors.highlight))
-        .block(crate::ui::themed_panel(colors).title("Config"));
+        .block(crate::ui::themed_panel(colors).title(title));
 
     let viewport_height = area.height.saturating_sub(2).max(1) as usize;
     if total > viewport_height && area.width > 4 {
