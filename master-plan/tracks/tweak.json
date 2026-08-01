@@ -10,15 +10,15 @@
     {
       "id": "TW-01",
       "title": "Banner: A.N.D.R.E. boxed title + backronym tagline",
-      "status": "pending",
+      "status": "done",
       "effort": "S",
       "problem": "The title-screen banner still renders the old project name 'AWESOME STOW' (11 boxed letters in andre/src/ui/banner.rs) and the generic tagline 'The ultimate dotfiles manager'.",
       "done_when": "Banner renders A.N.D.R.E. and the backronym tagline on wide and narrow terminals; cargo test + clippy clean.",
       "verification": "Run andre; the banner shows 5 rainbow boxed letters A.N.D.R.E. (each '║ A. ║') and the tagline 'Another Neat Dotfile Repository Engine'.",
       "steps": [],
-      "evidence": "",
+      "evidence": "andre/src/ui/banner.rs:21 const LETTERS = ['A','N','D','R','E']; line 23 const TAGLINE = 'Another Neat Dotfile Repository Engine'. Cargo test -p andre --test render banner: test_banner_has_content passed (1/1, 0.01s). CHANGELOG 'Changed' entry for 42cd9a6 documents the rename. Code landed in 07fa302 (rsync from Codeberg where the rename had already been applied); the plan item was simply never closed out.",
       "created": "2026-07-23",
-      "completed": "",
+      "completed": "2026-08-01",
       "archived_at": ""
     },
     {
