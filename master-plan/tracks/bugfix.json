@@ -6,5 +6,20 @@
     "scope": "Small correctness fixes; no new features.",
     "created": "2026-07-23"
   },
-  "items": []
+  "items": [
+    {
+      "id": "BF-01",
+      "title": "CI: e2e scenario 14 was red since 42cd9a6",
+      "status": "done",
+      "effort": "S",
+      "problem": "Un-ignored test_scenario_14_config_relative_paths in 42cd9a6 without first making the fixture trackable. The fixture file tests/e2e/14-config-relative-paths/packages/test-pkg/.env was excluded by .gitignore (.env defense-in-depth rule), so a fresh clone had no packages/ directory and the binary's validate_sources rejected every config with 'Source directory not found: …/packages'. Local copies happened to have a stale .env on disk (leftover from an earlier session), which masked the bug and let the green 'make ci' lull reviewers. CHANGELOG entry on 42cd9a6 incorrectly claimed scenario 14 'needed no fixture change'.",
+      "done_when": "",
+      "verification": "make ci exits 0; fresh-clone simulation (rm -rf tests/e2e/14-config-relative-paths/packages, recreate only andre.yml + the renamed env file) passes 288/288; wip-ci.yml run on commit 2cd01bd is green.",
+      "steps": [],
+      "evidence": "Commit 2cd01bd; make ci: 288 tests run, 288 passed (local); GitHub Actions wip-ci.yml run 30710197338 on push to wip: 287 tests run, 287 passed (lint + test job, 1m4s)",
+      "created": "2026-08-01",
+      "completed": "2026-08-01",
+      "archived_at": ""
+    }
+  ]
 }
