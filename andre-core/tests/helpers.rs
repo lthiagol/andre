@@ -315,4 +315,28 @@ mod tests {
         let stow_path = TestEnv::stow_binary();
         assert!(stow_path.exists(), "stow binary should be in PATH");
     }
+
+    #[test]
+    fn test_from_scenario_panics_on_missing_fixture() {
+        // Regression for the inverted-condition bug fixed in 1ea831a:
+        // `from_scenario` used to gate on the destination tempdir and
+        // panic with "Fixture scenario ... not found" — the message and
+        // the condition it claimed to guard did not match. Guard against
+        // an actually-missing fixture directory producing a silent copy
+        // of nothing.
+        let bogus = "this-fixture-does-not-exist-zzz-9999";
+        let result = std::panic::catch_unwind(|| {
+            let _ = TestEnv::from_scenario(bogus);
+        });
+        let payload = result.expect_err("from_scenario should panic when fixture is missing");
+        let msg = payload
+            .downcast_ref::<String>()
+            .map(|s| s.as_str())
+            .or_else(|| payload.downcast_ref::<&'static str>().copied())
+            .unwrap_or("");
+        assert!(
+            msg.contains(bogus) && msg.contains("not found"),
+            "panic message should mention the scenario name and 'not found'; got: {msg:?}"
+        );
+    }
 }
