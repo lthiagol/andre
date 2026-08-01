@@ -50,25 +50,24 @@ impl TestEnv {
         let packages_source = fixture_source.join("packages");
         let target_source = fixture_source.join("target");
 
-        let config_path = temp_path.join("andre.yml");
-        let target_dir = temp_path.join("target");
-        let packages_dir = temp_path.join("packages");
-
-        if !config_path.exists() {
-            fs::copy(fixture_source.join("andre.yml"), &config_path)
-                .expect("Failed to copy andre.yml");
-            fs::create_dir_all(&target_dir).expect("Failed to create target dir");
-            if packages_source.exists() {
-                recurse_copy(&packages_source, &packages_dir).expect("Failed to copy packages");
-            }
-            if target_source.exists() {
-                recurse_copy(&target_source, &target_dir).expect("Failed to copy target dir");
-            }
-        } else {
+        if !fixture_source.is_dir() {
             panic!(
                 "Fixture scenario '{}' not found at {:?}",
                 scenario_name, fixture_source
             );
+        }
+
+        let config_path = temp_path.join("andre.yml");
+        let target_dir = temp_path.join("target");
+        let packages_dir = temp_path.join("packages");
+
+        fs::copy(fixture_source.join("andre.yml"), &config_path).expect("Failed to copy andre.yml");
+        fs::create_dir_all(&target_dir).expect("Failed to create target dir");
+        if packages_source.exists() {
+            recurse_copy(&packages_source, &packages_dir).expect("Failed to copy packages");
+        }
+        if target_source.exists() {
+            recurse_copy(&target_source, &target_dir).expect("Failed to copy target dir");
         }
 
         Self {
