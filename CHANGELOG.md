@@ -13,6 +13,10 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 - Package version bumped to `1.0.0-rc1` (git tag `v1.0.0-rc1`) for the GitHub release line.
 
+### Fixed
+
+- E2E scenario 14 (`test_scenario_14_config_relative_paths`) was silently broken on fresh clones: the fixture file `tests/e2e/14-config-relative-paths/packages/test-pkg/.env` was excluded by `.gitignore` (`.env` defense-in-depth rule), so a fresh checkout had no `packages/` directory and the binary's `validate_sources` rejected every config with "Source directory not found". Renamed the fixture file to `env` (non-ignored) so it now tracks in git, and updated the test assertion accordingly. CI on `wip` was red on every push since `42cd9a6` un-ignored the test without first making the fixture trackable.
+
 ### Added
 
 - Makefile ergonomics: `fmt-check`, `ci`, `run`, `screenshots`, `doctor`, `deps`, `nextest`, `watch`, `release-assets`, plus a `demo/` fixture for local TUI runs.
@@ -35,7 +39,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Fixed
 
-- E2E fixtures `08-defer-existing-target` and `09-override-existing-target` now ship a conflicting `target/.bashrc` so the conflict/FAILED assertions pass; re-enabled the three previously `#[ignore]`d e2e tests (08, 09, 14). Scenario 14 already resolved paths relative to the config file directory and needed no fixture change.
+- E2E fixtures `08-defer-existing-target` and `09-override-existing-target` now ship a conflicting `target/.bashrc` so the conflict/FAILED assertions pass; re-enabled both `#[ignore]`d tests (08, 09). Scenario 14 was *not* actually re-enabled by that commit — its fixture file `packages/test-pkg/.env` was (and remains) silently excluded by `.gitignore` (`.env` rule), so a fresh clone leaves the fixture incomplete and the binary fails `validate_sources` with "Source directory not found". Re-enabling 14 requires renaming the fixture to a non-ignored name; tracked separately.
 - `make coverage-check` awk script was syntactically broken (unbalanced quote, no crate-level totals in `llvm-cov --summary-only` output) and would never exit 0 even with thresholds met; rewritten as `scripts/coverage-check.py` consuming `cargo llvm-cov report --json` (M08).
 - `test_add_group_then_save_persists` fails on minimal Linux CI images with empty `/root` (M01).
 - Hermetic home injection extended to `make_empty_app` / `make_two_group_app`; unit tests cover `App::new` default home and `with_home` override (M01 external review).

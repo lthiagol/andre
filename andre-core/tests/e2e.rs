@@ -165,5 +165,5 @@ fn test_scenario_14_config_relative_paths() {
 
     assert!(output.status.success(), "stderr:\n{}", stderr);
 
-    env.assert_symlinks(&[(".env", "../packages/test-pkg/.env")]);
+    env.assert_symlinks(&[("env", "../packages/test-pkg/env")]);
 }

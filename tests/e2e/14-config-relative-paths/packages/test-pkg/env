@@ -1,0 +1,1 @@
+export PATH=/custom/bin:$PATH
