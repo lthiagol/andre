@@ -61,35 +61,69 @@ pub fn render_status_bar(
 
     let action_str = action.to_uppercase();
 
-    let val_str = |on: bool| -> &'static str {
+    let on_off = |on: bool| -> &'static str {
         if on {
             "ON "
         } else {
             "OFF"
         }
     };
+    let toggle_style =
+        |on: bool| -> Style { Style::default().fg(if on { colors.success } else { colors.error }) };
 
     let debug_str = if debug { "  [DEBUG]" } else { "" };
     let flags_plain = format!(
         "Verbosity:{}  Dry-Run:{}  No-Folding:{}  Adopt:{}  Dotfiles:{}  Action:{}  Theme:{}{}",
         verbosity,
-        val_str(dry_run),
-        val_str(no_folding),
-        val_str(adopt),
-        val_str(dotfiles),
+        on_off(dry_run),
+        on_off(no_folding),
+        on_off(adopt),
+        on_off(dotfiles),
         action_str,
         theme_name,
         debug_str,
     );
 
     // Flags only — centered. Breadcrumb moved into each screen's panel title.
+    // When the content fits, render with per-span colors so toggle state is
+    // glanceable (ON = success/green, OFF = error/red). When it overflows,
+    // fall back to a plain elided line — losing colors is preferable to
+    // wrapping or truncation mid-token.
     let max = area.width as usize;
-    let truncated = elide(&flags_plain, max);
-    let text = Text::from(Line::from(Span::styled(
-        truncated,
-        Style::default().fg(colors.secondary),
-    )));
-    let paragraph = Paragraph::new(text).alignment(Alignment::Center);
+    let paragraph = if unicode_width::UnicodeWidthStr::width(flags_plain.as_str()) > max {
+        let truncated = elide(&flags_plain, max);
+        Paragraph::new(Text::from(Line::from(Span::styled(
+            truncated,
+            Style::default().fg(colors.secondary),
+        ))))
+        .alignment(Alignment::Center)
+    } else {
+        Paragraph::new(Text::from(Line::from(vec![
+            Span::raw("Verbosity:"),
+            Span::styled(verbosity.to_string(), Style::default().fg(colors.primary)),
+            Span::raw("  Dry-Run:"),
+            Span::styled(on_off(dry_run), toggle_style(dry_run)),
+            Span::raw("  No-Folding:"),
+            Span::styled(on_off(no_folding), toggle_style(no_folding)),
+            Span::raw("  Adopt:"),
+            Span::styled(on_off(adopt), toggle_style(adopt)),
+            Span::raw("  Dotfiles:"),
+            Span::styled(on_off(dotfiles), toggle_style(dotfiles)),
+            Span::raw("  Action:"),
+            Span::styled(action_str.to_string(), Style::default().fg(colors.primary)),
+            Span::raw("  Theme:"),
+            Span::styled(
+                theme_name.to_string(),
+                Style::default().fg(colors.highlight),
+            ),
+            if debug {
+                Span::styled("  [DEBUG]", Style::default().fg(colors.warning))
+            } else {
+                Span::raw("")
+            },
+        ])))
+        .alignment(Alignment::Center)
+    };
     frame.render_widget(paragraph, area);
 }
 

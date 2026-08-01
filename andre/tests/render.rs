@@ -130,6 +130,63 @@ fn test_status_bar_shows_action() {
     assert!(line_contains(&buf, "STOW"), "action not shown");
 }
 
+/// Regression guard for the M11 flag-color restoration: each ON/OFF toggle
+/// must be rendered in the success/error color, not a single secondary tone.
+/// Asserts both the ON-state (green) and OFF-state (red) get their distinct
+/// fg by comparing the two cells side-by-side.
+#[test]
+fn test_status_bar_toggle_colors_distinguish_on_from_off() {
+    use ratatui::style::Color;
+
+    let (mut app, _) = make_test_app();
+    let buf = render_app(&mut app, 140, 24);
+
+    // Set every toggle ON so we can find each ON cell.
+    app.ctx.core.dry_run = true;
+    app.ctx.core.no_folding = true;
+    app.ctx.core.adopt = true;
+    app.ctx.core.dotfiles = true;
+    let buf_on = render_app(&mut app, 140, 24);
+
+    // Find the fg color of the "ON " token in each rendering. We pick "ON "
+    // because every toggle has the same label and they sit on the status
+    // bar row (row 1 in our layout).
+    fn first_on_color(buf: &ratatui::buffer::Buffer) -> Option<Color> {
+        for y in 0..buf.area().height {
+            for x in 0..buf.area().width.saturating_sub(2) {
+                if buf.get(x, y).symbol() == "O"
+                    && buf.get(x + 1, y).symbol() == "N"
+                    && buf.get(x + 2, y).symbol() == " "
+                {
+                    return Some(buf.get(x, y).fg);
+                }
+            }
+        }
+        None
+    }
+    fn first_off_color(buf: &ratatui::buffer::Buffer) -> Option<Color> {
+        for y in 0..buf.area().height {
+            for x in 0..buf.area().width.saturating_sub(2) {
+                if buf.get(x, y).symbol() == "O"
+                    && buf.get(x + 1, y).symbol() == "F"
+                    && buf.get(x + 2, y).symbol() == "F"
+                {
+                    return Some(buf.get(x, y).fg);
+                }
+            }
+        }
+        None
+    }
+
+    let on_color = first_on_color(&buf_on).expect("no ON cell on status bar");
+    let off_color = first_off_color(&buf).expect("no OFF cell on status bar");
+    assert_ne!(
+        on_color, off_color,
+        "ON and OFF must render in distinct colors (ON=success, OFF=error); \
+         got {on_color:?} for both"
+    );
+}
+
 #[test]
 fn test_menu_has_items() {
     let (mut app, _) = make_test_app();
