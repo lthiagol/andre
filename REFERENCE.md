@@ -91,19 +91,19 @@ Grab the binary for your platform from the [latest release](https://github.com/l
 
 **macOS (Apple Silicon):**
 ```bash
-curl -LO https://github.com/lthiagol/andre/releases/download/v0.2.0/andre-aarch64-macos
+curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-aarch64-macos
 chmod +x andre-aarch64-macos
 sudo mv andre-aarch64-macos /usr/local/bin/andre
 ```
 
 **Linux (x86_64):**
 ```bash
-curl -LO https://github.com/lthiagol/andre/releases/download/v0.2.0/andre-x86_64-linux
+curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-x86_64-linux
 chmod +x andre-x86_64-linux
 sudo mv andre-x86_64-linux /usr/local/bin/andre
 ```
 
-Make sure [GNU Stow](https://www.gnu.org/software/stow/) is installed on your system.
+GNU Stow is **optional**: the default `engine: native` needs no external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if you set `global.engine: stow` (or need `adopt` / `dotfiles`).
 
 ### Homebrew (macOS — recommended)
 
@@ -111,21 +111,21 @@ Make sure [GNU Stow](https://www.gnu.org/software/stow/) is installed on your sy
 brew install lthiagol/tap/andre
 ```
 
-Automatically installs GNU Stow and Rust. Works on Apple Silicon and Intel Macs (builds from source on Intel).
+Installs Rust and GNU Stow. Works on Apple Silicon and Intel Macs (builds from source on Intel).
 
 ### Build from source
 
 | Prerequisite | Purpose |
 |:---|:---|
-| **GNU Stow** | Core symlink engine (runtime) |
 | **Rust** (1.77+) | Compiler (build) |
+| **GNU Stow** | *Optional* — only needed when `global.engine: stow` is set |
 
 **Install Rust:**
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-**Install Stow:**
+**Install Stow (only if you use `global.engine: stow`):**
 ```bash
 # macOS
 brew install stow
@@ -240,6 +240,10 @@ All source and target paths are resolved **relative to the config file's directo
 global:
   theme: catppuccin-mocha
 
+  # Link engine: 'native' (default, no GNU stow binary required) or 'stow'
+  # (shells out to GNU stow; needed for adopt, dotfiles, and regex ignores)
+  engine: native
+
   # Patterns to ignore globally (supports glob syntax)
   ignore:
     - .git
@@ -269,6 +273,7 @@ groups:
 
 | Flag | Purpose | Values |
 |:---|:---|:---|
+| `engine` | Link engine used to create/remove symlinks | `native` (default — built-in engine, no GNU stow binary needed), `stow` (shells out to GNU stow) |
 | `verbosity` | Stow verbosity level | 0 (quiet) to 5 |
 | `dry_run` | Simulate without making changes | `true`, `false` |
 | `no_folding` | Create individual symlinks (no directory folding) | `true`, `false` |
