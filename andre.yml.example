@@ -3,6 +3,11 @@
 
 # Global settings that apply to all groups
 global:
+  # Optional: link engine. 'native' (default) is built in and needs no GNU
+  # stow binary. Set to 'stow' to shell out to GNU stow — required for
+  # 'adopt' and 'dotfiles', and for regex ignore patterns.
+  # engine: native
+
   # Optional: override the default theme (default, dracula, catppuccin-latte,
   # catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha)
   # theme: default
