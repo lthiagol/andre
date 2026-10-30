@@ -110,8 +110,14 @@ jobs:
           # All four matrix jobs reach this step, so creation is retried: the
           # first one wins and the others observe an existing release.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
+            # An rcN tag is a pre-release: mark it as such so GitHub's
+            # "Latest" release keeps pointing at the newest stable build.
+            PRERELEASE=""
+            case "$TAG" in
+              *-rc*|*-alpha*|*-beta*) PRERELEASE="--prerelease" ;;
+            esac
             for _ in 1 2 3 4 5; do
-              gh release create "$TAG" --title "andre $TAG" --generate-notes && break
+              gh release create "$TAG" --title "andre $TAG" --generate-notes $PRERELEASE && break
               sleep 5
             done
           fi
