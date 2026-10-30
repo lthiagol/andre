@@ -118,8 +118,11 @@ coverage:
 	cargo llvm-cov --workspace --html --output-dir target/coverage
 	@echo 'Open target/coverage/html/index.html'
 
+# Collect coverage and report in one step. `cargo llvm-cov report --json` alone
+# only reports previously-collected data and fails with "invalid JSON" on a
+# clean tree.
 coverage-check:
-	cargo llvm-cov report --json 2>/dev/null | python3 scripts/coverage-check.py
+	cargo llvm-cov --workspace --all-features --json | python3 scripts/coverage-check.py
 # coverage thresholds enforced by scripts/coverage-check.py
 # (andre-core >= 90%, andre >= 38%; M09 S5 raised andre-core 88 -> 90)
 
