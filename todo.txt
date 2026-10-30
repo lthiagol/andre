@@ -13,32 +13,19 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
       so the homebrew-tap bump PR workflow never fired.
 - [ ] Promote `wip` → `stable` — `stable` is still at the `chore: bootstrap
       stable branch` commit; `wip` is 15+ commits ahead. Only after CI is green
-      on the promoted commit.
-- [ ] Fix `scripts/release.sh` — it requires a branch named `main` and runs
-      `git push origin main`. This repo uses `wip` → `stable`, so the script
-      cannot run as written.
+      on the promoted commit. `scripts/release.sh --promote <version>` does
+      the fast-forward once the tag is live.
 
 ## CI
 
-- [ ] Wire `make coverage-check` into CI. `AGENTS.md` claims the gate runs in
-      CI, but neither `.github/workflows/wip-ci.yml` nor `stable-ci.yml` calls
-      it — only `make ci`. The floors (`andre-core` ≥90%, `andre` ≥38%) are
-      currently unenforced.
 - [ ] Decide whether CI needs a macOS runner. Both workflows are
       `ubuntu-latest` only; the docs previously claimed Linux + macOS.
 
 ## Documentation
 
-- [ ] Document `global.engine` in `REFERENCE.md` — the native-default engine
-      (M07, BREAKING) is undocumented; the config template and flags table
-      omit it.
-- [ ] Document `global.engine` in `andre.yml.example` — the example config has
-      no `engine:` key.
-- [ ] Fix `README.md` — it still says "Make sure GNU Stow is installed", which
-      contradicts the native-by-default engine; the version badge and the
-      download links still say `0.2.0` while `Cargo.toml` is `1.0.0-rc1`.
-- [ ] Fix the `REFERENCE.md` dependency table — it still lists GNU Stow as a
-      required runtime dependency.
+(nothing open — `global.engine`, the native-engine default, and the GNU Stow
+optionality are documented in `REFERENCE.md`, `README.md`, and
+`andre.yml.example`.)
 
 ## Ideas (not yet planned)
 

@@ -19,6 +19,8 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 - App-level toast overlay (`Clear` + themed box); successful config save shows "Config saved" (failed save shows error toast); auto-dismiss on deadline.
 - Execute screen progress gauge (`completed/total`) above the existing spinner, per-package rows, and completion summary.
 - `todo.txt` — plain-text list of open work items, replacing the previous spec-driven planning tool.
+- CI coverage gate: both `.github/workflows/wip-ci.yml` and `.github/workflows/stable-ci.yml` now install `cargo-llvm-cov` plus the `llvm-tools-preview` rustup component and run `make coverage-check`, enforcing the `andre-core` ≥90% / `andre` ≥38% floors on every run.
+- `global.engine` documentation: the key is now shown in the `REFERENCE.md` "Complete Template" and the "Configuration Flags" table (both accepted values — `native` default and `stow`), and as a commented `engine:` key in `andre.yml.example`.
 
 ### Changed
 
@@ -29,6 +31,8 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 - `make lint` now depends on non-mutating `fmt-check` instead of `fmt`.
 - Title-screen banner: boxed letters now spell **A.N.D.R.E.** (was the old "AWESOME STOW" art), and the tagline is the backronym "Another Neat Dotfile Repository Engine" (was "The ultimate dotfiles manager").
 - Planning moved off the `mp` spec-driven toolkit: `master-plan/` and the legacy `master-plan-old/` directory are removed. `todo.txt` tracks open work, `CHANGELOG.md` remains the record of shipped changes, and `ROADMAP.md` is maintained by hand.
+- `scripts/release.sh` now follows this repo's branch model: it releases from `wip` and promotes `wip` → `stable` as a separate, explicit `--promote` step, instead of requiring and pushing a nonexistent `main` branch.
+- GNU Stow is documented as an optional runtime dependency: it is only required when `global.engine: stow` is set. `REFERENCE.md` and `README.md` no longer state that stow must be installed, and the `README.md` version badge and download URLs now match the package version `1.0.0-rc1`.
 
 ### Fixed
 
@@ -40,6 +44,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 - Render tests now sync `terminal_size` to the TestBackend; narrow-width coverage no longer false-greens against the default 80×24 layout.
 - Execute Finished list scrolls again; completion summary separates skipped vs failed; remove dead Ctrl+C cancel hint.
 - Toast error styling (`ToastKind`); config save no longer applies pending or pops Settings when the write fails.
+- `make coverage-check` now collects and reports in one step (`cargo llvm-cov --workspace --all-features --json`). It previously ran only `cargo llvm-cov report --json`, which reported previously-collected data and failed with `coverage-check: invalid JSON` on a clean tree.
 
 ## Prior releases
 
