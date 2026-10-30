@@ -6,15 +6,11 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## Release
 
-- [ ] Re-tag `v1.0.0-rc1` — the tag points at `800247c`, which predates the
-      e2e scenario 14 fixture fix (`2cd01bd`). The `stable-ci` run for that tag
-      failed; the tag still references a broken commit.
-- [ ] Publish the GitHub release for `v1.0.0-rc1` — `gh release list` is empty,
-      so the homebrew-tap bump PR workflow never fired.
-- [ ] Promote `wip` → `stable` — `stable` is still at the `chore: bootstrap
-      stable branch` commit; `wip` is 15+ commits ahead. Only after CI is green
-      on the promoted commit. `scripts/release.sh --promote <version>` does
-      the fast-forward once the tag is live.
+- [ ] Rotate the `HOMEBREW_TAP_TOKEN` secret — it holds a classic PAT that
+      GitHub now rejects with `401 Bad credentials`. It is no longer used: the
+      tap checkout and push use the `ANDRE_TAP_SSH_KEY` deploy key, and the
+      PR uses `ANDRE_TAP_PR_TOKEN`. The old secret can be deleted, or
+      refreshed if some other workflow still reads it.
 
 ## CI
 
@@ -22,6 +18,10 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
       `ubuntu-latest` only; the docs previously claimed Linux + macOS. The new
       `release-assets` job does use `macos-latest` (to build the macOS
       binaries), but the test gates still run on Linux only.
+- [ ] Pin the CI runner images. `ubuntu-latest` is migrating to Ubuntu 26.04
+      and `macos-latest` to macOS 26 in November 2026; the workflows use the
+      moving `-latest` labels, so an image change can break the gates
+      without a repo change.
 
 ## Documentation
 
