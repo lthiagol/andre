@@ -4,7 +4,7 @@
 
 <p align='center'>
   <img src='https://img.shields.io/badge/license-MIT-blue' alt='MIT License'>
-  <img src='https://img.shields.io/badge/version-0.2.0-blue' alt='Version 0.2.0'>
+  <img src='https://img.shields.io/badge/version-1.0.0--rc1-blue' alt='Version 1.0.0-rc1'>
 </p>
 
 # andre 🚀
@@ -64,17 +64,17 @@ Grab the binary for your platform from the [latest release](https://github.com/l
 
 ```bash
 # macOS (Apple Silicon)
-curl -LO https://github.com/lthiagol/andre/releases/download/v0.2.0/andre-aarch64-macos
+curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-aarch64-macos
 chmod +x andre-aarch64-macos
 sudo mv andre-aarch64-macos /usr/local/bin/andre
 
 # Linux (x86_64)
-curl -LO https://github.com/lthiagol/andre/releases/download/v0.2.0/andre-x86_64-linux
+curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-x86_64-linux
 chmod +x andre-x86_64-linux
 sudo mv andre-x86_64-linux /usr/local/bin/andre
 ```
 
-Make sure [GNU Stow](https://www.gnu.org/software/stow/) is installed on your system.
+GNU Stow is **optional**: the default `engine: native` is built in and needs no external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if you set `global.engine: stow` in `andre.yml` (or need `adopt` / `dotfiles`).
 
 ### Homebrew (macOS)
 
@@ -85,7 +85,7 @@ brew tap lthiagol/tap https://github.com/lthiagol/homebrew-tap
 brew install lthiagol/tap/andre
 ```
 
-Automatically installs GNU Stow and Rust as dependencies.  
+Installs Rust (and GNU Stow, which you only need if you opt into `global.engine: stow`).  
 **Note**: Homebrew builds Rust from source, which pulls in LLVM and z3 as transitive dependencies (~1 GB total). To avoid this, install Rust via [rustup](https://rustup.rs) instead, then use the binary from a [release](https://github.com/lthiagol/andre/releases) or `cargo install`.
 
 ### From source
