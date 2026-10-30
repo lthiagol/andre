@@ -41,8 +41,8 @@ make deps             # cargo fetch --locked (+ hints for optional tools)
 make nextest          # cargo nextest run --all-features (requires cargo-nextest)
 make watch            # cargo watch -x test (requires cargo-watch)
 make build            # release binary → dist/andre
-make coverage         # cargo llvm-cov HTML report → target/coverage/
-make coverage-check   # gate: andre-core >=90%, andre >=38% (requires cargo-llvm-cov)
+make coverage         # HTML coverage report → target/coverage/
+make coverage-check   # gate: andre-core >=90%, andre >=38% (runs cargo llvm-cov --workspace --all-features --json)
 ```
 
 One-off cargo (when make is the wrong shape):
@@ -64,10 +64,11 @@ cargo test -p andre --test interaction
 
 ### Coverage
 
-`make coverage-check` is the gate: it parses `cargo llvm-cov report --json`,
-aggregates line counts per crate, and exits non-zero if either crate drops
-below its floor (`andre-core` ≥90%, `andre` ≥38%). To re-baseline, edit the
-`FLOORS` list in `scripts/coverage-check.py` and record the new % in the
+`make coverage-check` is the gate: it runs
+`cargo llvm-cov --workspace --all-features --json` (collect **and** report in
+one step), aggregates line counts per crate, and exits non-zero if either crate
+drops below its floor (`andre-core` ≥90%, `andre` ≥38%). To re-baseline, edit
+the `FLOORS` list in `scripts/coverage-check.py` and record the new % in the
 `CHANGELOG.md` entry. HTML coverage (`make coverage`) is local-only.
 
 ---
@@ -230,11 +231,16 @@ if let Err(e) = result { std::panic::resume_unwind(e); }
 ### Coverage gates
 
 `make coverage-check` runs `scripts/coverage-check.py` against
-`cargo llvm-cov report --json`. Floors: `andre-core ≥90%`, `andre ≥38%`.
+`cargo llvm-cov --workspace --all-features --json` (collect and report in one
+step). Floors: `andre-core ≥90%`, `andre ≥38%`.
 Re-baseline by editing `FLOORS` in `scripts/coverage-check.py` and recording
 the measured % + justification in the `CHANGELOG.md` entry. The CI gate fails
 the build on regression, so any new untested code needs a test before it can
 ship.
+
+Because the gate collects coverage by running the whole test suite, it has two
+preconditions: GNU `stow` must be on `PATH` (the `e2e` / `helpers` binaries
+shell out to it), and the whole suite must pass.
 
 ---
 

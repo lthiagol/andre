@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Coverage threshold gate for andre.
 
-Reads `cargo llvm-cov report --json` from stdin and enforces two line-coverage
+Reads `cargo llvm-cov --workspace --all-features --json` from stdin (the
+collect-and-report form) and enforces two line-coverage
 floors:
 
     andre-core >= 90%  (raised M09 S5 from 88%; measured 91.78%)
     andre      >= 38%  (M42 baseline; measured 54.17%)
 
-See `FLOORS` below for the history. The JSON schema is what `cargo-llvm-cov`
-exports (one entry per binary / artifact under data[*].files). We aggregate
+See `FLOORS` below for the history. The JSON schema is what
+`cargo llvm-cov --workspace --all-features --json` exports (one entry per
+binary / artifact under data[*].files). We aggregate
 line counts per crate by detecting the crate root path segment.
 
 Exit codes:
