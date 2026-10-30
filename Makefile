@@ -131,15 +131,17 @@ build:
 	@mkdir -p dist
 	@cp target/release/andre dist/andre
 
+# Release asset names must match the ones README.md advertises in its
+# download URLs, otherwise the published links 404.
 build-intel:
 	cargo build --release --target x86_64-unknown-linux-gnu
 	@mkdir -p dist
-	@cp target/x86_64-unknown-linux-gnu/release/andre dist/andre-linux-x86_64
+	@cp target/x86_64-unknown-linux-gnu/release/andre dist/andre-x86_64-linux
 
 build-arm:
 	cargo build --release --target aarch64-unknown-linux-gnu || (echo 'Cross-compilation not available. On x86_64, install: rustup target add aarch64-unknown-linux-gnu' && exit 1)
 	@mkdir -p dist
-	@cp target/aarch64-unknown-linux-gnu/release/andre dist/andre-linux-arm64
+	@cp target/aarch64-unknown-linux-gnu/release/andre dist/andre-aarch64-linux
 
 build-local-macos:
 	@case $$(uname -m) in \
@@ -149,7 +151,10 @@ build-local-macos:
 	esac; \
 	cargo build --release --target $$TARGET; \
 	mkdir -p dist; \
-	cp target/$$TARGET/release/andre dist/andre-macos-$$(uname -m)
+	case $$TARGET in \
+		x86_64-apple-darwin) cp target/$$TARGET/release/andre dist/andre-x86_64-macos ;; \
+		aarch64-apple-darwin) cp target/$$TARGET/release/andre dist/andre-aarch64-macos ;; \
+	esac
 
 release: lint test build
 	@echo 'Build ready for release'
@@ -164,7 +169,10 @@ brew-install: build-local-macos
 		*) echo 'Unknown architecture' && exit 1 ;; \
 	esac; \
 	mkdir -p $$PREFIX/bin; \
-	cp dist/andre-macos-$$(uname -m) $$PREFIX/bin/andre; \
+	case $$(uname -m) in \
+		x86_64) cp dist/andre-x86_64-macos $$PREFIX/bin/andre ;; \
+		arm64)  cp dist/andre-aarch64-macos $$PREFIX/bin/andre ;; \
+	esac; \
 	echo "Installed to $$PREFIX/bin/andre"
 
 clean:

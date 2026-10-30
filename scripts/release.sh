@@ -16,15 +16,15 @@ STABLE_BRANCH="stable"
 
 # What CI does and does not do for a release.
 #
-# The workflows in .github/workflows/ are 'ci' (lint + test + coverage gate)
-# and 'tap-update' (opens the Homebrew formula PR on a tag). No workflow
-# builds release binaries and no workflow creates the GitHub Release — those
-# are manual steps.
+# The workflows in .github/workflows/ are 'ci' (lint + test + coverage gate),
+# 'release-assets' (builds the platform binaries and publishes them to the
+# GitHub Release on a tag) and 'tap-update' (opens the Homebrew formula PR on
+# a tag).
 ci_notes() {
-    echo "CI runs the lint/test + coverage gates, and opens the Homebrew tap PR."
-    echo "Release binaries and the GitHub Release are NOT produced by CI — build"
-    echo "them manually ('make release-assets' puts the platform binaries in"
-    echo "dist/) and upload them to the GitHub Release."
+    echo "CI runs the lint/test + coverage gates, builds the release binaries"
+    echo "(andre-<arch>-<os>), publishes the GitHub Release, and opens the"
+    echo "Homebrew tap PR."
+    echo "Local binaries can also be built with 'make release-assets' -> dist/."
 }
 
 usage() {

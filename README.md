@@ -68,10 +68,20 @@ curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-aa
 chmod +x andre-aarch64-macos
 sudo mv andre-aarch64-macos /usr/local/bin/andre
 
+# macOS (Intel)
+curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-x86_64-macos
+chmod +x andre-x86_64-macos
+sudo mv andre-x86_64-macos /usr/local/bin/andre
+
 # Linux (x86_64)
 curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-x86_64-linux
 chmod +x andre-x86_64-linux
 sudo mv andre-x86_64-linux /usr/local/bin/andre
+
+# Linux (ARM64)
+curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-aarch64-linux
+chmod +x andre-aarch64-linux
+sudo mv andre-aarch64-linux /usr/local/bin/andre
 ```
 
 GNU Stow is **optional**: the default `engine: native` is built in and needs no external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if you set `global.engine: stow` in `andre.yml` (or need `adopt` / `dotfiles`).
