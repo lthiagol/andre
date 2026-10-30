@@ -11,6 +11,15 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
       failed; the tag still references a broken commit.
 - [ ] Publish the GitHub release for `v1.0.0-rc1` — `gh release list` is empty,
       so the homebrew-tap bump PR workflow never fired.
+- [ ] Reconcile release-asset names before publishing — `README.md` advertises
+      `andre-aarch64-macos` / `andre-x86_64-linux`, but `make release-assets`
+      produces `dist/andre-macos-<arch>`, `dist/andre-linux-x86_64` and
+      `dist/andre-linux-arm64`. The README URLs would 404. Pre-existing
+      packaging mismatch (review cycle 2, informational).
+- [ ] No workflow builds release binaries or creates the GitHub Release — the
+      `ci` and `tap-update` jobs only run the gates and open the tap PR.
+      Binaries must be built and uploaded manually (`make release-assets` →
+      `dist/`). Consider a release-assets workflow (review cycle 1, F-04).
 - [ ] Promote `wip` → `stable` — `stable` is still at the `chore: bootstrap
       stable branch` commit; `wip` is 15+ commits ahead. Only after CI is green
       on the promoted commit. `scripts/release.sh --promote <version>` does
