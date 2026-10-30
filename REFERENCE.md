@@ -435,11 +435,11 @@ Cycle through themes with `t`:
 
 ### Development Workflow
 
-1. Read `master-plan/STATUS.md` for current milestone status
-2. Each milestone has its own document in `master-plan/milestones/` with tasks and verification criteria
-3. Follow the conventions in `AGENTS.md`
-4. Write tests for new functionality
-5. Ensure clippy and fmt pass before submitting
+1. Check `todo.txt` for the current open work items
+2. Follow the conventions in `AGENTS.md`
+3. Write tests for new functionality
+4. Ensure clippy and fmt pass before submitting
+5. Add a `CHANGELOG.md` entry under `Unreleased` and remove the finished item from `todo.txt`
 
 ### Building
 
@@ -458,11 +458,12 @@ cargo fmt --all -- --check
 make coverage-check    # coverage thresholds (requires cargo-llvm-cov)
 ```
 
-CI runs on both Linux and macOS. Linux runs fmt + clippy + test + coverage report. macOS runs clippy + test only. Coverage thresholds are enforced: **andre-core ≥ 88%**, **andre ≥ 38%** (baseline minus 2%).
+CI runs on Linux (`make ci`). Coverage thresholds are enforced locally via
+`make coverage-check`: **andre-core ≥ 90%**, **andre ≥ 38%**.
 
 ### Commit Style
 
-Milestone commits use format: `milestone: complete [NN]-[name]`
+Conventional-ish prefixes: `feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`.
 
 <a name="license"></a>
 ## 📝 License

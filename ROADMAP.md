@@ -1,56 +1,34 @@
 # Roadmap
 
-Summary of the active Master Plan (`master-plan/`, managed by `mp`).  
-Source of truth: `mp status` / `mp list milestones`. Do not edit plan state here.
+Direction, version status, and release criteria for **andre**.
+Open work items live in [`todo.txt`](todo.txt). Shipped changes are recorded
+in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Current Status
 
 | Field | Value |
 |-------|--------|
-| **Version** | 0.2.0 (see [CHANGELOG.md](CHANGELOG.md) for Unreleased) |
+| **Version** | `1.0.0-rc1` (see [CHANGELOG.md](CHANGELOG.md) for Unreleased) |
 | **Branch** | `wip` → promote to `stable` when CI is green |
-| **Plan mode** | autonomous (`mp execution`) |
-| **Next** | M02/S1 — footer audit / breadcrumb work |
-| **Validate** | `mp validate` ok |
-| **Tests** | `make test` / `make ci` (coverage: andre-core ≥ 88%, TUI ≥ 38%) |
-
-Historical milestones 00–44: complete — see `master-plan-old/STATUS.md`.
+| **Open work** | see [`todo.txt`](todo.txt) |
+| **Tests** | `make test` / `make ci` (coverage: andre-core ≥ 90%, TUI ≥ 38%) |
 
 ---
 
-## Active milestones (`master-plan/`)
+## Shipped (recent)
 
-| ID | Title | Lifecycle | Focus |
-|----|-------|-----------|--------|
-| **M01** | Make config-persistence test hermetic for Linux CI | **complete** | Hermetic `home_dir`; `make ci` green |
-| **M02** | Persistent TUI chrome: footer hints + top status bar | approved | **Breadcrumb** on status bar + render tests (footer already context-sensitive) |
-| **M03** | Execute screen overhaul: progress gauge + per-package status | approved | **ratatui Gauge**; keep existing spinner/rows/summary |
-| **M04** | Action feedback toasts + number-key menu shortcuts | approved | **Toasts only** (digits split to track) |
+All planned work through the v1.0 release-candidate line is complete.
 
-### Suggested path
-
-1. ~~M01 complete~~  
-2. M02/S1–S3 (breadcrumb + render coverage)  
-3. M03/S1–S3 (execute Gauge)  
-4. M04/S1–S3 (toast subsystem)  
-5. Track TW-02 (menu keys 1–7) anytime  
-
-### Tracks
-
-| ID | Kind | Title | Status |
-|----|------|-------|--------|
-| **TW-02** | tweak | Main Menu number keys 1–7 | pending |
-
-*(Other pending tweaks may exist; `mp list tracks` for full list.)*
-
----
-
-## Milestone intent (one-liners)
-
-- **M01** — Config-persistence test passes with a temp home on empty Linux CI images; production home resolution unchanged.  
-- **M02** — Status bar breadcrumb from `component_stack`; footer/toggles preserved and render-tested.  
-- **M03** — Execute screen Gauge for completed/total; existing rows/spinner/summary kept.  
-- **M04** — Non-modal toast overlay (auto-dismiss, non-blocking); config save wired.
+| Area | What landed |
+|------|-------------|
+| **Config persistence** | Hermetic test home (`App::with_home`) — no host `$HOME` dependency |
+| **TUI chrome** | Persistent footer hints, top status bar, breadcrumb from the component stack |
+| **Execute screen** | Progress gauge (`completed/total`), per-package rows, completion summary |
+| **Feedback** | App-level toast overlay (auto-dismiss, non-blocking) wired to config save |
+| **Architecture** | `Component::prepare` owns viewport/scroll bookkeeping; `App` owns the async executor |
+| **Dependencies** | Dropped `dirs`/`thiserror`/`anyhow`/`clap`; `serde_yaml` → `serde_yaml_ng` |
+| **Link engine** | `native` engine is now the default; GNU Stow remains opt-in via `global.engine: stow` (BREAKING) |
+| **Testing** | `cargo-nextest` default, tiered `make test-unit`/`test-tui`/`test-e2e`, coverage floor gate |
 
 ---
 
@@ -58,18 +36,29 @@ Historical milestones 00–44: complete — see `master-plan-old/STATUS.md`.
 
 | Phase | Version | Criteria |
 |-------|---------|----------|
-| Current | v0.2.0 | Homebrew + releases live |
-| Future | v1.0.0 | Battle-tested macOS + Linux; frozen `andre.yml` |
+| Current | v1.0.0-rc1 | Release-candidate line; tagged, release assets published |
+| Next | v1.0.0 | Battle-tested macOS + Linux; frozen `andre.yml` |
 
 Install: `brew install lthiagol/tap/andre` or [releases](https://github.com/lthiagol/andre/releases).
 
 ---
 
+## Post-1.0 ideas (not yet planned)
+
+Parked from the original project charter:
+
+- More themes
+- Richer config validation
+- Adoption-UX expansions
+- Whether to expand scope beyond Stow post-1.0 (undecided)
+
+---
+
 ## Development principles
 
-1. **No breaking config after v1.0** — `andre.yml` stays stable  
-2. **Tests before/with code** — prefer `cargo test` ACs over manual-only  
-3. **Plan via `mp`** — never hand-edit `master-plan/` JSON  
-4. **Changelog** — Unreleased on `wip`; version bump on `stable` promote  
+1. **No breaking config after v1.0** — `andre.yml` stays stable
+2. **Tests before/with code** — prefer `cargo test` assertions over manual-only
+3. **Small work items first** — `todo.txt` for polish, a written spec for features
+4. **Changelog** — Unreleased on `wip`; version bump on `stable` promote
 
-Refresh this file from `mp status` + milestone intents before README/doc work.
+Keep this file accurate by hand when the version, branch state, or roadmap changes.
