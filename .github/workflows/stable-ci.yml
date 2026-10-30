@@ -155,18 +155,34 @@ jobs:
             echo "date=${DATE}"
           } >> "$GITHUB_OUTPUT"
 
+      # SSH deploy key, not a PAT: the HOMEBREW_TAP_TOKEN secret holds a
+      # classic personal access token that GitHub now rejects with
+      # "401 Bad credentials", which broke every tap-update run.
+      - name: Configure SSH for the tap
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANDRE_TAP_SSH_KEY }}" > ~/.ssh/andre_tap_key
+          chmod 600 ~/.ssh/andre_tap_key
+          cat >> ~/.ssh/config <<'SSHCONF'
+          Host github.com-lthiagol-homebrew-tap
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/andre_tap_key
+            StrictHostKeyChecking accept-new
+          SSHCONF
+
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
         with:
           repository: lthiagol/homebrew-tap
           ref: main
           path: homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          ssh-key: ~/.ssh/andre_tap_key
+          ssh-known-hosts: ~/.ssh/known_hosts
 
       - name: Update both formulas on a new branch
         working-directory: homebrew-tap
         env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
           COMMIT:  ${{ steps.meta.outputs.commit }}
           SHA:     ${{ steps.meta.outputs.sha }}
@@ -174,7 +190,7 @@ jobs:
           DATE:    ${{ steps.meta.outputs.date }}
         run: |
           BRANCH="bump-andre-v${VERSION}"
-          git remote set-url origin "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/lthiagol/homebrew-tap.git"
+          git remote set-url origin "git@github.com-lthiagol-homebrew-tap:lthiagol/homebrew-tap.git"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name  "github-actions[bot]"
           git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
@@ -200,7 +216,10 @@ jobs:
 
       - name: Open PR against homebrew-tap:main
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # The deploy key can push but cannot open PRs (that needs the REST
+          # API), so the PR is opened with a token that has pull-requests:
+          # write on the tap.
+          GH_TOKEN: ${{ secrets.ANDRE_TAP_PR_TOKEN }}
         run: |
           BRANCH="bump-andre-v${{ steps.meta.outputs.version }}"
           VERSION="${{ steps.meta.outputs.version }}"
