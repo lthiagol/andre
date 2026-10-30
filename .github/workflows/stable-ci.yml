@@ -68,7 +68,10 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             asset: andre-x86_64-linux
-          - os: ubuntu-latest
+          # Native ARM runner: cross-linking aarch64 from an x86_64 runner
+          # fails because the bundled rust-lld rejects the aarch64-specific
+          # --fix-cortex-a53-843419 flag.
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             asset: andre-aarch64-linux
     steps:
@@ -123,6 +126,10 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # The meta step below resolves the tag with `git rev-list`, so this job
+      # needs the repository itself — not just the tap.
+      - uses: actions/checkout@v4
+
       - name: Resolve tag + commit SHA + SHA256
         id: meta
         run: |
