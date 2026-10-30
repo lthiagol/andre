@@ -23,9 +23,12 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## Documentation
 
-(nothing open — `global.engine`, the native-engine default, and the GNU Stow
-optionality are documented in `REFERENCE.md`, `README.md`, and
-`andre.yml.example`.)
+- [ ] Revisit the product framing — `README.md` and `REFERENCE.md` still call
+      andre a "TUI wrapper for GNU Stow", though the native engine is the
+      default (deferred from review cycle 1, F-02; a judgment call, not a
+      mechanical fix).
+- (nothing open) — documenting `global.engine` and the native-engine default;
+      `REFERENCE.md`, `README.md`, and `andre.yml.example` are covered.
 
 ## Ideas (not yet planned)
 
