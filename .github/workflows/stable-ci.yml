@@ -104,8 +104,13 @@ jobs:
           set -euo pipefail
           # The release may not exist yet (first publish) — create it, then
           # upload. `gh release upload` fails if the tag has no release.
+          # All four matrix jobs reach this step, so creation is retried: the
+          # first one wins and the others observe an existing release.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "andre $TAG" --generate-notes
+            for _ in 1 2 3 4 5; do
+              gh release create "$TAG" --title "andre $TAG" --generate-notes && break
+              sleep 5
+            done
           fi
           gh release upload "$TAG" "dist/$ASSET" --clobber
 
