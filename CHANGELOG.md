@@ -33,6 +33,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 - Planning moved off the `mp` spec-driven toolkit: `master-plan/` and the legacy `master-plan-old/` directory are removed. `todo.txt` tracks open work, `CHANGELOG.md` remains the record of shipped changes, and `ROADMAP.md` is maintained by hand.
 - `scripts/release.sh` now follows this repo's branch model: it releases from `wip` and promotes `wip` → `stable` as a separate, explicit `--promote` step, instead of requiring and pushing a nonexistent `main` branch.
 - GNU Stow is documented as an optional runtime dependency: it is only required when `global.engine: stow` is set. `REFERENCE.md` and `README.md` no longer state that stow must be installed, and the `README.md` version badge and download URLs now match the package version `1.0.0-rc1`.
+- Project framing now leads with the project's own identity instead of describing it by its opt-in backend: the `README.md` and `REFERENCE.md` taglines, the `README.md` "What is andre?" section, the `REFERENCE.md` "How to Use andre" section, the `AGENTS.md` project line, and the `andre --help` header all now use the **A.N.D.R.E.** backronym (*Another Neat Dotfile Repository Engine*) — matching the title-screen banner. andre is described as implementing the GNU Stow dotfiles model with a terminal UI on top, running on its built-in native engine by default.
 
 ### Fixed
 

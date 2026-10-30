@@ -4,7 +4,7 @@
 
 # andre — Detailed Reference
 
-A TUI wrapper for [GNU Stow](https://www.gnu.org/software/stow/).
+**A.N.D.R.E.** — *Another Neat Dotfile Repository Engine*. A terminal UI for managing dotfiles.
 
 ## 📋 Table of Contents
 
@@ -54,7 +54,7 @@ Key operations:
 <a name="how-to-use-andre"></a>
 ## 🔧 How to Use andre
 
-andre wraps Stow in an interactive TUI. Launch with:
+andre puts an interactive terminal UI on the GNU Stow dotfiles model. Launch with:
 
 ```bash
 andre
@@ -111,7 +111,7 @@ GNU Stow is **optional**: the default `engine: native` needs no external binary.
 brew install lthiagol/tap/andre
 ```
 
-Installs Rust and GNU Stow. Works on Apple Silicon and Intel Macs (builds from source on Intel).
+Installs Rust. Works on Apple Silicon and Intel Macs (builds from source on Intel).
 
 ### Build from source
 

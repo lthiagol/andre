@@ -25,7 +25,7 @@ struct Args {
     log_file: Option<PathBuf>,
 }
 
-const HELP_TEXT: &str = "andre — A TUI wrapper for GNU Stow
+const HELP_TEXT: &str = "andre — Another Neat Dotfile Repository Engine
 
 USAGE:
     andre [OPTIONS]

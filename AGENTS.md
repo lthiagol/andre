@@ -1,6 +1,6 @@
 # AGENTS.md - andre
 
-**Project**: TUI wrapper for GNU Stow written in Rust using ratatui.
+**Project**: Terminal UI for dotfiles management (GNU Stow model) written in Rust using ratatui.
 **Repository**: https://github.com/lthiagol/andre
 **Branching**: `wip` (active development) → `stable` (default branch, release line). Work lands on `wip`; fast-forward `wip` into `stable` once CI is green. Don't commit directly to `stable`.
 **Goal**: Robust, testable Rust application with comprehensive test coverage.

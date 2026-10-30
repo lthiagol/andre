@@ -9,7 +9,7 @@
 
 # andre 🚀
 
-A TUI wrapper for [GNU Stow](https://www.gnu.org/software/stow/) — manage your dotfiles visually.
+**A.N.D.R.E.** — *Another Neat Dotfile Repository Engine*. Manage your dotfiles from a terminal, with a built-in native engine (GNU Stow optional).
 
 ## 📋 Table of Contents
 
@@ -28,7 +28,7 @@ A TUI wrapper for [GNU Stow](https://www.gnu.org/software/stow/) — manage your
 
 **GNU Stow** is a CLI symlink farm manager. It creates symlinks from a source directory to a target directory — most commonly used to keep dotfiles in a version-controlled repo while making them appear in your home directory.
 
-**andre** is a TUI wrapper around Stow. Instead of remembering CLI flags and running stow manually per package group, you get a visual interface to select groups, pick packages, toggle options, and execute with live feedback.
+**andre** implements the same model, with a terminal UI on top. Instead of remembering CLI flags and running stow manually per package group, you get a visual interface to select groups, pick packages, toggle options, and execute with live feedback. It runs on its own **native** engine by default, so no external binary is required; set `global.engine: stow` if you want it to drive GNU Stow itself.
 
 See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configuration reference.
 
