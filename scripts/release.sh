@@ -14,10 +14,23 @@ set -euo pipefail
 RELEASE_BRANCH="wip"
 STABLE_BRANCH="stable"
 
+# What CI does and does not do for a release.
+#
+# The workflows in .github/workflows/ are 'ci' (lint + test + coverage gate)
+# and 'tap-update' (opens the Homebrew formula PR on a tag). No workflow
+# builds release binaries and no workflow creates the GitHub Release — those
+# are manual steps.
+ci_notes() {
+    echo "CI runs the lint/test + coverage gates, and opens the Homebrew tap PR."
+    echo "Release binaries and the GitHub Release are NOT produced by CI — build"
+    echo "them manually ('make release-assets' puts the platform binaries in"
+    echo "dist/) and upload them to the GitHub Release."
+}
+
 usage() {
     cat <<EOF
 Usage:
-  $0 <version>              Release from '$RELEASE_BRANCH' (default: 1.0.0-rc1 style, e.g. 1.0.0-rc1)
+  $0 <version>              Release from '$RELEASE_BRANCH' (e.g. 1.0.0-rc1)
   $0 --promote <version>    Fast-forward '$STABLE_BRANCH' onto the released commit
 
 Notes:
@@ -66,13 +79,33 @@ if [ "$MODE" = "promote" ]; then
     RELEASE_COMMIT=$(git rev-list -n 1 "${TAG}")
     echo "Promoting ${TAG} (${RELEASE_COMMIT}) into ${STABLE_BRANCH}..."
 
+    # Always come back to the release branch, so a later release run is not
+    # refused with "Must be on $RELEASE_BRANCH branch".
+    restore_release_branch() {
+        git checkout "$RELEASE_BRANCH" >/dev/null 2>&1 || true
+    }
+    trap restore_release_branch EXIT
+
+    # Refresh the remote refs so a local 'stable' that lags 'origin/stable'
+    # does not make the promotion push fail as non-fast-forward.
+    git fetch origin
+
     git checkout "${STABLE_BRANCH}"
+    # Catch the local branch up with the remote before merging the release.
+    if git rev-parse -q --verify "refs/remotes/origin/${STABLE_BRANCH}" >/dev/null; then
+        git merge --ff-only "origin/${STABLE_BRANCH}"
+    fi
+    # --ff-only fails loudly when 'stable' has diverged from the release.
     git merge --ff-only "${RELEASE_COMMIT}"
     git push origin "${STABLE_BRANCH}"
 
+    restore_release_branch
+    trap - EXIT
+
     echo ""
     echo "=== ${STABLE_BRANCH} promoted to ${TAG} ==="
-    echo "CI handles: binaries, GitHub Release, Homebrew tap update."
+    echo "Back on $RELEASE_BRANCH."
+    ci_notes
     echo "Monitor: https://github.com/lthiagol/andre/actions"
     exit 0
 fi
@@ -116,7 +149,7 @@ git push origin "${TAG}"
 
 echo ""
 echo "=== Release ${TAG} pushed from ${RELEASE_BRANCH} ==="
-echo "CI handles: binaries, GitHub Release, Homebrew tap update."
+ci_notes
 echo "Monitor: https://github.com/lthiagol/andre/actions"
 echo ""
 echo "Next step (separate, explicit): promote ${RELEASE_BRANCH} into ${STABLE_BRANCH}"
