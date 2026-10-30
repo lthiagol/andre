@@ -19,6 +19,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -30,6 +32,9 @@ jobs:
       - name: Install nextest
         run: cargo install cargo-nextest --locked --version '^0.9'
 
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
       - name: Install system deps (for e2e)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends stow
 
@@ -37,6 +42,9 @@ jobs:
         env:
           NEXTTEST: 1
         run: make ci
+
+      - name: make coverage-check
+        run: make coverage-check
 
   tap-update:
     name: open homebrew-tap bump PR
@@ -54,10 +62,12 @@ jobs:
           COMMIT=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
           SHA=$(curl -sL "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz" | sha256sum | cut -d' ' -f1)
           DATE=$(date -u +%Y%m%d)
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "commit=${COMMIT}"    >> "$GITHUB_OUTPUT"
-          echo "sha=${SHA}"          >> "$GITHUB_OUTPUT"
-          echo "date=${DATE}"        >> "$GITHUB_OUTPUT"
+          {
+            echo "version=${VERSION}"
+            echo "commit=${COMMIT}"
+            echo "sha=${SHA}"
+            echo "date=${DATE}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
