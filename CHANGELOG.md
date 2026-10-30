@@ -45,6 +45,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 - Execute Finished list scrolls again; completion summary separates skipped vs failed; remove dead Ctrl+C cancel hint.
 - Toast error styling (`ToastKind`); config save no longer applies pending or pops Settings when the write fails.
 - `make coverage-check` now collects and reports in one step (`cargo llvm-cov --workspace --all-features --json`). It previously ran only `cargo llvm-cov report --json`, which reported previously-collected data and failed with `coverage-check: invalid JSON` on a clean tree.
+- `scripts/release.sh --promote` no longer leaves the worktree checked out on `stable`: it fetches `origin` first (so a local `stable` lagging `origin/stable` no longer makes the push fail as non-fast-forward) and returns the checkout to `wip` on both the success and error paths. The script no longer claims CI builds the release binaries and creates the GitHub Release — no workflow does that; it now states that CI runs the test/coverage gates and opens the Homebrew tap PR, while the binaries (`make release-assets` → `dist/`) and the GitHub Release must be produced and uploaded manually.
 
 ## Prior releases
 
