@@ -158,30 +158,38 @@ jobs:
       # SSH deploy key, not a PAT: the HOMEBREW_TAP_TOKEN secret holds a
       # classic personal access token that GitHub now rejects with
       # "401 Bad credentials", which broke every tap-update run.
+      #
+      # The tap is cloned directly rather than through actions/checkout so the
+      # deploy key is used for the clone as well as the push.
       - name: Configure SSH for the tap
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.ANDRE_TAP_SSH_KEY }}" > ~/.ssh/andre_tap_key
           chmod 600 ~/.ssh/andre_tap_key
-          cat >> ~/.ssh/config <<'SSHCONF'
-          Host github.com-lthiagol-homebrew-tap
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'SSHCONF'
+          Host github.com
             HostName github.com
             User git
             IdentityFile ~/.ssh/andre_tap_key
-            StrictHostKeyChecking accept-new
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
           SSHCONF
 
-      - name: Checkout homebrew-tap
-        uses: actions/checkout@v4
-        with:
-          repository: lthiagol/homebrew-tap
-          ref: main
-          path: homebrew-tap
-          ssh-key: ~/.ssh/andre_tap_key
-          ssh-known-hosts: ~/.ssh/known_hosts
+      - name: Clone homebrew-tap
+        working-directory: ${{ runner.temp }}
+        run: |
+          git clone --depth 1 --branch main \
+            git@github.com:lthiagol/homebrew-tap.git \
+            "${{ runner.temp }}/homebrew-tap"
+          cd "${{ runner.temp }}/homebrew-tap"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          git config core.sshCommand "ssh -i ~/.ssh/andre_tap_key -o IdentitiesOnly=yes"
+          git remote set-url origin "git@github.com:lthiagol/homebrew-tap.git"
 
       - name: Update both formulas on a new branch
-        working-directory: homebrew-tap
+        working-directory: ${{ runner.temp }}/homebrew-tap
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           COMMIT:  ${{ steps.meta.outputs.commit }}
@@ -190,9 +198,6 @@ jobs:
           DATE:    ${{ steps.meta.outputs.date }}
         run: |
           BRANCH="bump-andre-v${VERSION}"
-          git remote set-url origin "git@github.com-lthiagol-homebrew-tap:lthiagol/homebrew-tap.git"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name  "github-actions[bot]"
           git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
 
           sed -i.bak -E \
