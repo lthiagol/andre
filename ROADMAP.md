@@ -8,8 +8,8 @@ in [`CHANGELOG.md`](CHANGELOG.md).
 
 | Field | Value |
 |-------|--------|
-| **Version** | `1.0.0-rc1` (see [CHANGELOG.md](CHANGELOG.md) for Unreleased) |
-| **Branch** | `wip` → promote to `stable` when CI is green |
+| **Version** | `1.0.0-rc1` — published as a [pre-release](https://github.com/lthiagol/andre/releases/tag/v1.0.0-rc1) with binaries for macOS + Linux |
+| **Branch** | `wip` = `stable` — the release is promoted; work continues on `wip` |
 | **Open work** | see [`todo.txt`](todo.txt) |
 | **Tests** | `make test` / `make ci` (coverage: andre-core ≥ 90%, TUI ≥ 38%) |
 
