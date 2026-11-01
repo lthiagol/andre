@@ -18,10 +18,11 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
       `ubuntu-latest` only; the docs previously claimed Linux + macOS. The new
       `release-assets` job does use `macos-latest` (to build the macOS
       binaries), but the test gates still run on Linux only.
-- [ ] Pin the CI runner images. `ubuntu-latest` is migrating to Ubuntu 26.04
-      and `macos-latest` to macOS 26 in November 2026; the workflows use the
-      moving `-latest` labels, so an image change can break the gates
-      without a repo change.
+- [ ] Pin the CI runner images. `ubuntu-latest` has already migrated to
+      Ubuntu 26.04 (the gates are green on it) and `macos-latest` is
+      migrating to macOS 26 in November 2026. Pinning explicit labels
+      (`ubuntu-26.04`, `macos-26`) would keep an image change from breaking
+      the gates without a repo change.
 
 ## Documentation
 
@@ -36,3 +37,14 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 - Richer config validation.
 - Adoption-UX expansions.
 - Whether to expand scope beyond Stow post-1.0 (undecided).
+
+## Release state (as of v1.0.0-rc1, 2026-10-30)
+
+- `v1.0.0-rc1` published as a GitHub **pre-release** with four binaries
+  (`andre-aarch64-macos`, `andre-x86_64-macos`, `andre-x86_64-linux`,
+  `andre-aarch64-linux`). Every download URL verified HTTP 200.
+- `wip` and `stable` are at the same commit.
+- The Homebrew tap (`lthiagol/homebrew-tap`) has both `Formula/andre.rb` and
+  `Formula/andre-dev.rb` bumped to `v1.0.0-rc1`.
+- A tag push now runs the whole release path green: CI gates → binaries →
+  GitHub Release → Homebrew tap PR.
