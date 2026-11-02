@@ -12,13 +12,12 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## CI
 
-- [ ] Decide whether the test gates need a macOS runner. Both workflows are
-      Linux-only; the TUI is developed on macOS, so a macOS gate would catch
-      platform-specific breakage the Linux gates miss.
-- [ ] Pin the CI runner images. All tag/CI jobs are now `ubuntu-latest`
-      (binaries are no longer built in CI; installs are Homebrew + from
-      source only). Pinning `ubuntu-26.04` explicitly would keep an image
-      change from breaking the gates without a repo change.
+- (nothing open) — runner images are pinned to `ubuntu-24.04` (the current
+      `ubuntu-latest` image; `ubuntu-26.04` does not exist as a label yet, so
+      pinning to it now would break the workflows). The test gates are
+      Linux-only by decision (2026-11-02): the TUI is exercised locally on
+      macOS during development, so a macOS CI gate was judged not worth the
+      runner minutes.
 
 ## Documentation
 

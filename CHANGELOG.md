@@ -11,6 +11,12 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- CI runner images pinned to `ubuntu-24.04` in both workflows (the label
+  GitHub's `ubuntu-latest` currently points at). The test gates stay
+  Linux-only by decision: the TUI is exercised locally on macOS, so no macOS
+  CI gate is added. Note `ubuntu-26.04` is not a valid runner label yet —
+  the earlier todo note was wrong about the image migration.
+
 - Binary release builds removed from CI. The `release-assets` job (which built
   the four `andre-<arch>-<os>` assets on `macos-latest`/`ubuntu-latest`/
   `ubuntu-24.04-arm` and uploaded them to the GitHub Release) is gone; a
