@@ -9,7 +9,7 @@ in [`CHANGELOG.md`](CHANGELOG.md).
 | Field | Value |
 |-------|--------|
 | **Version** | `1.0.0-rc1` — published as a [pre-release](https://github.com/lthiagol/andre/releases/tag/v1.0.0-rc1); installs are Homebrew or from source (binary releases dropped 2026-11-02) |
-| **Branch** | `wip` = `stable` — the release is promoted; work continues on `wip` |
+| **Branch** | `wip` is ahead of `stable`; `stable` is fast-forwarded from `wip` once CI is green |
 | **Open work** | see [`todo.txt`](todo.txt) |
 | **Tests** | `make test` / `make ci` (coverage: andre-core ≥ 90%, TUI ≥ 38%) |
 
@@ -36,7 +36,7 @@ All planned work through the v1.0 release-candidate line is complete.
 
 | Phase | Version | Criteria |
 |-------|---------|----------|
-| Current | v1.0.0-rc1 | Release-candidate line; tagged, release assets published |
+| Current | v1.0.0-rc1 | Release-candidate line; tagged, notes-only release (no binary assets) — installs are Homebrew / from source |
 | Next | v1.0.0 | Battle-tested macOS + Linux; frozen `andre.yml` |
 
 Install: `brew install lthiagol/tap/andre`, or from source (`make install` / `cargo install`).

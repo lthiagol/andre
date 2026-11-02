@@ -58,19 +58,19 @@ See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configurati
 <a name="installation"></a>
 ## 📦 Installation
 
-Install methods are **Homebrew** and **from source** (no prebuilt binaries are
-published).
+Install methods are **Homebrew** and **from source** (no new prebuilt binaries
+are published; the v1.0.0-rc1 release retains its historical assets).
 
 ### Homebrew (macOS / Linux)
 
-The tap is hosted on Codeberg, so add it once with the full URL:
-
 ```bash
-brew tap lthiagol/tap https://github.com/lthiagol/homebrew-tap
 brew install lthiagol/tap/andre
 ```
 
-Installs Rust (and GNU Stow, which you only need if you opt into `global.engine: stow`).  
+Brew auto-taps the GitHub-hosted tap (`lthiagol/homebrew-tap`) on first
+install, so no manual `brew tap` step is needed.
+
+Installs Rust.
 **Note**: the formula builds andre from source, which pulls in the Rust toolchain (and LLVM + z3 as transitive dependencies, ~1 GB total). To avoid that, install Rust via [rustup](https://rustup.rs) and use `cargo install` or the from-source steps below.
 
 GNU Stow is **optional**: the default `engine: native` is built in and needs no external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if you set `global.engine: stow` in `andre.yml` (or need `adopt` / `dotfiles`).

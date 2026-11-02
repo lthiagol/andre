@@ -58,11 +58,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-
+      # No actions/checkout: this job only calls gh, and GH_REPO below points
+      # gh at the repository this workflow runs in (a fork's tag push would
+      # create its own release, not one on the upstream repo).
       - name: Create the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail

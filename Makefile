@@ -132,7 +132,12 @@ install: build
 
 brew-install: build
 	@case $$(uname -s) in \
-		Darwin) PREFIX=/opt/homebrew ;; \
+		Darwin) \
+			case $$(uname -m) in \
+				arm64)  PREFIX=/opt/homebrew ;; \
+				x86_64) PREFIX=/usr/local ;; \
+				*) echo 'Unsupported Mac architecture' && exit 1 ;; \
+			esac ;; \
 		Linux)  PREFIX=/home/linuxbrew/.linuxbrew ;; \
 		*) echo 'Unknown platform' && exit 1 ;; \
 	esac; \

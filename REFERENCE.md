@@ -85,8 +85,8 @@ Global shortcuts (`v`/`d`/`t`/`n`/`a`/`o`/`Ctrl+C`) work from any screen.
 <a name="installation--build-dependencies"></a>
 ## 🛠 Installation
 
-Install methods are **Homebrew** and **from source** (no prebuilt binaries are
-published). GNU Stow is **optional**: the default `engine: native` needs no
+Install methods are **Homebrew** and **from source** (no new prebuilt binaries
+are published; the v1.0.0-rc1 release retains its historical assets). GNU Stow is **optional**: the default `engine: native` needs no
 external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if
 you set `global.engine: stow` (or need `adopt` / `dotfiles`).
 
@@ -96,7 +96,8 @@ you set `global.engine: stow` (or need `adopt` / `dotfiles`).
 brew install lthiagol/tap/andre
 ```
 
-Installs Rust. Works on Apple Silicon and Intel Macs (builds from source on Intel).
+Installs Rust. Builds from source on every platform: Apple Silicon and Intel
+Macs, and Linux via [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux).
 
 ### Build from source
 
@@ -132,7 +133,7 @@ Or via cargo:
 cargo install --git https://github.com/lthiagol/andre
 ```
 
-The binary is installed to `/usr/local/bin/andre`.
+`make install` puts the binary at `/usr/local/bin/andre`; `cargo install` puts it in `~/.cargo/bin` instead.
 
 <a name="quick-start"></a>
 ## 🚀 Quick Start

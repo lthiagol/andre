@@ -12,9 +12,9 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## CI
 
-- (nothing open) — runner images are pinned to `ubuntu-24.04` (the current
-      `ubuntu-latest` image; `ubuntu-26.04` does not exist as a label yet, so
-      pinning to it now would break the workflows). The test gates are
+- (nothing open) — runner images are pinned to `ubuntu-24.04` (what
+      `ubuntu-latest` currently maps to) for stability; `ubuntu-26.04`
+      exists as a label and can be adopted deliberately. The test gates are
       Linux-only by decision (2026-11-02): the TUI is exercised locally on
       macOS during development, so a macOS CI gate was judged not worth the
       runner minutes.
@@ -38,7 +38,8 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 - `v1.0.0-rc1` published as a GitHub **pre-release** (its four binaries are
   historical — binary releases were dropped on 2026-11-02; the supported
   install methods are now Homebrew and from source).
-- `wip` and `stable` are at the same commit.
+- `wip` is ahead of `stable`; `stable` is fast-forwarded from `wip` once CI
+  is green (see AGENTS.md branching model).
 - The Homebrew tap (`lthiagol/homebrew-tap`) has both `Formula/andre.rb` and
   `Formula/andre-dev.rb` bumped to `v1.0.0-rc1` (formulas build from source).
 - A tag push runs: CI gates → GitHub Release (notes only, no assets) →
