@@ -12,15 +12,13 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## CI
 
-- [ ] Decide whether CI needs a macOS runner. Both workflows are
-      `ubuntu-latest` only; the docs previously claimed Linux + macOS. The new
-      `release-assets` job does use `macos-latest` (to build the macOS
-      binaries), but the test gates still run on Linux only.
-- [ ] Pin the CI runner images. `ubuntu-latest` has already migrated to
-      Ubuntu 26.04 (the gates are green on it) and `macos-latest` is
-      migrating to macOS 26 in November 2026. Pinning explicit labels
-      (`ubuntu-26.04`, `macos-26`) would keep an image change from breaking
-      the gates without a repo change.
+- [ ] Decide whether the test gates need a macOS runner. Both workflows are
+      Linux-only; the TUI is developed on macOS, so a macOS gate would catch
+      platform-specific breakage the Linux gates miss.
+- [ ] Pin the CI runner images. All tag/CI jobs are now `ubuntu-latest`
+      (binaries are no longer built in CI; installs are Homebrew + from
+      source only). Pinning `ubuntu-26.04` explicitly would keep an image
+      change from breaking the gates without a repo change.
 
 ## Documentation
 
@@ -38,11 +36,11 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## Release state (as of v1.0.0-rc1, 2026-10-30)
 
-- `v1.0.0-rc1` published as a GitHub **pre-release** with four binaries
-  (`andre-aarch64-macos`, `andre-x86_64-macos`, `andre-x86_64-linux`,
-  `andre-aarch64-linux`). Every download URL verified HTTP 200.
+- `v1.0.0-rc1` published as a GitHub **pre-release** (its four binaries are
+  historical — binary releases were dropped on 2026-11-02; the supported
+  install methods are now Homebrew and from source).
 - `wip` and `stable` are at the same commit.
 - The Homebrew tap (`lthiagol/homebrew-tap`) has both `Formula/andre.rb` and
-  `Formula/andre-dev.rb` bumped to `v1.0.0-rc1`.
-- A tag push now runs the whole release path green: CI gates → binaries →
-  GitHub Release → Homebrew tap PR.
+  `Formula/andre-dev.rb` bumped to `v1.0.0-rc1` (formulas build from source).
+- A tag push runs: CI gates → GitHub Release (notes only, no assets) →
+  Homebrew tap PR.

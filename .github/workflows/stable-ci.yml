@@ -46,82 +46,35 @@ jobs:
       - name: make coverage-check
         run: make coverage-check
 
-  release-assets:
-    name: build + publish release binaries
-    # Only on a tag push. The README download URLs point at assets named
-    # andre-<arch>-<os>, so the names here must match the Makefile targets.
+  release:
+    name: create the GitHub release
+    # Only on a tag push. No binaries are built or uploaded anymore — the
+    # supported install methods are Homebrew (formula builds from the source
+    # tarball) and from source. The release page exists so generated release
+    # notes stay the historical record.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: ci
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            asset: andre-aarch64-macos
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            asset: andre-x86_64-macos
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset: andre-x86_64-linux
-          # Native ARM runner: cross-linking aarch64 from an x86_64 runner
-          # fails because the bundled rust-lld rejects the aarch64-specific
-          # --fix-cortex-a53-843419 flag.
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            asset: andre-aarch64-linux
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            andre -> target
-            andre-core -> target
-          shared-key: release-${{ matrix.target }}
-
-      - name: Build ${{ matrix.asset }}
-        run: cargo build --release --target ${{ matrix.target }} -p andre
-
-      - name: Stage asset
-        run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/andre "dist/${{ matrix.asset }}"
-          "${{ matrix.asset }}" --help >/dev/null 2>&1 || true
-          ls -la dist/
-
-      - name: Publish to the GitHub release
+      - name: Create the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-          ASSET: ${{ matrix.asset }}
         run: |
           set -euo pipefail
-          # The release may not exist yet (first publish) — create it, then
-          # upload. `gh release upload` fails if the tag has no release.
-          # All four matrix jobs reach this step, so creation is retried: the
-          # first one wins and the others observe an existing release.
+          # An rcN tag is a pre-release: mark it as such so GitHub's
+          # "Latest" release keeps pointing at the newest stable build.
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            # An rcN tag is a pre-release: mark it as such so GitHub's
-            # "Latest" release keeps pointing at the newest stable build.
             PRERELEASE=""
             case "$TAG" in
               *-rc*|*-alpha*|*-beta*) PRERELEASE="--prerelease" ;;
             esac
-            for _ in 1 2 3 4 5; do
-              gh release create "$TAG" --title "andre $TAG" --generate-notes $PRERELEASE && break
-              sleep 5
-            done
+            gh release create "$TAG" --title "andre $TAG" --generate-notes $PRERELEASE
           fi
-          gh release upload "$TAG" "dist/$ASSET" --clobber
 
           # Reconcile the pre-release flag on an existing release too: the
           # flag is only set when the release is created, so a release made

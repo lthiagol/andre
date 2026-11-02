@@ -58,35 +58,10 @@ See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configurati
 <a name="installation"></a>
 ## 📦 Installation
 
-### Quick download (macOS / Linux)
+Install methods are **Homebrew** and **from source** (no prebuilt binaries are
+published).
 
-Grab the binary for your platform from the [latest release](https://github.com/lthiagol/andre/releases):
-
-```bash
-# macOS (Apple Silicon)
-curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-aarch64-macos
-chmod +x andre-aarch64-macos
-sudo mv andre-aarch64-macos /usr/local/bin/andre
-
-# macOS (Intel)
-curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-x86_64-macos
-chmod +x andre-x86_64-macos
-sudo mv andre-x86_64-macos /usr/local/bin/andre
-
-# Linux (x86_64)
-curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-x86_64-linux
-chmod +x andre-x86_64-linux
-sudo mv andre-x86_64-linux /usr/local/bin/andre
-
-# Linux (ARM64)
-curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-aarch64-linux
-chmod +x andre-aarch64-linux
-sudo mv andre-aarch64-linux /usr/local/bin/andre
-```
-
-GNU Stow is **optional**: the default `engine: native` is built in and needs no external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if you set `global.engine: stow` in `andre.yml` (or need `adopt` / `dotfiles`).
-
-### Homebrew (macOS)
+### Homebrew (macOS / Linux)
 
 The tap is hosted on Codeberg, so add it once with the full URL:
 
@@ -96,7 +71,9 @@ brew install lthiagol/tap/andre
 ```
 
 Installs Rust (and GNU Stow, which you only need if you opt into `global.engine: stow`).  
-**Note**: Homebrew builds Rust from source, which pulls in LLVM and z3 as transitive dependencies (~1 GB total). To avoid this, install Rust via [rustup](https://rustup.rs) instead, then use the binary from a [release](https://github.com/lthiagol/andre/releases) or `cargo install`.
+**Note**: the formula builds andre from source, which pulls in the Rust toolchain (and LLVM + z3 as transitive dependencies, ~1 GB total). To avoid that, install Rust via [rustup](https://rustup.rs) and use `cargo install` or the from-source steps below.
+
+GNU Stow is **optional**: the default `engine: native` is built in and needs no external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if you set `global.engine: stow` in `andre.yml` (or need `adopt` / `dotfiles`).
 
 ### From source
 

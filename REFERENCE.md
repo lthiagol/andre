@@ -85,27 +85,12 @@ Global shortcuts (`v`/`d`/`t`/`n`/`a`/`o`/`Ctrl+C`) work from any screen.
 <a name="installation--build-dependencies"></a>
 ## 🛠 Installation
 
-### Quick download (macOS / Linux)
+Install methods are **Homebrew** and **from source** (no prebuilt binaries are
+published). GNU Stow is **optional**: the default `engine: native` needs no
+external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if
+you set `global.engine: stow` (or need `adopt` / `dotfiles`).
 
-Grab the binary for your platform from the [latest release](https://github.com/lthiagol/andre/releases):
-
-**macOS (Apple Silicon):**
-```bash
-curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-aarch64-macos
-chmod +x andre-aarch64-macos
-sudo mv andre-aarch64-macos /usr/local/bin/andre
-```
-
-**Linux (x86_64):**
-```bash
-curl -LO https://github.com/lthiagol/andre/releases/download/v1.0.0-rc1/andre-x86_64-linux
-chmod +x andre-x86_64-linux
-sudo mv andre-x86_64-linux /usr/local/bin/andre
-```
-
-GNU Stow is **optional**: the default `engine: native` needs no external binary. Install [GNU Stow](https://www.gnu.org/software/stow/) only if you set `global.engine: stow` (or need `adopt` / `dotfiles`).
-
-### Homebrew (macOS — recommended)
+### Homebrew (macOS / Linux — recommended)
 
 ```bash
 brew install lthiagol/tap/andre

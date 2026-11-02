@@ -1,4 +1,4 @@
-.PHONY: check fmt fmt-check lint test test-all test-unit test-tui test-e2e ci run screenshots doctor deps release-assets nextest watch build build-intel build-arm build-local-macos coverage coverage-check release clean rebuild install brew-install
+.PHONY: check fmt fmt-check lint test test-all test-unit test-tui test-e2e ci run screenshots doctor deps nextest watch build coverage coverage-check release clean rebuild install brew-install
 
 # Prefer cargo-nextest when available; fall back to cargo test for bare clones.
 # S2 split targets (test-unit/test-tui/test-e2e) layer on top via NEXTEST_FILTER.
@@ -93,13 +93,6 @@ deps:
 	@command -v cargo-nextest >/dev/null 2>&1 || echo 'Optional: cargo install cargo-nextest  # for make test (default in CI) and make nextest'
 	@command -v cargo-watch >/dev/null 2>&1 || echo 'Optional: cargo install cargo-watch  # for make watch'
 
-release-assets: build
-	@case $$(uname -s) in \
-		Darwin) $(MAKE) build-local-macos ;; \
-	esac
-	@echo 'Release assets in dist/:'
-	@ls -la dist/
-
 # Always requires cargo-nextest (unlike make test, which falls back).
 # Print install hint when missing so CI logs make the requirement obvious.
 nextest:
@@ -131,48 +124,20 @@ build:
 	@mkdir -p dist
 	@cp target/release/andre dist/andre
 
-# Release asset names must match the ones README.md advertises in its
-# download URLs, otherwise the published links 404.
-build-intel:
-	cargo build --release --target x86_64-unknown-linux-gnu
-	@mkdir -p dist
-	@cp target/x86_64-unknown-linux-gnu/release/andre dist/andre-x86_64-linux
-
-build-arm:
-	cargo build --release --target aarch64-unknown-linux-gnu || (echo 'Cross-compilation not available. On x86_64, install: rustup target add aarch64-unknown-linux-gnu' && exit 1)
-	@mkdir -p dist
-	@cp target/aarch64-unknown-linux-gnu/release/andre dist/andre-aarch64-linux
-
-build-local-macos:
-	@case $$(uname -m) in \
-		x86_64) TARGET=x86_64-apple-darwin ;; \
-		arm64) TARGET=aarch64-apple-darwin ;; \
-		*) echo 'Unknown architecture' && exit 1 ;; \
-	esac; \
-	cargo build --release --target $$TARGET; \
-	mkdir -p dist; \
-	case $$TARGET in \
-		x86_64-apple-darwin) cp target/$$TARGET/release/andre dist/andre-x86_64-macos ;; \
-		aarch64-apple-darwin) cp target/$$TARGET/release/andre dist/andre-aarch64-macos ;; \
-	esac
-
 release: lint test build
 	@echo 'Build ready for release'
 
 install: build
 	sudo cp dist/andre /usr/local/bin/andre
 
-brew-install: build-local-macos
-	@case $$(uname -m) in \
-		x86_64) PREFIX=/usr/local ;; \
-		arm64)  PREFIX=/opt/homebrew ;; \
-		*) echo 'Unknown architecture' && exit 1 ;; \
+brew-install: build
+	@case $$(uname -s) in \
+		Darwin) PREFIX=/opt/homebrew ;; \
+		Linux)  PREFIX=/home/linuxbrew/.linuxbrew ;; \
+		*) echo 'Unknown platform' && exit 1 ;; \
 	esac; \
 	mkdir -p $$PREFIX/bin; \
-	case $$(uname -m) in \
-		x86_64) cp dist/andre-x86_64-macos $$PREFIX/bin/andre ;; \
-		arm64)  cp dist/andre-aarch64-macos $$PREFIX/bin/andre ;; \
-	esac; \
+	cp dist/andre $$PREFIX/bin/andre; \
 	echo "Installed to $$PREFIX/bin/andre"
 
 clean:

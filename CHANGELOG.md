@@ -11,6 +11,18 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- Binary release builds removed from CI. The `release-assets` job (which built
+  the four `andre-<arch>-<os>` assets on `macos-latest`/`ubuntu-latest`/
+  `ubuntu-24.04-arm` and uploaded them to the GitHub Release) is gone; a
+  minimal `release` job now only creates the GitHub Release with generated
+  notes and keeps the rc pre-release/"Latest" reconciliation. The supported
+  install methods are Homebrew (the tap formula builds from the source
+  tarball) and from source (`make install` / `cargo install`).
+- README.md and REFERENCE.md installation sections rewritten accordingly: the
+  "Quick download" binary sections were removed, Homebrew is documented for
+  macOS/Linux, and `brew-install` in the Makefile now installs the plain
+  `dist/andre` build. The `release-assets`, `build-intel`, `build-arm`, and
+  `build-local-macos` Makefile targets were removed.
 - Removed the dead `HOMEBREW_TAP_TOKEN` secret from the repo's GitHub Actions
   secrets (it held a classic PAT GitHub already rejected with `401`; the tap
   job authenticates with `ANDRE_TAP_SSH_KEY` + `ANDRE_TAP_PR_TOKEN`). The
