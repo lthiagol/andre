@@ -6,11 +6,9 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## Release
 
-- [ ] Rotate the `HOMEBREW_TAP_TOKEN` secret — it holds a classic PAT that
-      GitHub now rejects with `401 Bad credentials`. It is no longer used: the
-      tap checkout and push use the `ANDRE_TAP_SSH_KEY` deploy key, and the
-      PR uses `ANDRE_TAP_PR_TOKEN`. The old secret can be deleted, or
-      refreshed if some other workflow still reads it.
+- (nothing open) — the dead `HOMEBREW_TAP_TOKEN` secret was deleted from the
+    repo's GitHub Actions secrets on 2026-11-02; the tap job uses
+    `ANDRE_TAP_SSH_KEY` (checkout/push) and `ANDRE_TAP_PR_TOKEN` (PR only).
 
 ## CI
 

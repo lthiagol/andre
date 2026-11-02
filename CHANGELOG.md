@@ -9,7 +9,12 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ## [Unreleased]
 
-_(nothing yet)_
+### Changed
+
+- Removed the dead `HOMEBREW_TAP_TOKEN` secret from the repo's GitHub Actions
+  secrets (it held a classic PAT GitHub already rejected with `401`; the tap
+  job authenticates with `ANDRE_TAP_SSH_KEY` + `ANDRE_TAP_PR_TOKEN`). The
+  explanatory comment in `stable-ci.yml` was rewritten accordingly.
 
 ## [1.0.0-rc1] — 2026-10-30
 

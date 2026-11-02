@@ -170,12 +170,9 @@ jobs:
             echo "date=${DATE}"
           } >> "$GITHUB_OUTPUT"
 
-      # SSH deploy key, not a PAT: the HOMEBREW_TAP_TOKEN secret holds a
-      # classic personal access token that GitHub now rejects with
-      # "401 Bad credentials", which broke every tap-update run.
-      #
-      # The tap is cloned directly rather than through actions/checkout so the
-      # deploy key is used for the clone as well as the push.
+      # The tap is cloned with an SSH deploy key (ANDRE_TAP_SSH_KEY) rather
+      # than through actions/checkout so the same key is used for the clone
+      # as well as the push; the PR itself uses ANDRE_TAP_PR_TOKEN.
       - name: Configure SSH for the tap
         run: |
           mkdir -p ~/.ssh
