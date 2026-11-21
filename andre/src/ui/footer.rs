@@ -343,6 +343,45 @@ pub fn ignore_edit_hints() -> Vec<Hint> {
     ]
 }
 
+/// Hints for the new-package wizard's group step.
+pub fn wizard_group_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("\u{2191}\u{2193}", "move", PRIO_NAV),
+        Hint::new("Enter", "next", PRIO_PRIMARY),
+        Hint::new("Esc", "cancel", PRIO_BACK),
+    ]
+}
+
+/// Hints for the wizard's name step. Letters are text here, so the list moves with arrows only.
+pub fn wizard_name_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("type", "name", PRIO_NAV),
+        Hint::new("\u{2191}\u{2193}", "pick", PRIO_NAV),
+        Hint::new("Enter", "next", PRIO_PRIMARY),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
+}
+
+/// Hints for the wizard's source step.
+pub fn wizard_source_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("\u{2191}\u{2193}", "move", PRIO_NAV),
+        Hint::new("Enter", "next", PRIO_PRIMARY),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
+}
+
+/// Hints for the wizard's live-file picker.
+pub fn wizard_files_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("Space", "mark", PRIO_VERB),
+        Hint::new("\u{2192}", "open", PRIO_VERB),
+        Hint::new("\u{2190}", "up", PRIO_VERB),
+        Hint::new("Enter", "next", PRIO_PRIMARY),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
+}
+
 /// Hints for the profile membership dialog.
 pub fn membership_dialog_hints() -> Vec<Hint> {
     vec![
@@ -728,6 +767,30 @@ mod tests {
             "Enter rename  Esc cancel"
         );
         assert_eq!(hint_text(&delete_dialog_hints()), "y delete  n keep");
+    }
+
+    #[test]
+    fn test_wizard_hints_say_what_enter_and_esc_do_on_each_step() {
+        let verbs = |hints: Vec<Hint>| -> Vec<String> {
+            hints
+                .iter()
+                .map(|h| format!("{} {}", h.key, h.label))
+                .collect()
+        };
+        assert_eq!(
+            verbs(super::wizard_name_hints()),
+            [
+                "type name",
+                "\u{2191}\u{2193} pick",
+                "Enter next",
+                "Esc back"
+            ]
+        );
+        assert_eq!(
+            verbs(super::wizard_group_hints()),
+            ["\u{2191}\u{2193} move", "Enter next", "Esc cancel"]
+        );
+        assert!(verbs(super::wizard_files_hints()).contains(&"Space mark".to_string()));
     }
 
     #[test]

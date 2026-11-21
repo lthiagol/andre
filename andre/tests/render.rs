@@ -115,6 +115,9 @@ fn push_screen(app: &mut App, name: &str) {
         "UnstowTargetSelect" => app.component_stack.push(Box::new(
             andre::components::target_select::TargetSelectComponent::unstow(),
         )),
+        "NewPackage" => app.component_stack.push(Box::new(
+            andre::components::wizard::NewPackageWizard::default(),
+        )),
         "Confirm" => {
             app.component_stack
                 .push(Box::new(andre::components::confirm::ConfirmComponent::new(
@@ -165,6 +168,7 @@ fn screen_names() -> Vec<&'static str> {
         "Execute",
         "AdoptTargetSelect",
         "UnstowTargetSelect",
+        "NewPackage",
     ]
 }
 
@@ -3189,5 +3193,185 @@ fn test_ignore_editor_renders_at_120x40_and_200x50_in_each_state() {
 fn type_text_render(app: &mut App, text: &str) {
     for c in text.chars() {
         app.component_dispatch(key_char(c));
+    }
+}
+
+// --- New-package wizard (steps 1-3 and the live-file picker) ---
+
+/// The wizard on step 1 over the test app, with unicode icons so the mockup glyphs apply.
+fn wizard_app() -> (App, tempfile::TempDir) {
+    let (mut app, tmp) = make_test_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    for package in ["nvim", "git"] {
+        std::fs::create_dir_all(app.ctx.home_dir.join("dotfiles/home").join(package)).unwrap();
+    }
+    app.component_stack.push(Box::new(
+        andre::components::wizard::NewPackageWizard::default(),
+    ));
+    (app, tmp)
+}
+
+/// Presses each key in turn, as the event loop would.
+fn press(app: &mut App, keys: &[KeyEvent]) {
+    for key in keys {
+        app.component_dispatch(*key);
+    }
+}
+
+/// Step 1 with `home` chosen (the test app has `home` alone, so Enter on it is the first row).
+fn choose_home(app: &mut App) {
+    press(app, &[enter_key()]);
+}
+
+#[test]
+fn test_new_package_group_step_shows_step_bar_and_groups() {
+    let (mut app, _tmp) = wizard_app();
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(
+        &buf,
+        "[1 group] \u{203a} 2 name \u{203a} 3 source \u{203a} 4 ignore \u{203a} 5 profiles \u{203a} 6 review"
+    ));
+    assert!(line_contains(&buf, "\u{256d} group "));
+    assert!(line_contains(&buf, "home"));
+    assert!(footer_row(&buf).contains("Enter next"));
+}
+
+#[test]
+fn test_new_package_name_step_filters_packages_and_leads_with_the_create_row() {
+    let (mut app, _tmp) = wizard_app();
+    render_updated(&mut app, 80, 24);
+    choose_home(&mut app);
+    press(&mut app, &[key_char('n'), key_char('v')]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "\u{2713} group \u{203a} [2 name]"));
+    assert!(line_contains(&buf, "name  nv"));
+    assert!(line_contains(&buf, "+ create `nv`"));
+    assert!(line_contains(&buf, "\u{2192} nvim  add files to it"));
+    assert!(!line_contains(&buf, "git"));
+    assert!(footer_row(&buf).contains("type name"));
+}
+
+#[test]
+fn test_new_package_name_step_says_files_go_into_an_existing_package() {
+    let (mut app, _tmp) = wizard_app();
+    render_updated(&mut app, 80, 24);
+    choose_home(&mut app);
+    press(&mut app, &[key_char('g'), key_char('i'), key_char('t')]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "\u{2192} add files to `git`"));
+}
+
+#[test]
+fn test_new_package_source_step_shows_the_radio_on_the_cursor_row() {
+    let (mut app, _tmp) = wizard_app();
+    render_updated(&mut app, 80, 24);
+    choose_home(&mut app);
+    press(&mut app, &[key_char('t'), key_char('m'), enter_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "\u{2713} name \u{203a} [3 source]"));
+    assert!(line_contains(&buf, "\u{25cf} empty package"));
+    assert!(line_contains(&buf, "\u{25cb} move live files in"));
+
+    press(&mut app, &[down_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "\u{25cb} empty package"));
+    assert!(line_contains(&buf, "\u{25cf} move live files in"));
+}
+
+#[test]
+fn test_new_package_refused_name_shows_its_rule_in_full_at_80x24() {
+    let (mut app, _tmp) = wizard_app();
+    render_updated(&mut app, 80, 24);
+    choose_home(&mut app);
+    press(
+        &mut app,
+        &[key_char('a'), space_key(), key_char('b'), enter_key()],
+    );
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "\u{2502} name  a b"));
+    assert!(line_contains(&buf, "\u{2502} letters, digits, - _ . only"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_new_package_file_picker_shows_symlink_targets_sizes_and_the_move_rule() {
+    let (mut app, _tmp) = wizard_app();
+    let home = app.ctx.home_dir.clone();
+    std::fs::write(home.join("notes.txt"), vec![0u8; 2150]).unwrap();
+    std::fs::create_dir_all(home.join("sync")).unwrap();
+    std::fs::write(home.join("sync/spell"), "").unwrap();
+    std::os::unix::fs::symlink(home.join("sync/spell"), home.join("spell")).unwrap();
+    render_updated(&mut app, 80, 24);
+    choose_home(&mut app);
+    press(
+        &mut app,
+        &[
+            key_char('t'),
+            key_char('m'),
+            enter_key(),
+            down_key(),
+            enter_key(),
+        ],
+    );
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "spell  \u{2192} ~/sync/spell"));
+    assert!(line_contains(&buf, "~ symlinks cannot be moved in."));
+
+    // The listing is andre.yml, dotfiles, notes.txt: two steps down to notes.txt.
+    press(&mut app, &[down_key(), down_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "file, 2.1 KB"));
+}
+
+#[test]
+fn test_new_package_file_picker_lists_files_and_marks_them() {
+    let (mut app, _tmp) = wizard_app();
+    std::fs::write(app.ctx.home_dir.join("notes.txt"), "").unwrap();
+    render_updated(&mut app, 80, 24);
+    choose_home(&mut app);
+    press(
+        &mut app,
+        &[
+            key_char('t'),
+            key_char('m'),
+            enter_key(),
+            down_key(),
+            enter_key(),
+        ],
+    );
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "\u{2713} name \u{203a} [3 source]"));
+    assert!(line_contains(&buf, "\u{25a1} \u{2022} notes.txt"));
+    assert!(line_contains(&buf, "\u{2022} notes.txt") && footer_row(&buf).contains("Space mark"));
+
+    // The listing is andre.yml, dotfiles, notes.txt: two steps down to notes.txt.
+    press(&mut app, &[down_key(), down_key(), space_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "\u{25a0} \u{2022} notes.txt"));
+    assert!(line_contains(&buf, "marked"));
+}
+
+#[test]
+fn test_new_package_steps_render_at_120x40_and_200x50_without_panic() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = wizard_app();
+        std::fs::write(app.ctx.home_dir.join("notes.txt"), "").unwrap();
+        render_updated(&mut app, width, height);
+        choose_home(&mut app);
+        render_updated(&mut app, width, height);
+        press(&mut app, &[key_char('t'), key_char('m')]);
+        render_updated(&mut app, width, height);
+        press(&mut app, &[enter_key()]);
+        render_updated(&mut app, width, height);
+        press(&mut app, &[down_key(), enter_key()]);
+        let buf = render_updated(&mut app, width, height);
+        assert!(line_contains(&buf, "notes.txt"));
     }
 }

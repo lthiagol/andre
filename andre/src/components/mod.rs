@@ -55,6 +55,7 @@ pub mod settings;
 pub mod status;
 pub mod target_select;
 pub mod unstow;
+pub mod wizard;
 
 pub use menu::MainMenuComponent;
 

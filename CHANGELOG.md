@@ -11,6 +11,13 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- **New-package wizard, steps 1–3 (not in the menu yet).** `NewPackageWizard` picks a group,
+  names the package (typing filters the group's packages; the create row is always first,
+  and an existing name adds files to that package), then picks the source: an empty package,
+  or live files moved in through a picker opened at the group's target. Marks are by Space;
+  symlinks and artifacts are listed but refused. Esc goes back one step and keeps every
+  answer. Nothing is written yet, and the main menu still opens the adopt flow until the
+  ignore, profile and review steps land.
 - **Ignore editor (`i`).** On the packages screen, `i` opens the two ignore files of the
   cursor's package: `.gitignore` (kept out of git) and `.stow-local-ignore` (never
   linked). `Tab` switches file; the tabs show how many patterns each holds, or `(none)`.
