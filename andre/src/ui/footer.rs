@@ -45,8 +45,20 @@ impl Hint {
         }
     }
 
-    /// Columns the hint takes: the key, a space, the label.
+    /// A status note with no key, such as `running…`, drawn as plain `text_dim` text.
+    pub fn note(label: &'static str, prio: u8) -> Self {
+        Self {
+            key: Cow::Borrowed(""),
+            label: Cow::Borrowed(label),
+            prio,
+        }
+    }
+
+    /// Columns the hint takes: the key, a space, the label. A note is its label alone.
     fn width(&self) -> usize {
+        if self.key.is_empty() {
+            return self.label.width();
+        }
         self.key.width() + 1 + self.label.width()
     }
 }
@@ -81,6 +93,13 @@ fn hint_spans(hints: &[Hint], colors: &ThemeColors) -> Vec<Span<'static>> {
     for (i, hint) in hints.iter().enumerate() {
         if i > 0 {
             spans.push(Span::raw(" ".repeat(HINT_GAP)));
+        }
+        if hint.key.is_empty() {
+            spans.push(Span::styled(
+                hint.label.to_string(),
+                Style::default().fg(colors.text_dim),
+            ));
+            continue;
         }
         spans.push(key_span(&hint.key, colors));
         spans.push(Span::styled(
@@ -190,8 +209,6 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
     let enter = |label| Hint::new("Enter", label, PRIO_PRIMARY);
     let space = |label| Hint::new("Space", label, PRIO_VERB);
     let esc = |label| Hint::new("Esc", label, PRIO_BACK);
-    let ky = |label| Hint::new("y", label, PRIO_PRIMARY);
-    let kn = |label| Hint::new("n", label, PRIO_BACK);
 
     match screen_id {
         "MainMenu" => vec![
@@ -200,10 +217,9 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
             enter("select"),
         ],
         "Packages" => vec![arrows("navigate"), space("mark"), enter("run"), esc("back")],
-        "Status" | "Execute" => vec![enter("continue")],
+        "Status" => vec![enter("continue")],
         "Help" => vec![esc("back")],
         "Settings" => vec![arrows("navigate"), enter("group menu"), esc("back")],
-        "Confirm" => vec![ky("confirm"), kn("cancel")],
         "UnstowTargetSelect" => vec![arrows("navigate"), enter("select"), esc("back")],
         "UnstowBrowse" => vec![
             arrows("navigate"),
@@ -212,8 +228,44 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
             Hint::new("\u{2190}", "up", PRIO_VERB),
             esc("back"),
         ],
-        "UnstowConfirm" => vec![ky("remove"), kn("cancel")],
         _ => Vec::new(),
+    }
+}
+
+/// Hints for the review. `y` runs it under its action's name, `n` goes back, and the arrows
+/// move through the tree.
+pub fn review_hints(action: &'static str) -> Vec<Hint> {
+    vec![
+        Hint::new("y", action, PRIO_PRIMARY),
+        Hint::new("n", "cancel", PRIO_BACK),
+        Hint::new("\u{2191}\u{2193}", "inspect", PRIO_NAV),
+    ]
+}
+
+/// Hints for the run. `Enter` leaves it once every package has finished; until then the
+/// footer says it is still running.
+pub fn execute_hints(finished: bool) -> Vec<Hint> {
+    let mut hints = Vec::new();
+    if finished {
+        hints.push(Hint::new("Enter", "done", PRIO_PRIMARY));
+    }
+    hints.push(Hint::new("\u{2191}\u{2193}", "inspect", PRIO_NAV));
+    if !finished {
+        hints.push(Hint::note("running\u{2026}", PRIO_NAV));
+    }
+    hints
+}
+
+/// Hints for the unlink review: `y` removes the link, or `Enter` leaves once it is removed
+/// or has failed.
+pub fn unstow_review_hints(finished: bool) -> Vec<Hint> {
+    if finished {
+        vec![Hint::new("Enter", "done", PRIO_PRIMARY)]
+    } else {
+        vec![
+            Hint::new("y", "remove", PRIO_PRIMARY),
+            Hint::new("n", "cancel", PRIO_BACK),
+        ]
     }
 }
 
@@ -418,8 +470,9 @@ pub fn membership_dialog_hints() -> Vec<Hint> {
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_dialog_hints, fit, footer_line, hint_spans, hints_width as hint_row_width,
-        name_dialog_hints, profiles_hints, screen_hints, Hint, PRIO_PRIMARY,
+        delete_dialog_hints, execute_hints, fit, footer_line, hint_spans,
+        hints_width as hint_row_width, name_dialog_hints, profiles_hints, screen_hints, Hint,
+        PRIO_PRIMARY,
     };
     use crate::theme::ThemeColors;
     use andre_core::Theme;
@@ -511,6 +564,38 @@ mod tests {
         let spans = hint_spans(&screen_hints("Settings"), &colors());
         let enter = spans.iter().find(|s| s.content == "Enter").unwrap();
         assert_eq!(enter.style.fg, Some(colors().key));
+    }
+
+    #[test]
+    fn test_a_note_has_no_key_and_no_gap_before_its_label() {
+        let hints = [
+            Hint::new("y", "confirm", 4),
+            Hint::note("running\u{2026}", 1),
+        ];
+        let spans = hint_spans(&hints, &colors());
+        assert_eq!(text(&spans), "y confirm  running\u{2026}");
+        assert_eq!(hints[1].width(), "running\u{2026}".width());
+        assert_eq!(
+            span(&Line::from(spans), "running\u{2026}").style.fg,
+            Some(colors().text_dim)
+        );
+    }
+
+    #[test]
+    fn test_run_hints_say_running_until_every_package_has_finished() {
+        let running = execute_hints(false);
+        assert_eq!(
+            running
+                .iter()
+                .map(|h| h.label.to_string())
+                .collect::<Vec<_>>(),
+            ["inspect", "running\u{2026}"]
+        );
+        let done = execute_hints(true);
+        assert_eq!(
+            done.iter().map(|h| h.label.to_string()).collect::<Vec<_>>(),
+            ["done", "inspect"]
+        );
     }
 
     #[test]

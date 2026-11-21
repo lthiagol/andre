@@ -1,16 +1,26 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::{layout::Rect, Frame};
+use ratatui::{layout::Rect, text::Line, Frame};
 
 use crate::components::{AppContext, Component, Transition};
 use crate::theme::ThemeColors;
-use crate::ui::UnstowLink;
+use crate::ui::confirm::{done_buttons, review_buttons};
+use crate::ui::detail::{render_detail, Detail};
+use crate::ui::dialog::render_action_bar;
+use crate::ui::footer::{unstow_review_hints, Hint};
+use crate::ui::layout::{screen_rects, Shape};
+use crate::ui::list_panel::{self, render_list_panel, ListView};
+use crate::ui::unstow_confirm::{link_detail, link_row, Outcome, UnstowLink};
 
 pub struct UnstowConfirmComponent {
     pub link: Option<UnstowLink>,
     pub unlink_error: Option<String>,
     pub unlink_success: bool,
+    /// The one row of the list. Its cursor is the review's, so the row is always selected.
+    pub list: ListView,
+    /// The link's detail. Built by `update`, which has the home folder.
+    detail: Detail,
 }
 
 impl UnstowConfirmComponent {
@@ -23,7 +33,30 @@ impl UnstowConfirmComponent {
             link: Some(UnstowLink { path, target }),
             unlink_error: None,
             unlink_success: false,
+            list: ListView::default(),
+            detail: Detail::default(),
         }
+    }
+
+    fn finished(&self) -> bool {
+        self.unlink_success || self.unlink_error.is_some()
+    }
+
+    fn outcome(&self) -> Outcome<'_> {
+        match (&self.unlink_error, self.unlink_success) {
+            (Some(error), _) => Outcome::Failed(error),
+            (None, true) => Outcome::Removed,
+            (None, false) => Outcome::Pending,
+        }
+    }
+
+    /// The link's detail for the current outcome.
+    fn sync(&mut self, ctx: &AppContext) {
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        self.detail = match &self.link {
+            Some(link) => link_detail(link, &ctx.home_dir, self.outcome(), &colors),
+            None => Detail::default(),
+        };
     }
 }
 
@@ -41,7 +74,7 @@ impl Component for UnstowConfirmComponent {
     }
 
     fn handle_key(&mut self, key: KeyEvent, ctx: &mut AppContext) -> Transition {
-        if self.unlink_success || self.unlink_error.is_some() {
+        if self.finished() {
             match key.code {
                 KeyCode::Enter | KeyCode::Esc => return Transition::PopAll,
                 _ => return Transition::None,
@@ -63,7 +96,8 @@ impl Component for UnstowConfirmComponent {
                     }
                 }
             }
-            Transition::None
+            self.sync(ctx);
+            Transition::Handled
         } else if key.code == KeyCode::Char('n')
             || key.code == KeyCode::Char('N')
             || key.code == KeyCode::Esc
@@ -74,18 +108,58 @@ impl Component for UnstowConfirmComponent {
         }
     }
 
+    fn update(&mut self, ctx: &mut AppContext) -> Transition {
+        self.sync(ctx);
+        Transition::None
+    }
+
+    fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
+        unstow_review_hints(self.finished())
+    }
+
+    fn prepare(&mut self, area: Rect) {
+        let rects = screen_rects(area, Shape::Review);
+        self.list.prepare(rects.list, 1);
+    }
+
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
-        let title = " unlink ";
-        crate::ui::render_unstow_confirm(
+        let rects = screen_rects(area, Shape::Review);
+
+        let width = list_panel::inner(rects.list).width;
+        let rows: Vec<Line> = self
+            .link
+            .iter()
+            .map(|link| link_row(link, self.list.cursor == 0, &colors, width))
+            .collect();
+        render_list_panel(
             frame,
-            area,
+            rects.list,
             &colors,
-            title,
-            self.link.as_ref(),
-            self.unlink_error.as_deref(),
-            self.unlink_success,
+            "remove 1 link",
+            rows,
+            &self.list,
+            None,
         );
+
+        let title = self
+            .link
+            .as_ref()
+            .and_then(|link| link.path.file_name())
+            .map_or_else(
+                || "link".to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            );
+        render_detail(frame, rects.detail, &colors, &title, &self.detail);
+
+        if let Some(actions) = rects.actions {
+            let buttons = if self.finished() {
+                done_buttons()
+            } else {
+                review_buttons("remove", 1)
+            };
+            render_action_bar(frame, actions, &colors, &buttons);
+        }
     }
 }
 

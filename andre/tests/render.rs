@@ -442,7 +442,7 @@ fn test_execute_screen_shows_running() {
     let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Execute");
     let buf = render_app(&mut app, 80, 24);
-    assert!(line_contains(&buf, "Executing"), "running state not shown");
+    assert!(line_contains(&buf, "running"), "running state not shown");
     assert!(
         !line_contains(&buf, "Press Ctrl+C to cancel"),
         "dead Ctrl+C cancel hint must not appear"
@@ -625,16 +625,12 @@ fn test_execute_completion_summary_on_finished() {
 
     let buf = render_app(&mut app, 80, 24);
     assert!(
-        line_contains(&buf, "1 succeeded, 1 failed"),
+        line_contains(&buf, "\u{2713} 1 succeeded  \u{2717} 1 failed"),
         "completion summary missing on Finished"
     );
     assert!(
-        line_contains(&buf, "Press Enter to continue"),
-        "continue prompt missing on Finished"
-    );
-    assert!(
-        line_contains(&buf, "2/2"),
-        "gauge should show full progress"
+        line_contains(&buf, "Enter done"),
+        "done button missing on Finished"
     );
 }
 
@@ -668,7 +664,10 @@ fn test_execute_completion_summary_distinguishes_skips() {
 
     let buf = render_app(&mut app, 80, 24);
     assert!(
-        line_contains(&buf, "1 succeeded, 0 failed, 1 skipped"),
+        line_contains(
+            &buf,
+            "\u{2713} 1 succeeded  \u{2717} 0 failed  \u{2205} 1 skipped"
+        ),
         "skips must not count as failed in completion summary"
     );
 }
@@ -693,19 +692,19 @@ fn test_execute_completed_list_scrolls() {
     exec.state = ExecutionState::Completed;
     app.component_stack.push(Box::new(exec));
 
-    // Drive scroll down; Completed must honor scroll_index in render.
+    // Drive the cursor down; the list must honor it in render.
     for _ in 0..5 {
         app.component_dispatch(down_key());
     }
     let top = app.component_stack.last().unwrap();
     let exec = top.as_any().downcast_ref::<ExecuteComponent>().unwrap();
     assert_eq!(
-        exec.scroll_index, 5,
-        "Completed state should advance scroll_index on down"
+        exec.list.cursor, 5,
+        "Completed state should advance the cursor on down"
     );
     let buf = render_app(&mut app, 80, 24);
     assert!(
-        line_contains(&buf, "Results:") || line_contains(&buf, "pkg"),
+        line_contains(&buf, "pkg"),
         "completed list must still render while scrolled"
     );
 }
@@ -763,8 +762,8 @@ fn test_footer_context_hints_per_screen_family() {
         ("Packages", "mark"),             // packages browser
         ("Settings", "group menu"),       // settings
         ("Help", "back"),                 // help
-        ("Confirm", "confirm"),           // confirm y/n
-        ("Execute", "continue"),          // status/execute family
+        ("Confirm", "cancel"),            // review y/n
+        ("Execute", "inspect"),           // run screen, not finished
         ("UnstowTargetSelect", "select"), // unstow target family
     ];
 
@@ -2067,17 +2066,17 @@ fn test_execute_highlighted_row_is_text_on_selection() {
     }];
     let mut exec = ExecuteComponent::new(rx, results.len(), results);
     exec.state = ExecutionState::Completed;
-    // Row 0 is the "Results:" heading, so row 1 is the failed package.
-    exec.scroll_index = 1;
     app.component_stack.push(Box::new(exec));
-
+    app.update_components();
+    // Row 0 is the failed package. Its error is in the detail, not the row.
     let buf = render_app(&mut app, 80, 24);
     let y = (0..buf.area().height)
-        .find(|&y| row_text(&buf, y).contains("boom"))
+        .find(|&y| row_text(&buf, y).contains("\u{2717} home/pkg0"))
         .expect("failed row is drawn");
-    let text_x = column_of(&buf, y, "boom").expect("error text is drawn");
-    let mark_x = column_of(&buf, y, "\u{2717}").expect("failure mark is drawn");
-    for x in [text_x, mark_x] {
+    // The name takes the label colour on the cursor row. The failure mark keeps its own
+    // colour when that reads on the fill, so only the name is checked here.
+    let text_x = column_of(&buf, y, "home/pkg0").expect("name is drawn");
+    for x in text_x..text_x + "home/pkg0".len() as u16 {
         let cell = &buf[(x, y)];
         assert_eq!(cell.fg, colors.text, "highlighted row text at column {x}");
         assert_eq!(
@@ -2108,12 +2107,12 @@ fn test_execute_list_draws_its_scrollbar_thumb_on_the_panel_border() {
     app.component_stack.push(Box::new(exec));
 
     let buf = render_app(&mut app, 80, 24);
-    let title = " execution ";
-    let column = panel_right_column(&buf, title);
-    let rows = panel_rows(&buf, title);
+    let title = " results ";
+    let column = list_border(&buf, title);
+    let rows = panel_rows_at(&buf, title, column);
     assert!(
         !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
-        "no scrollbar thumb on the execute list's panel border"
+        "no scrollbar thumb on the results list's panel border"
     );
 }
 
@@ -3670,7 +3669,7 @@ fn test_zero_reviews_a_stow_of_the_package_whatever_the_global_action() {
 
     app.component_dispatch(key_char('0'));
     let buf = render_app(&mut app, 80, 24);
-    assert!(line_contains(&buf, "Action: STOW"), "the review stows");
+    assert!(line_contains(&buf, "stow 1 package"), "the review stows");
     assert!(
         line_contains(&buf, "native: andre"),
         "the review names the package"
@@ -3693,5 +3692,326 @@ fn test_set_up_flow_renders_at_120x40_and_200x50() {
         app.component_dispatch(key_char('2'));
         render_updated(&mut app, width, height);
         assert_eq!(app.component_stack.last().unwrap().id(), "Packages");
+    }
+}
+
+/// The review, the run and the unlink screens: the action bar names what the key does, and
+/// no screen tells the user to press a key in its text.
+#[test]
+fn test_review_names_its_action_in_the_action_bar() {
+    let (mut app, _tmp) = make_test_app();
+    let selected =
+        std::collections::HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+    app.component_stack
+        .push(Box::new(andre::components::confirm::ConfirmComponent::new(
+            selected, &app.ctx,
+        )));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "[ n cancel ]"), "cancel button missing");
+    assert!(line_contains(&buf, "[ y stow 1 ]"), "run button missing");
+    assert!(
+        line_contains(&buf, "stow 1 package"),
+        "review title missing"
+    );
+    assert!(
+        !line_contains(&buf, "Press 'y'"),
+        "the review must not tell the user to press a key"
+    );
+}
+
+/// The review's action bar sits on the last content row, right-aligned: one blank column
+/// stands between the buttons and the frame, as in the mockup.
+#[test]
+fn test_review_action_bar_sits_on_the_last_content_row_at_80x24() {
+    let (mut app, _tmp) = make_test_app();
+    let selected =
+        std::collections::HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+    app.component_stack
+        .push(Box::new(andre::components::confirm::ConfirmComponent::new(
+            selected, &app.ctx,
+        )));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 20).ends_with("[ n cancel ]  [ y stow 1 ] \u{2502}"),
+        "{:?}",
+        row_text(&buf, 20)
+    );
+    assert!(
+        row_text(&buf, 21).starts_with("\u{2502}\u{2500}"),
+        "footer rule on row 21"
+    );
+}
+
+/// The review's tree has no checkbox column: the group and its package start where their
+/// glyphs do, with no blank column between.
+#[test]
+fn test_review_tree_has_no_checkbox_column_at_80x24() {
+    let (mut app, _tmp) = make_test_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    let selected =
+        std::collections::HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+    app.component_stack
+        .push(Box::new(andre::components::confirm::ConfirmComponent::new(
+            selected, &app.ctx,
+        )));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "\u{25be} home"), "group row");
+    assert!(
+        line_contains(&buf, "    \u{2192} test") || line_contains(&buf, "    \u{b7} test"),
+        "package row under the group, with its status glyph in column four"
+    );
+}
+
+/// A failure's message keeps each of its lines: `All operations aborted.` starts its own row
+/// in the detail, rather than running on from the line before.
+#[test]
+fn test_run_failure_keeps_each_line_of_the_engine_message() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::execute::{ExecutionResult, ExecutionState};
+
+    let (mut app, _tmp) = make_test_app();
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    let message = "WARNING! stowing shell would cause conflicts:\n  * existing target is neither a link nor a directory: .bashrc\nAll operations aborted.";
+    let mut exec = ExecuteComponent::new(
+        rx,
+        1,
+        vec![ExecutionResult {
+            group: "home".into(),
+            package: "shell".into(),
+            success: false,
+            error_message: Some(message.into()),
+        }],
+    );
+    exec.state = ExecutionState::Completed;
+    app.component_stack.push(Box::new(exec));
+
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "\u{2502} All operations aborted."),
+        "the last line starts its own detail row"
+    );
+    assert!(!line_contains(&buf, "bashrcAll"), "the lines are glued");
+}
+
+/// A long failure scrolls with the page keys: the first rows show at the top, the last row
+/// at the bottom, and PageUp goes back.
+#[test]
+fn test_run_detail_pages_through_a_long_failure() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::execute::{ExecutionResult, ExecutionState};
+
+    let (mut app, _tmp) = make_test_app();
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    let message = (0..30)
+        .map(|i| format!("  * item{i:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut exec = ExecuteComponent::new(
+        rx,
+        1,
+        vec![ExecutionResult {
+            group: "home".into(),
+            package: "shell".into(),
+            success: false,
+            error_message: Some(message),
+        }],
+    );
+    exec.state = ExecutionState::Completed;
+    app.component_stack.push(Box::new(exec));
+
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "item00"),
+        "the top of the message shows"
+    );
+    assert!(!line_contains(&buf, "item29"), "the bottom does not, yet");
+
+    let page_down = KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE);
+    for _ in 0..5 {
+        app.component_dispatch(page_down);
+        render_updated(&mut app, 80, 24);
+    }
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "item29"), "the last line is reachable");
+    assert!(!line_contains(&buf, "item00"), "the top has scrolled away");
+
+    let page_up = KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE);
+    app.component_dispatch(page_up);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(!line_contains(&buf, "item29"), "PageUp goes back up");
+}
+
+/// The run's footer says it is running until every package has finished, then offers Enter.
+#[test]
+fn test_run_footer_says_running_until_it_finishes() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::execute::{ExecutionResult, ExecutionState};
+
+    let (mut app, _tmp) = make_test_app();
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    let mut exec = ExecuteComponent::new(rx, 2, Vec::new())
+        .for_run("stow", vec![("home".into(), "shell".into())]);
+    exec.state = ExecutionState::Running;
+    app.component_stack.push(Box::new(exec));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        footer_row(&buf).contains("\u{2191}\u{2193} inspect  running\u{2026}"),
+        "{:?}",
+        footer_row(&buf)
+    );
+
+    let (mut app, _tmp) = make_test_app();
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    let results = vec![ExecutionResult {
+        group: "home".into(),
+        package: "shell".into(),
+        success: true,
+        error_message: None,
+    }];
+    let mut exec = ExecuteComponent::new(rx, 1, results);
+    exec.state = ExecutionState::Completed;
+    app.component_stack.push(Box::new(exec));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        footer_row(&buf).contains("Enter done  \u{2191}\u{2193} inspect"),
+        "{:?}",
+        footer_row(&buf)
+    );
+    assert!(
+        !line_contains(&buf, "running\u{2026}"),
+        "no running note once done"
+    );
+}
+
+/// The run's `[ Enter done ]` sits on the last content row, like the review's buttons.
+#[test]
+fn test_run_done_button_sits_on_the_last_content_row_at_80x24() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::execute::{ExecutionResult, ExecutionState};
+
+    let (mut app, _tmp) = make_test_app();
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    let mut exec = ExecuteComponent::new(
+        rx,
+        1,
+        vec![ExecutionResult {
+            group: "home".into(),
+            package: "shell".into(),
+            success: true,
+            error_message: None,
+        }],
+    );
+    exec.state = ExecutionState::Completed;
+    app.component_stack.push(Box::new(exec));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 20).ends_with("[ Enter done ] \u{2502}"),
+        "{:?}",
+        row_text(&buf, 20)
+    );
+}
+
+#[test]
+fn test_run_detail_offers_a_fix_for_a_real_file_in_the_way() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::execute::{ExecutionResult, ExecutionState};
+
+    let (mut app, _tmp) = make_test_app();
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    let results = vec![ExecutionResult {
+        group: "home".into(),
+        package: "shell".into(),
+        success: false,
+        error_message: Some("target already exists and is not a symlink: /home/u/.bashrc".into()),
+    }];
+    let mut exec = ExecuteComponent::new(rx, 1, results);
+    exec.state = ExecutionState::Completed;
+    app.component_stack.push(Box::new(exec));
+
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "\u{2717} failed"),
+        "failure headline missing"
+    );
+    assert!(
+        line_contains(&buf, "Move it into the package"),
+        "fix hint for a real file in the way missing"
+    );
+    assert!(line_contains(&buf, "[ Enter done ]"), "done button missing");
+}
+
+#[test]
+fn test_unlink_review_removes_then_says_so() {
+    use andre::components::unstow::UnstowConfirmComponent;
+
+    let (mut app, tmp) = make_test_app();
+    let source = tmp.path().join("source.txt");
+    std::fs::write(&source, "").unwrap();
+    let link = tmp.path().join("link.txt");
+    std::os::unix::fs::symlink(&source, &link).unwrap();
+    app.component_stack
+        .push(Box::new(UnstowConfirmComponent::with_path(link.clone())));
+
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "remove 1 link"), "list title missing");
+    assert!(line_contains(&buf, "points to"), "link target missing");
+    assert!(
+        line_contains(&buf, "[ y remove 1 ]"),
+        "remove button missing"
+    );
+    assert!(
+        !line_contains(&buf, "Press y to remove"),
+        "the unlink review must not tell the user to press a key"
+    );
+
+    app.component_dispatch(key_char('y'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(!link.is_symlink(), "the link is removed");
+    assert!(
+        line_contains(&buf, "\u{2713} removed"),
+        "removed headline missing"
+    );
+    assert!(line_contains(&buf, "[ Enter done ]"), "done button missing");
+}
+
+/// The screens this batch touches render at the two larger sizes without panicking.
+#[test]
+fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::components::unstow::UnstowConfirmComponent;
+    use andre::execute::{ExecutionResult, ExecutionState};
+
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, tmp) = make_test_app();
+        let selected =
+            std::collections::HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+        app.component_stack
+            .push(Box::new(andre::components::confirm::ConfirmComponent::new(
+                selected, &app.ctx,
+            )));
+        render_updated(&mut app, width, height);
+        app.component_dispatch(down_key());
+        render_updated(&mut app, width, height);
+
+        let (_tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut exec = ExecuteComponent::new(
+            rx,
+            2,
+            vec![ExecutionResult {
+                group: "home".into(),
+                package: "bash".into(),
+                success: true,
+                error_message: None,
+            }],
+        )
+        .for_run("stow", vec![("home".into(), "vim".into())]);
+        exec.state = ExecutionState::Running;
+        app.component_stack.push(Box::new(exec));
+        render_updated(&mut app, width, height);
+
+        let link = tmp.path().join("missing-link");
+        app.component_stack
+            .push(Box::new(UnstowConfirmComponent::with_path(link)));
+        render_updated(&mut app, width, height);
     }
 }

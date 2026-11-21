@@ -135,6 +135,15 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **Review and run screens use the list and detail layout.** The stow, restow and unstow
+  review is a tree of the selected groups and packages on the left, with the command,
+  target and link count of the cursor's row on the right. Its action bar reads
+  `[ n cancel ]  [ y stow 3 ]`; the old `Press 'y' to confirm` line is gone. The run screen
+  has a progress chip (`stow  ████  2/3  ⣼`) that becomes `done  ✓ 2 succeeded  ✗ 1 failed`
+  when finished, a results list with the package in flight, and a detail with the selected
+  result's outcome. A failure caused by a real file in the way names the fix; PgUp and PgDn
+  scroll a long failure's detail. Enter leaves the run once it has finished. The single-link unlink review uses the same layout with
+  `[ y remove 1 ]`.
 - **Packages is one browser.** Main menu `2 packages` opens a single grouped list in place
   of the group picker and the package picker (both removed, with `ui/packages.rs`). Groups
   are rows with their packages folded under them. `Space` marks a package, or every package

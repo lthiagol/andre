@@ -1,70 +1,19 @@
-use ratatui::{
-    layout::Rect,
-    style::Style,
-    widgets::{List, ListItem, ListState},
-    Frame,
-};
+//! The review screen's action bar. The review itself is a tree and a detail pane, built by
+//! `components::confirm`; these are the buttons under it.
 
-use crate::theme::ThemeColors;
-use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
+use crossterm::event::KeyCode;
 
-/// One line of the review list. The component builds these before paint, so
-/// rendering only draws text.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConfirmRow {
-    /// `Action: STOW` and the like.
-    Action(String),
-    /// `Group: name`.
-    Group(String),
-    /// The command preview for one package.
-    Command(String),
-    /// Spacing between sections.
-    Blank,
+use crate::ui::dialog::{key_button, Button};
+
+/// `[ n cancel ]  [ y <action> N ]`: the run is the primary button, on the right.
+pub fn review_buttons(action: &'static str, count: usize) -> Vec<Button> {
+    vec![
+        key_button(KeyCode::Char('n'), "cancel", false),
+        key_button(KeyCode::Char('y'), format!("{action} {count}"), true),
+    ]
 }
 
-pub fn render_confirm(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    title: &str,
-    rows: &[ConfirmRow],
-    scroll_index: usize,
-    viewport_height: usize,
-) {
-    let mut items: Vec<ListItem> = rows
-        .iter()
-        .map(|row| match row {
-            ConfirmRow::Action(text) => {
-                ListItem::new(text.as_str()).style(Style::default().fg(colors.accent))
-            }
-            ConfirmRow::Group(text) => {
-                ListItem::new(text.as_str()).style(Style::default().fg(colors.value))
-            }
-            ConfirmRow::Command(text) => {
-                ListItem::new(text.as_str()).style(Style::default().fg(colors.text))
-            }
-            ConfirmRow::Blank => ListItem::new("").style(Style::default().fg(colors.accent)),
-        })
-        .collect();
-
-    items.push(
-        ListItem::new("Press 'y' to confirm, 'n' to cancel")
-            .style(Style::default().fg(colors.text_dim)),
-    );
-
-    let total = items.len();
-    let list = List::new(items).block(crate::ui::themed_panel(colors).title(title));
-
-    let scroll_at = scroll_index.min(total.saturating_sub(1));
-    let mut list_state = ListState::default();
-    list_state.select(Some(scroll_at));
-    frame.render_stateful_widget(list, area, &mut list_state);
-    render_scrollbar(
-        frame,
-        border_track(area),
-        colors,
-        total,
-        viewport_height,
-        scroll_at,
-    );
+/// `[ Enter done ]`, the one button on a finished run or a finished unlink.
+pub fn done_buttons() -> Vec<Button> {
+    vec![key_button(KeyCode::Enter, "done", true)]
 }

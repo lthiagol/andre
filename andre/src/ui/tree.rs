@@ -301,10 +301,11 @@ fn mark_span(mark: Option<&Mark>, icons: &Icons, colors: &ThemeColors) -> Span<'
     Span::styled(glyph, Style::default().fg(colour))
 }
 
-/// Paints one row `width` columns wide. Glyphs keep their colour on the cursor row when
-/// they can (see `ui::selection`); the name is cut with `…` before the right-hand text.
-/// Package rows at `STATUS_WORD_MIN_WIDTH` (a 44-col pane) or wider also show the status
-/// word before the meta. The right-hand text ends one column before the border.
+/// Paints one row `width` columns wide, with its checkbox column. Glyphs keep their colour
+/// on the cursor row when they can (see `ui::selection`); the name is cut with `…` before
+/// the right-hand text. Package rows at `STATUS_WORD_MIN_WIDTH` (a 44-col pane) or wider
+/// also show the status word before the meta. The right-hand text ends one column before
+/// the border.
 pub fn tree_line(
     row: &TreeRow,
     selected: bool,
@@ -312,7 +313,38 @@ pub fn tree_line(
     colors: &ThemeColors,
     width: u16,
 ) -> Line<'static> {
+    tree_row(row, selected, icons, colors, width, true)
+}
+
+/// `tree_line` for a list with no checkboxes at all, such as the review. It has no checkbox
+/// column, so its names sit where a checkbox list's names would start, one column less.
+pub fn tree_line_without_checkboxes(
+    row: &TreeRow,
+    selected: bool,
+    icons: &Icons,
+    colors: &ThemeColors,
+    width: u16,
+) -> Line<'static> {
+    tree_row(row, selected, icons, colors, width, false)
+}
+
+fn tree_row(
+    row: &TreeRow,
+    selected: bool,
+    icons: &Icons,
+    colors: &ThemeColors,
+    width: u16,
+    checkboxes: bool,
+) -> Line<'static> {
     let dim = Style::default().fg(colors.text_dim);
+    // The checkbox and the gap after it, when the list has checkboxes.
+    let box_cell = |mark: Option<&Mark>| -> Vec<Span<'static>> {
+        if checkboxes {
+            vec![mark_span(mark, icons, colors), Span::raw(" ")]
+        } else {
+            Vec::new()
+        }
+    };
     let (glyphs, name, name_style, word, meta, meta_style) = match row {
         TreeRow::Group {
             name,
@@ -325,12 +357,8 @@ pub fn tree_line(
             } else {
                 icons.fold_open
             };
-            let glyphs = vec![
-                Span::styled(fold, dim),
-                Span::raw(" "),
-                mark_span(mark.as_ref(), icons, colors),
-                Span::raw(" "),
-            ];
+            let mut glyphs = vec![Span::styled(fold, dim), Span::raw(" ")];
+            glyphs.extend(box_cell(mark.as_ref()));
             let name_style = Style::default()
                 .fg(colors.text)
                 .add_modifier(Modifier::BOLD);
@@ -358,13 +386,10 @@ pub fn tree_line(
                 ),
                 None => (icons.unknown, dim),
             };
-            let glyphs = vec![
-                Span::raw("    "),
-                mark_span(mark.as_ref(), icons, colors),
-                Span::raw(" "),
-                Span::styled(status_glyph, status_style),
-                Span::raw(" "),
-            ];
+            let mut glyphs = vec![Span::raw("    ")];
+            glyphs.extend(box_cell(mark.as_ref()));
+            glyphs.push(Span::styled(status_glyph, status_style));
+            glyphs.push(Span::raw(" "));
             let meta = match mark {
                 Some(Mark::Inherited(via)) => format!("via {via}"),
                 _ => meta.clone(),
@@ -699,6 +724,20 @@ mod tests {
         )]);
         let line = tree_line(&tree.rows()[1], false, &UNICODE, &colors(), 20);
         assert_eq!(text(&line).trim_end(), "       \u{2713} git");
+    }
+
+    #[test]
+    fn test_checkbox_less_rows_drop_the_checkbox_column() {
+        let tree = Tree::new(vec![group(
+            "home",
+            vec![pkg("shell", Some(StowStatus::Stowed), None)],
+        )]);
+        let rows = tree.rows();
+        let header = tree_line_without_checkboxes(&rows[0], false, &UNICODE, &colors(), 24);
+        let package = tree_line_without_checkboxes(&rows[1], false, &UNICODE, &colors(), 24);
+        // The gutter is one column, as on every row.
+        assert_eq!(text(&header).trim_end(), " \u{25be} home");
+        assert_eq!(text(&package).trim_end(), "     \u{2713} shell");
     }
 
     #[test]

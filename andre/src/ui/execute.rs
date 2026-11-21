@@ -1,39 +1,34 @@
-use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
-    widgets::{Gauge, List, ListItem},
-    Frame,
-};
+//! The run screen's parts: the progress chip, the result rows and the result detail. The
+//! component builds the rows and the detail; these functions lay them out.
 
-use crate::execute::{ExecutionResult, ExecutionState};
+use std::borrow::Cow;
+
+use ratatui::{
+    style::Style,
+    text::{Line, Span},
+};
+use unicode_width::UnicodeWidthStr;
+
+use crate::execute::ExecutionResult;
 use crate::theme::ThemeColors;
-use crate::ui::widgets::scrollbar::render_scrollbar;
+use crate::ui::detail::{text_lines, Detail};
+use crate::ui::selection::row_with_glyphs;
 
 const SPINNER_CHARS: &[char] = &[
     '\u{28FB}', '\u{28FC}', '\u{28FD}', '\u{28FE}', '\u{28FF}', '\u{28F7}', '\u{28EF}', '\u{28DF}',
     '\u{28BF}', '\u{287F}',
 ];
 
-/// Rows reserved above the result list inside the Execution panel (border handled by block).
-pub const GAUGE_ROWS: u16 = 1;
+/// The widest the progress bar gets. It shrinks before the counts do.
+const BAR_MAX: usize = 40;
 
-fn gauge_ratio(completed: usize, total: usize) -> f64 {
-    if total == 0 {
-        0.0
-    } else {
-        (completed as f64 / total as f64).clamp(0.0, 1.0)
-    }
+/// The spinner glyph for `frame`.
+pub fn spinner(frame: usize) -> char {
+    SPINNER_CHARS[frame % SPINNER_CHARS.len()]
 }
 
-fn row_icon_style(success: bool, colors: &ThemeColors) -> (String, ratatui::style::Color) {
-    if success {
-        ("\u{2713}".to_string(), colors.ok)
-    } else {
-        ("\u{2717}".to_string(), colors.err)
-    }
-}
-
-fn is_skipped(result: &ExecutionResult) -> bool {
+/// A skip never ran: its message starts `Skipped`.
+pub fn is_skipped(result: &ExecutionResult) -> bool {
     !result.success
         && result
             .error_message
@@ -41,146 +36,224 @@ fn is_skipped(result: &ExecutionResult) -> bool {
             .is_some_and(|m| m.starts_with("Skipped"))
 }
 
-fn completion_summary(results: &[ExecutionResult]) -> String {
-    let succeeded = results.iter().filter(|r| r.success).count();
-    let skipped = results.iter().filter(|r| is_skipped(r)).count();
-    let failed = results.len() - succeeded - skipped;
-    if skipped == 0 {
-        format!("{succeeded} succeeded, {failed} failed")
-    } else {
-        format!("{succeeded} succeeded, {failed} failed, {skipped} skipped")
-    }
-}
-
-fn result_row_items(results: &[ExecutionResult], colors: &ThemeColors) -> Vec<ListItem<'static>> {
-    results
-        .iter()
-        .map(|result| {
-            let (icon, fg) = row_icon_style(result.success, colors);
-            ListItem::new(format!("{} {} / {}", icon, result.group, result.package))
-                .style(Style::default().fg(fg))
-        })
-        .collect()
-}
-
-/// Visible list line count for a given execute state (excludes the gauge row).
-pub fn execute_list_len(state: ExecutionState, results: &[ExecutionResult]) -> usize {
-    match state {
-        // spinner line only (no dead Ctrl+C cancel hint)
-        ExecutionState::Running => results.len() + 1,
-        ExecutionState::Completed => results.len() + 4,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn render_execute(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    title: &str,
-    state: ExecutionState,
-    results: &[ExecutionResult],
-    spinner_frame: usize,
+/// `  stow  ████░░░░  2/3  ⣼`: the action, a bar, the count and the spinner.
+pub fn progress_line(
+    action: &str,
+    done: usize,
     total: usize,
-    scroll_index: Option<usize>,
-) {
-    let block = crate::ui::themed_panel(colors).title(title);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    spinner: char,
+    width: u16,
+    colors: &ThemeColors,
+) -> Line<'static> {
+    let prefix = format!("  {action}  ");
+    let suffix = format!("  {done}/{total}  {spinner}");
+    let room = usize::from(width).saturating_sub(prefix.width() + suffix.width());
+    let bar = room.min(BAR_MAX);
+    let filled = (done.min(total) * bar).checked_div(total).unwrap_or(0);
+    Line::from(vec![
+        Span::styled(prefix, Style::default().fg(colors.text)),
+        Span::styled(
+            "\u{2588}".repeat(filled),
+            Style::default().fg(colors.accent),
+        ),
+        Span::styled(
+            "\u{2591}".repeat(bar - filled),
+            Style::default().fg(colors.text_dim),
+        ),
+        Span::styled(suffix, Style::default().fg(colors.text)),
+    ])
+}
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(GAUGE_ROWS), Constraint::Min(1)])
-        .split(inner);
+/// `  done  ✓ 2 succeeded  ✗ 1 failed`, with skips counted last when there are any.
+pub fn summary_line(results: &[ExecutionResult], colors: &ThemeColors) -> Line<'static> {
+    let skipped = results.iter().filter(|r| is_skipped(r)).count();
+    let succeeded = results.iter().filter(|r| r.success).count();
+    let failed = results.len() - succeeded - skipped;
+    let mut spans = vec![
+        Span::styled("  done  ", Style::default().fg(colors.text)),
+        Span::styled(
+            format!("\u{2713} {succeeded} succeeded"),
+            Style::default().fg(colors.ok),
+        ),
+        Span::styled(
+            format!("  \u{2717} {failed} failed"),
+            Style::default().fg(colors.err),
+        ),
+    ];
+    if skipped > 0 {
+        spans.push(Span::styled(
+            format!("  \u{2205} {skipped} skipped"),
+            Style::default().fg(colors.text_dim),
+        ));
+    }
+    Line::from(spans)
+}
 
-    let label = format!("{}/{}", results.len(), total);
-    let gauge = Gauge::default()
-        .ratio(gauge_ratio(results.len(), total))
-        .label(label)
-        .gauge_style(Style::default().fg(colors.accent).bg(colors.selection))
-        .use_unicode(true);
-    frame.render_widget(gauge, chunks[0]);
-
-    let list_area = chunks[1];
-    let items: Vec<ListItem> = match state {
-        ExecutionState::Running => {
-            let spinner = SPINNER_CHARS[spinner_frame % SPINNER_CHARS.len()];
-            let mut items = result_row_items(results, colors);
-            let progress = if total > 0 {
-                let in_flight = (results.len() + 1).min(total);
-                format!(" [{spinner}] {in_flight}/{total}")
-            } else {
-                format!(" [{spinner}] Executing...")
-            };
-            items.push(ListItem::new(progress).style(Style::default().fg(colors.accent)));
-            items
-        }
-        ExecutionState::Completed => {
-            let summary = completion_summary(results);
-            let has_problems = results.iter().any(|r| !r.success);
-
-            let mut items = Vec::new();
-            items.push(
-                ListItem::new("Results:".to_string()).style(Style::default().fg(colors.accent)),
-            );
-
-            for result in results {
-                let (icon, fg) = row_icon_style(result.success, colors);
-                let extra = if let Some(ref e) = result.error_message {
-                    format!(" - {e}")
-                } else {
-                    String::new()
-                };
-                items.push(
-                    ListItem::new(format!("{icon} {} {}{extra}", result.group, result.package))
-                        .style(Style::default().fg(fg)),
-                );
-            }
-
-            items.push(ListItem::new(String::new()).style(Style::default().fg(colors.accent)));
-            items.push(
-                ListItem::new(summary).style(Style::default().fg(if has_problems {
-                    colors.warn
-                } else {
-                    colors.ok
-                })),
-            );
-            items.push(
-                ListItem::new("Press Enter to continue".to_string())
-                    .style(Style::default().fg(colors.text_dim)),
-            );
-            items
-        }
+/// One finished result: its mark and `group/package`.
+pub fn result_row(
+    result: &ExecutionResult,
+    selected: bool,
+    colors: &ThemeColors,
+    width: u16,
+) -> Line<'static> {
+    let (mark, color) = if result.success {
+        ("\u{2713}", colors.ok)
+    } else if is_skipped(result) {
+        ("\u{2205}", colors.text_dim)
+    } else {
+        ("\u{2717}", colors.err)
     };
-
-    let content_len = items.len();
-    debug_assert_eq!(
-        content_len,
-        execute_list_len(state, results),
-        "execute_list_len must match rendered items"
-    );
-
-    let list =
-        List::new(items).highlight_style(Style::default().bg(colors.selection).fg(colors.text));
-    let page_size = list_area.height.max(1) as usize;
-
-    let mut list_state = ratatui::widgets::ListState::default();
-    list_state.select(scroll_index);
-    frame.render_stateful_widget(list, list_area, &mut list_state);
-
-    // The list has no border of its own: its right edge is the panel's right border.
-    let track = Rect {
-        x: list_area.right(),
-        y: list_area.y,
-        width: 1,
-        height: list_area.height,
-    };
-    render_scrollbar(
-        frame,
-        track,
+    row_with_glyphs(
+        vec![Span::styled(mark, Style::default().fg(color))],
+        vec![Span::styled(
+            format!(" {}/{}", result.group, result.package),
+            Style::default().fg(colors.text),
+        )],
+        selected,
         colors,
-        content_len,
-        page_size,
-        scroll_index.unwrap_or(0),
-    );
+        width,
+    )
+}
+
+/// The package that is running now, with the spinner in front of it.
+pub fn running_row(
+    spinner: char,
+    label: &str,
+    selected: bool,
+    colors: &ThemeColors,
+    width: u16,
+) -> Line<'static> {
+    row_with_glyphs(
+        vec![Span::styled(
+            spinner.to_string(),
+            Style::default().fg(colors.accent),
+        )],
+        vec![Span::styled(
+            format!(" {label}"),
+            Style::default().fg(colors.text),
+        )],
+        selected,
+        colors,
+        width,
+    )
+}
+
+/// The detail of a finished result: its outcome, and for a failure or skip the message and
+/// a fix when the message is one we know.
+pub fn result_detail(result: &ExecutionResult, colors: &ThemeColors) -> Detail {
+    let (headline, color) = if result.success {
+        ("\u{2713} succeeded", colors.ok)
+    } else if is_skipped(result) {
+        ("\u{2205} skipped", colors.text_dim)
+    } else {
+        ("\u{2717} failed", colors.err)
+    };
+    let mut sections = Vec::new();
+    if let Some(message) = result.error_message.as_deref().filter(|_| !result.success) {
+        sections.extend(text_lines(message, Style::default().fg(colors.text)));
+        if let Some(fix) = fix_hint(message) {
+            sections.push(Line::raw(""));
+            sections.push(Line::styled(fix, Style::default().fg(colors.text_dim)));
+        }
+    }
+    Detail {
+        headline: vec![Line::styled(headline, Style::default().fg(color))],
+        facts: Vec::new(),
+        sections,
+    }
+}
+
+/// The fix for a real file where a link should go. Both engines say so, in their own words.
+const REAL_FILE_HINT: &str =
+    "A real file sits where the link goes. Move it into the package, or delete it.";
+
+/// What to do about a failure we know, read from its message. Native and GNU stow word
+/// their conflicts differently; both kinds get a hint.
+pub fn fix_hint(message: &str) -> Option<&'static str> {
+    if message.contains("is not a symlink")
+        || message.contains("neither a link nor a directory")
+        || message.contains("not owned by stow")
+    {
+        Some(REAL_FILE_HINT)
+    } else if message.contains("foreign or dangling symlink") {
+        Some("A link that is not this package's sits where the link goes. Remove it, then run again.")
+    } else {
+        None
+    }
+}
+
+/// The detail of a run that has not finished a package yet.
+pub fn running_detail(spinner: char, label: String, colors: &ThemeColors) -> Detail {
+    Detail {
+        headline: vec![Line::styled(
+            format!("{spinner} running"),
+            Style::default().fg(colors.accent),
+        )],
+        facts: vec![(Cow::Borrowed("package"), label)],
+        sections: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failed(message: &str) -> ExecutionResult {
+        ExecutionResult {
+            group: "home".into(),
+            package: "shell".into(),
+            success: false,
+            error_message: Some(message.into()),
+        }
+    }
+
+    fn text(line: &Line) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn test_native_real_file_message_gets_the_real_file_hint() {
+        let message = "target already exists and is not a symlink: /home/u/.bashrc";
+        assert_eq!(fix_hint(message), Some(REAL_FILE_HINT));
+    }
+
+    #[test]
+    fn test_native_foreign_symlink_message_gets_the_foreign_hint() {
+        let message = "target already exists (foreign or dangling symlink): /home/u/.vimrc";
+        assert!(fix_hint(message).unwrap().starts_with("A link that is not"));
+    }
+
+    #[test]
+    fn test_stow_neither_a_link_nor_a_directory_gets_the_real_file_hint() {
+        let message = "WARNING! stowing shell would cause conflicts:\n  * existing target is neither a link nor a directory: .bashrc\nAll operations aborted.";
+        assert_eq!(fix_hint(message), Some(REAL_FILE_HINT));
+    }
+
+    #[test]
+    fn test_stow_cannot_stow_over_a_real_file_gets_the_real_file_hint() {
+        let message =
+            "cannot stow shell over existing target .bashrc since neither a link nor a directory";
+        assert_eq!(fix_hint(message), Some(REAL_FILE_HINT));
+    }
+
+    #[test]
+    fn test_stow_not_owned_by_stow_gets_the_real_file_hint_the_mockup_shows() {
+        let message = "existing target is not owned by stow: .config/kitty/kitty.conf";
+        assert_eq!(fix_hint(message), Some(REAL_FILE_HINT));
+    }
+
+    #[test]
+    fn test_unknown_failure_gets_no_hint() {
+        assert_eq!(fix_hint("Operation timed out after 60s"), None);
+    }
+
+    /// Each line of an engine's message keeps its own row, so "All operations aborted."
+    /// does not join the line before it.
+    #[test]
+    fn test_multi_line_message_is_one_section_row_per_line() {
+        let colors = ThemeColors::from_theme(andre_core::Theme::Default);
+        let detail = result_detail(&failed("a: x\nAll operations aborted."), &colors);
+        let rows: Vec<String> = detail.sections.iter().map(text).collect();
+        assert_eq!(rows, ["a: x", "All operations aborted."]);
+    }
 }

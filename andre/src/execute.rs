@@ -89,7 +89,10 @@ pub fn build_execution_results(
     let mut ops = Vec::new();
     let mut skipped = Vec::new();
 
-    for (group, packages) in selected_packages {
+    // Groups in name order, as the review lists them, so the run and the review agree.
+    let mut groups: Vec<(&String, &Vec<String>)> = selected_packages.iter().collect();
+    groups.sort_by(|a, b| a.0.cmp(b.0));
+    for (group, packages) in groups {
         let source = config.get_group_source(group, config_dir, home_dir);
         let target = config.get_group_target(group, config_dir, home_dir);
         let ignores = config.effective_ignores(group);

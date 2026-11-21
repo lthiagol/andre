@@ -43,6 +43,15 @@ pub struct Dialog {
     pub buttons: Vec<Button>,
 }
 
+/// A button for `code`, labelled with what it does. `primary` marks the main action.
+pub fn key_button(code: KeyCode, label: impl Into<Cow<'static, str>>, primary: bool) -> Button {
+    Button {
+        key: KeyEvent::new(code, KeyModifiers::NONE),
+        label: label.into(),
+        primary,
+    }
+}
+
 /// The key as a short label: `y`, `Enter`, `Esc`, `←`.
 pub fn key_name(key: &KeyEvent) -> String {
     match key.code {

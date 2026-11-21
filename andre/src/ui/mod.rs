@@ -1,10 +1,10 @@
 mod banner;
 mod block;
 pub mod chips;
-mod confirm;
+pub mod confirm;
 pub mod detail;
 pub mod dialog;
-mod execute;
+pub mod execute;
 pub mod footer;
 pub mod help;
 pub mod icons;
@@ -19,20 +19,17 @@ pub mod step_bar;
 pub mod text_field;
 mod toast;
 pub mod tree;
-mod unstow_confirm;
+pub mod unstow_confirm;
 pub mod widgets;
 
 pub use banner::{render_banner, render_compact_banner};
 pub use block::{focus_panel, themed_panel};
-pub use confirm::{render_confirm, ConfirmRow};
-pub use execute::{execute_list_len, render_execute, GAUGE_ROWS};
 pub use footer::render_footer;
 pub use help::render_help;
 pub use settings::render_settings;
 pub use status::{render_status, status_layout, StatusRow};
 pub use status_bar::{breadcrumb_label, format_breadcrumb, render_status_bar};
 pub use toast::render_toast;
-pub use unstow_confirm::{render_unstow_confirm, UnstowLink};
 
 use crate::app::App;
 use crate::components::MainMenuComponent;
