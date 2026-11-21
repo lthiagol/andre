@@ -1,4 +1,7 @@
+use std::collections::BTreeSet;
+
 use andre_core::ignore::global_ignore_in;
+use andre_core::profile::known_packages;
 use andre_core::{discover_packages, path::resolve_path, StowStatus};
 use crossterm::event::KeyEvent;
 use ratatui::{layout::Rect, Frame};
@@ -15,17 +18,57 @@ pub struct StatusComponent {
     scroll_index: usize,
     viewport_height: usize,
     rows: Vec<StatusRow>,
+    /// Show only the packages this profile resolves to. `None` lists every package.
+    profile: Option<String>,
 }
 
-/// Lists every configured group's packages with their cached stow status.
-/// Runs once per visit, after the status cache has been refreshed.
-fn build_rows(ctx: &AppContext) -> Vec<StatusRow> {
+impl StatusComponent {
+    /// The status of the packages in `name`, as the profiles screen's `c` opens it.
+    pub fn for_profile(name: &str) -> Self {
+        Self {
+            profile: Some(name.to_string()),
+            ..Self::default()
+        }
+    }
+
+    /// The profile the rows are filtered to, if any.
+    pub fn profile(&self) -> Option<&str> {
+        self.profile.as_deref()
+    }
+}
+
+/// The `group/package` refs that profile `name` runs: its resolved refs that exist on disk.
+/// A profile that does not resolve runs none.
+fn profile_refs(ctx: &AppContext, name: &str) -> BTreeSet<String> {
+    let known = known_packages(&ctx.core.config, &ctx.config_dir, &ctx.home_dir);
+    match ctx.core.profiles.resolve(name, &known) {
+        Ok(resolved) => resolved
+            .entries
+            .iter()
+            .filter(|entry| !entry.missing)
+            .map(|entry| entry.package.clone())
+            .collect(),
+        Err(_) => BTreeSet::new(),
+    }
+}
+
+/// Lists every configured group's packages with their cached stow status, or only those
+/// of `profile` when it is given. Runs once per visit, after the status cache has been
+/// refreshed.
+fn build_rows(ctx: &AppContext, profile: Option<&str>) -> Vec<StatusRow> {
+    let only = profile.map(|name| profile_refs(ctx, name));
     let mut rows = Vec::new();
     let cache = ctx.status_cache.borrow();
     for (group_name, group) in &ctx.core.config.groups {
         let source = resolve_path(&group.source, &ctx.config_dir, &ctx.home_dir);
         let target = resolve_path(&group.target, &ctx.config_dir, &ctx.home_dir);
-        let packages = discover_packages(&source);
+        let packages: Vec<String> = discover_packages(&source)
+            .into_iter()
+            .filter(|name| {
+                only.as_ref()
+                    .is_none_or(|refs| refs.contains(&format!("{group_name}/{name}")))
+            })
+            .collect();
         if packages.is_empty() {
             continue;
         }
@@ -43,7 +86,10 @@ fn build_rows(ctx: &AppContext) -> Vec<StatusRow> {
         rows.push(StatusRow::Spacer);
     }
     if rows.is_empty() {
-        rows.push(StatusRow::NoPackages);
+        rows.push(match profile {
+            Some(name) => StatusRow::NoProfilePackages(name.to_string()),
+            None => StatusRow::NoPackages,
+        });
     }
     rows
 }
@@ -75,7 +121,7 @@ impl Component for StatusComponent {
                     cache.prefetch_group(&source, &target, group_name, &packages, Some(&global));
                 }
             }
-            self.rows = build_rows(ctx);
+            self.rows = build_rows(ctx, self.profile.as_deref());
             self.invalidated = true;
         }
         Transition::None
@@ -139,7 +185,7 @@ mod tests {
     #[test]
     fn test_build_rows_lists_each_package_under_its_group() {
         let (_tmp, ctx) = fixture();
-        let rows = build_rows(&ctx);
+        let rows = build_rows(&ctx, None);
 
         assert_eq!(rows[0], StatusRow::Group("dots".into()));
         let packages: Vec<&str> = rows
@@ -159,7 +205,7 @@ mod tests {
         ctx.status_cache
             .borrow_mut()
             .insert(("dots".into(), "alpha".into()), StowStatus::Stowed);
-        let rows = build_rows(&ctx);
+        let rows = build_rows(&ctx, None);
 
         assert!(rows.contains(&StatusRow::Package {
             name: "alpha".into(),
@@ -171,7 +217,92 @@ mod tests {
     fn test_build_rows_placeholder_when_no_packages() {
         let tmp = tempfile::TempDir::new().unwrap();
         let ctx = AppContext::for_tests(Config::default_empty(), tmp.path());
-        assert_eq!(build_rows(&ctx), vec![StatusRow::NoPackages]);
+        assert_eq!(build_rows(&ctx, None), vec![StatusRow::NoPackages]);
+    }
+
+    /// `fixture` with a profile `one` that runs `dots/alpha` and includes `two`, which runs
+    /// `dots/beta` and also names a package that is not on disk.
+    fn profile_fixture() -> (tempfile::TempDir, AppContext) {
+        let (tmp, mut ctx) = fixture();
+        let mut profiles = andre_core::profile::ProfileSet::new(tmp.path().join("profiles"));
+        let profile =
+            |name: &str, includes: &[&str], packages: &[&str]| andre_core::profile::Profile {
+                name: name.into(),
+                includes: includes.iter().map(|s| s.to_string()).collect(),
+                packages: packages.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
+            };
+        profiles
+            .create(profile("two", &[], &["dots/beta", "dots/ghost"]))
+            .unwrap();
+        profiles
+            .create(profile("one", &["two"], &["dots/alpha"]))
+            .unwrap();
+        ctx.core.profiles = profiles;
+        (tmp, ctx)
+    }
+
+    #[test]
+    fn test_build_rows_for_a_profile_lists_its_resolved_packages_only() {
+        let (_tmp, ctx) = profile_fixture();
+        let rows = build_rows(&ctx, Some("one"));
+
+        let packages: Vec<&str> = rows
+            .iter()
+            .filter_map(|row| match row {
+                StatusRow::Package { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            packages,
+            vec!["alpha", "beta"],
+            "own first, then the include"
+        );
+        assert_eq!(rows[0], StatusRow::Group("dots".into()));
+    }
+
+    #[test]
+    fn test_build_rows_for_a_profile_that_does_not_resolve_is_empty() {
+        let (_tmp, ctx) = profile_fixture();
+        assert_eq!(
+            build_rows(&ctx, Some("missing")),
+            vec![StatusRow::NoProfilePackages("missing".into())]
+        );
+    }
+
+    #[test]
+    fn test_build_rows_for_a_valid_profile_with_no_packages_on_disk_names_the_profile() {
+        let (_tmp, mut ctx) = profile_fixture();
+        ctx.core
+            .profiles
+            .create(andre_core::profile::Profile {
+                name: "bare".into(),
+                packages: vec!["dots/ghost".into()],
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(
+            build_rows(&ctx, Some("bare")),
+            vec![StatusRow::NoProfilePackages("bare".into())]
+        );
+    }
+
+    #[test]
+    fn test_for_profile_filters_the_rows_it_builds_on_visit() {
+        let (_tmp, mut ctx) = profile_fixture();
+        let mut component = StatusComponent::for_profile("two");
+        component.update(&mut ctx);
+
+        let packages: Vec<&str> = component
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                StatusRow::Package { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(packages, vec!["beta"]);
     }
 
     #[test]
@@ -191,7 +322,7 @@ mod tests {
     fn test_scroll_stops_at_the_last_row_when_rows_fit() {
         let (_tmp, mut ctx) = fixture();
         let mut component = StatusComponent {
-            rows: build_rows(&ctx),
+            rows: build_rows(&ctx, None),
             ..Default::default()
         };
         // 80x24: the list shows 6 rows, more than the 4 built here, so every row fits.

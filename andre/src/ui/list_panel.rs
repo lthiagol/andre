@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::input::step_cursor;
 use crate::theme::ThemeColors;
-use crate::ui::block::themed_panel;
+use crate::ui::block::focus_panel;
 use crate::ui::widgets::scrollbar;
 
 /// The cursor and the scroll window of one list.
@@ -101,7 +101,23 @@ pub fn render_list_panel(
     view: &ListView,
     empty: Option<Empty>,
 ) {
-    let block = themed_panel(colors).title(format!(" {title} "));
+    render_focused_list_panel(frame, area, colors, false, title, rows, view, empty);
+}
+
+/// [`render_list_panel`] with the border in `accent` when `focused`. Of two panes side by
+/// side, the one that takes keys is the focused one.
+#[allow(clippy::too_many_arguments)]
+pub fn render_focused_list_panel(
+    frame: &mut Frame,
+    area: Rect,
+    colors: &ThemeColors,
+    focused: bool,
+    title: &str,
+    rows: Vec<Line<'static>>,
+    view: &ListView,
+    empty: Option<Empty>,
+) {
+    let block = focus_panel(colors, focused).title(format!(" {title} "));
     frame.render_widget(block, area);
     let body = inner(area);
 

@@ -394,7 +394,8 @@ count) and the selected profile on the right: description, includes, its package
 | `+` | New profile (dialog; the name must be `a-z 0-9 _ -`, starting with a letter or digit) |
 | `r` | Rename the profile; includes that name it are rewritten |
 | `x` | Delete the profile after a confirm. Profiles that include it lose that include (the dialog names them). No files are unlinked |
-| `e`, `c` | Edit and status filter: not yet available (a toast says so) |
+| `e` | Edit the profile. The left pane marks packages (`Space`; `Enter` does nothing there; `←` `→` fold a group). `Tab` moves to the form: the description (`Enter` edits it, `Enter` or `Esc` ends the edit) and the includes (`Space` checks one). Packages that come through an include are marked `via <profile>` and cannot be toggled. `w` saves. `Esc` with unsaved edits asks: `y` save, `n` discard, `Esc` stay. An include that would make a cycle is refused with a toast |
+| `c` | Status of the profile's packages (the status screen, listing only them) |
 | `Esc` | Back |
 
 ### Global Settings Toggles

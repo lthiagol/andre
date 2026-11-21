@@ -18,8 +18,20 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   name it) and `x` deletes it after a confirm dialog. Deleting drops the includes that
   name the profile; the dialog names the profiles that lose them. Enter runs the current
   action on the whole profile through the review screen. Errors (a cycle, an unknown
-  include) show as the detail headline and as a toast on Enter. Profile edit (`e`)
-  and status filtered to a profile (`c`) come later; both show a toast until then.
+  include) show as the detail headline and as a toast on Enter.
+- **Profile editor (`e`).** Packages on the left, in the grouped tree: `Space` marks a
+  package or a whole group, `←` `→` fold (`←` on a package moves to its group's header). Own packages keep their place in the file and
+  new marks follow. Packages that come through an include are `via <profile>` and cannot
+  be toggled. On the right, the form: the description (`Enter` edits it) and the
+  includes (`Space` checks one), with the resolved facts under them. Including a profile
+  that would make a cycle is refused with a toast. `w` saves the profile file. `Esc` with
+  unsaved edits asks: `y` save, `n` discard, `Esc` stay. A profile that does not resolve
+  still opens, so its broken include can be removed. `Tab` moves the accent border.
+- `ProfileSet::resolve_draft` (`andre-core`): resolves a profile as it would be after a
+  save, without writing it. The editor uses it to check includes and show the result.
+- **Status of a profile (`c`).** The status screen, listing only the packages the
+  profile resolves to. Its rendering is unchanged until the status redesign; a profile
+  with no packages on disk shows `profile <name> has no packages on disk`.
 - **`StowAction::next`** (`andre-core`): the `s` cycle order, tested.
 - **Grouped package tree (no screen change yet).** `andre/src/ui/tree.rs`: `Tree`
   holds groups, folds and marks; `rows()` flattens it for a list, `tree_line` paints

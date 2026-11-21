@@ -17,9 +17,14 @@ use andre_core::StowStatus;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatusRow {
     Group(String),
-    Package { name: String, status: StowStatus },
+    Package {
+        name: String,
+        status: StowStatus,
+    },
     Spacer,
     NoPackages,
+    /// A profile filter that resolves to no package on disk. Carries the profile's name.
+    NoProfilePackages(String),
 }
 
 /// Splits a status-style screen into its list and, when there is room, its legend.
@@ -103,6 +108,10 @@ fn status_item(row: &StatusRow, colors: &ThemeColors, icons: &Icons) -> ListItem
         StatusRow::Spacer => ListItem::new("").style(Style::default().fg(colors.accent)),
         StatusRow::NoPackages => ListItem::new("No packages found in any configured group.")
             .style(Style::default().fg(colors.text_dim)),
+        StatusRow::NoProfilePackages(name) => {
+            ListItem::new(format!("profile {name} has no packages on disk"))
+                .style(Style::default().fg(colors.text_dim))
+        }
     }
 }
 

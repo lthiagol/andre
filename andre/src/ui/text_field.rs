@@ -72,9 +72,7 @@ impl TextField {
     }
 }
 
-/// `label` in `text_dim`, two columns, then the value in `text`. When `focused`, the
-/// character under the cursor is drawn reversed (a space at the end). An error follows in
-/// `err`.
+/// `label` in `text_dim`, two columns, then the field as [`field_spans`] draws it.
 pub fn field_line(
     label: &str,
     field: &TextField,
@@ -85,6 +83,14 @@ pub fn field_line(
         format!("{label}  "),
         Style::default().fg(colors.text_dim),
     )];
+    spans.extend(field_spans(field, focused, colors));
+    Line::from(spans)
+}
+
+/// The value in `text`. When `focused`, the character under the cursor is drawn reversed (a
+/// space at the end). An error follows in `err`.
+pub fn field_spans(field: &TextField, focused: bool, colors: &ThemeColors) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
     let text = Style::default().fg(colors.text);
     if focused {
         let before: String = field.value.chars().take(field.cursor).collect();
@@ -106,7 +112,7 @@ pub fn field_line(
             Style::default().fg(colors.err),
         ));
     }
-    Line::from(spans)
+    spans
 }
 
 #[cfg(test)]

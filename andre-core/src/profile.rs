@@ -367,6 +367,18 @@ impl ProfileSet {
         })
     }
 
+    /// Resolves `draft` as if it were saved under its name, without touching the disk. The
+    /// other profiles are the ones in the set. The editor uses it to show unsaved changes.
+    pub fn resolve_draft(
+        &self,
+        draft: &Profile,
+        known: &BTreeSet<String>,
+    ) -> Result<ResolvedProfile> {
+        let mut set = self.clone();
+        set.profiles.insert(draft.name.clone(), draft.clone());
+        set.resolve(&draft.name, known)
+    }
+
     /// Human-readable problems: skipped files, resolution errors and missing refs.
     pub fn warnings(&self, known: &BTreeSet<String>) -> Vec<String> {
         let mut out: Vec<String> = self
@@ -895,6 +907,41 @@ mod tests {
             err.to_string(),
             "profile include cycle: b -> c -> b",
             "cycle path starts at the first repeated profile"
+        );
+    }
+
+    #[test]
+    fn resolve_draft_uses_the_draft_without_writing_it() {
+        let tmp = TempDir::new().unwrap();
+        let mut set = ProfileSet::new(tmp.path().join("profiles"));
+        set.create(profile("base", &[], &["home/a"])).unwrap();
+        set.create(profile("agent", &[], &["home/b"])).unwrap();
+
+        let draft = profile("agent", &["base"], &["home/b"]);
+        let resolved = set
+            .resolve_draft(&draft, &known(&["home/a", "home/b"]))
+            .unwrap();
+        assert_eq!(entry_names(&resolved), vec!["home/b", "home/a"]);
+
+        // Nothing was written: a fresh load still has the stored profile.
+        assert!(set.get("agent").unwrap().includes.is_empty());
+        let reloaded = ProfileSet::load(&tmp.path().join("profiles")).unwrap();
+        assert!(reloaded.get("agent").unwrap().includes.is_empty());
+    }
+
+    #[test]
+    fn resolve_draft_refuses_a_cycle_through_the_draft() {
+        let tmp = TempDir::new().unwrap();
+        let mut set = ProfileSet::new(tmp.path().join("profiles"));
+        set.create(profile("base", &[], &[])).unwrap();
+        set.create(profile("agent", &["base"], &[])).unwrap();
+
+        let draft = profile("base", &["agent"], &[]);
+        assert_eq!(
+            set.resolve_draft(&draft, &known(&[]))
+                .unwrap_err()
+                .to_string(),
+            "profile include cycle: base -> agent -> base"
         );
     }
 

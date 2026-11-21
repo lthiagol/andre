@@ -30,7 +30,7 @@ pub use adopt_confirm::render_adopt_confirm;
 pub use adopt_name::render_adopt_name;
 pub use adopt_preview::render_adopt_preview;
 pub use banner::{render_banner, render_compact_banner};
-pub use block::themed_panel;
+pub use block::{focus_panel, themed_panel};
 pub use confirm::{render_confirm, ConfirmRow};
 pub use execute::{execute_list_len, render_execute, GAUGE_ROWS};
 pub use footer::render_footer;

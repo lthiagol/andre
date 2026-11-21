@@ -1,7 +1,10 @@
 //! The profiles screen. The list holds the profiles and the detail shows the selected one's
 //! resolved packages. `+` makes a profile, `r` renames it and `x` deletes it, each in a
-//! dialog. Enter runs the current action on the whole profile through the review screen.
+//! dialog. `e` opens the profile editor and `c` the status of the profile's packages. Enter
+//! runs the current action on the whole profile through the review screen.
 
+pub mod edit;
+mod edit_view;
 mod view;
 
 use std::collections::hash_map::DefaultHasher;
@@ -9,13 +12,12 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use andre_core::ignore::global_ignore_in;
-use andre_core::profile::{
-    known_packages, split_package_ref, Profile, ProfileSet, ResolvedProfile,
-};
+use andre_core::profile::{known_packages, split_package_ref, Profile, ProfileSet};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{layout::Rect, text::Line, Frame};
 
 use crate::components::confirm::ConfirmComponent;
+use crate::components::status::StatusComponent;
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::Input;
 use crate::theme::ThemeColors;
@@ -140,16 +142,14 @@ impl Component for ProfilesComponent {
                 }
                 Transition::Handled
             }
-            // Edit and the status filter come with the profile editor (F3b). Until then
-            // the keys say so rather than doing nothing.
-            KeyCode::Char('e') => {
-                ctx.show_toast("profile edit: coming soon");
-                Transition::Handled
-            }
-            KeyCode::Char('c') => {
-                ctx.show_toast("profile status: coming soon");
-                Transition::Handled
-            }
+            KeyCode::Char('e') => match self.selected_name() {
+                Some(name) => match edit::ProfileEditComponent::new(&name, ctx) {
+                    Some(editor) => Transition::Push(Box::new(editor)),
+                    None => Transition::Handled,
+                },
+                None => Transition::Handled,
+            },
+            KeyCode::Char('c') => self.check(ctx),
             _ => Transition::None,
         }
     }
@@ -273,7 +273,14 @@ impl ProfilesComponent {
                 let resolved = ctx.core.profiles.resolve(&name, &known);
                 self.runnable = resolved.is_ok();
                 if let Ok(resolved) = &resolved {
-                    prefetch(ctx, resolved);
+                    prefetch(
+                        ctx,
+                        resolved
+                            .entries
+                            .iter()
+                            .filter(|e| !e.missing)
+                            .map(|e| e.package.as_str()),
+                    );
                 }
                 match ctx.core.profiles.get(&name) {
                     Some(profile) => view::profile_detail(ctx, profile, &resolved),
@@ -316,6 +323,22 @@ impl ProfilesComponent {
             return Transition::Handled;
         }
         Transition::Push(Box::new(ConfirmComponent::new(selected, ctx)))
+    }
+
+    /// Opens the status of the selected profile's packages. Refused with a toast when the
+    /// profile does not resolve.
+    fn check(&self, ctx: &mut AppContext) -> Transition {
+        let Some(name) = self.selected_name() else {
+            return Transition::Handled;
+        };
+        let known = known_packages(&ctx.core.config, &ctx.config_dir, &ctx.home_dir);
+        match ctx.core.profiles.resolve(&name, &known) {
+            Ok(_) => Transition::Push(Box::new(StatusComponent::for_profile(&name))),
+            Err(err) => {
+                ctx.show_error_toast(err.to_string());
+                Transition::Handled
+            }
+        }
     }
 
     /// Applies a key to the open dialog. Returns the dialog to keep open, or `None` when the
@@ -407,13 +430,13 @@ impl ProfilesComponent {
     }
 }
 
-/// Reads the status of the packages in `resolved` that the cache has not seen yet. Packages
-/// whose group has no source or target on disk stay unknown.
-fn prefetch(ctx: &AppContext, resolved: &ResolvedProfile) {
+/// Reads the status of the `group/package` refs in `refs` that the cache has not seen yet.
+/// Packages whose group has no source or target on disk stay unknown.
+fn prefetch<'a>(ctx: &AppContext, refs: impl IntoIterator<Item = &'a str>) {
     let global = global_ignore_in(&ctx.home_dir);
     let mut cache = ctx.status_cache.borrow_mut();
-    for entry in resolved.entries.iter().filter(|e| !e.missing) {
-        let Some((group, package)) = split_package_ref(&entry.package) else {
+    for reference in refs {
+        let Some((group, package)) = split_package_ref(reference) else {
             continue;
         };
         if cache.get(group, package).is_some() {

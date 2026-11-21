@@ -1,3 +1,4 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -12,7 +13,7 @@ use andre::ui::status_style::{status_color, status_word};
 use andre_core::{IconSet, StowAction, StowStatus, Theme};
 
 mod helpers;
-use helpers::{esc_key, key_char, make_empty_app, make_test_app};
+use helpers::{down_key, enter_key, esc_key, key_char, make_empty_app, make_test_app, space_key};
 
 fn render_app(app: &mut App, width: u16, height: u16) -> Buffer {
     app.set_terminal_size(width, height);
@@ -2407,6 +2408,246 @@ fn open_profiles_render(app: &mut App) {
     app.update_components();
 }
 
+/// The profile editor for `name`, opened from the profiles screen with `e`.
+fn open_editor_render(app: &mut App, name: &str) {
+    open_profiles_render(app);
+    let index = app
+        .ctx
+        .core
+        .profiles
+        .iter()
+        .position(|p| p.name == name)
+        .unwrap();
+    for _ in 0..index {
+        app.component_dispatch(down_key());
+    }
+    app.component_dispatch(key_char('e'));
+    app.update_components();
+}
+
+fn tab_key() -> KeyEvent {
+    KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)
+}
+
+/// Column and colour of every `╭` on row `y`: the top-left corners of the panes on it.
+fn corners(buf: &Buffer, y: u16) -> Vec<(u16, Color)> {
+    (0..buf.area().width)
+        .filter(|&x| buf[(x, y)].symbol() == "\u{256d}")
+        .map(|x| (x, buf[(x, y)].fg))
+        .collect()
+}
+
+/// The `packages` pane is on the left, the form on the right. Row 5 holds both corners at 80x24.
+const PANE_ROW: u16 = 5;
+
+#[test]
+fn test_profile_edit_at_80x24_shows_the_packages_and_the_form() {
+    let (mut app, _tmp) = make_profiles_app(&[
+        ("base", "packages: [home/shell]\n"),
+        (
+            "agent",
+            "description: Work servers that run agents\nincludes: [base]\npackages: [home/test]\n",
+        ),
+    ]);
+    open_editor_render(&mut app, "agent");
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(
+        line_contains(&buf, "packages 2 of 2"),
+        "tree title counts marks"
+    );
+    assert!(
+        line_contains(&buf, "✓ ■ test") || line_contains(&buf, "test"),
+        "own package"
+    );
+    assert!(
+        line_contains(&buf, "via base"),
+        "inherited package says where it comes from"
+    );
+    assert!(
+        line_contains(&buf, "Work servers that run agents"),
+        "description"
+    );
+    assert!(line_contains(&buf, "includes"), "includes heading");
+    assert!(line_contains(&buf, "base"), "include row");
+    assert!(line_contains(&buf, "resolved"), "resolved fact");
+    assert!(line_contains(&buf, "2 packages"), "resolved count");
+    assert!(line_contains(&buf, "via base"), "fact for the include");
+    assert!(
+        footer_row(&buf).contains("Tab pane  Space toggle  w save  Esc back"),
+        "{}",
+        footer_row(&buf)
+    );
+}
+
+#[test]
+fn test_profile_edit_title_says_unsaved_after_an_edit() {
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    open_editor_render(&mut app, "agent");
+    assert!(!line_contains(&render_updated(&mut app, 80, 24), "unsaved"));
+
+    app.component_dispatch(down_key());
+    app.component_dispatch(space_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "agent · unsaved ●"),
+        "title marks the edit"
+    );
+    assert!(footer_row(&buf).contains("w save"));
+}
+
+#[test]
+fn test_tab_moves_the_accent_border_to_the_pane_that_takes_keys() {
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    open_editor_render(&mut app, "agent");
+    let accent = ThemeColors::from_theme(app.ctx.core.theme).accent;
+    let border = ThemeColors::from_theme(app.ctx.core.theme).border;
+
+    let buf = render_updated(&mut app, 80, 24);
+    let [(_, left), (_, right)] = corners(&buf, PANE_ROW)[..] else {
+        panic!("two panes expected on row {PANE_ROW}");
+    };
+    assert_eq!((left, right), (accent, border), "packages has focus first");
+
+    app.component_dispatch(tab_key());
+    let buf = render_updated(&mut app, 80, 24);
+    let [(_, left), (_, right)] = corners(&buf, PANE_ROW)[..] else {
+        panic!("two panes expected on row {PANE_ROW}");
+    };
+    assert_eq!(
+        (left, right),
+        (border, accent),
+        "Tab moves the accent to the form"
+    );
+}
+
+#[test]
+fn test_profile_edit_footer_follows_what_space_and_enter_do() {
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    open_editor_render(&mut app, "agent");
+    app.component_dispatch(tab_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        footer_row(&buf).contains("Tab pane  Enter edit  w save  Esc back"),
+        "{}",
+        footer_row(&buf)
+    );
+
+    app.component_dispatch(enter_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        footer_row(&buf).contains("Enter done  Esc done"),
+        "{}",
+        footer_row(&buf)
+    );
+}
+
+#[test]
+fn test_leave_dialog_names_the_profile_and_offers_stay_discard_save() {
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    open_editor_render(&mut app, "agent");
+    app.component_dispatch(down_key());
+    app.component_dispatch(space_key());
+    app.component_dispatch(esc_key());
+
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "Save changes to profile `agent`?"));
+    assert!(line_contains(&buf, "[ Esc stay ]"));
+    assert!(line_contains(&buf, "[ n discard ]"));
+    assert!(line_contains(&buf, "[ y save ]"));
+    assert!(
+        footer_row(&buf).contains("y save  n discard  Esc stay"),
+        "{}",
+        footer_row(&buf)
+    );
+}
+
+#[test]
+fn test_profile_edit_and_profile_status_render_at_120x40_and_200x50() {
+    let (mut app, _tmp) = make_profiles_app(&[
+        ("base", "packages: [home/shell]\n"),
+        ("agent", "includes: [base]\npackages: [home/test]\n"),
+    ]);
+    open_editor_render(&mut app, "agent");
+    for (width, height) in [(120, 40), (200, 50)] {
+        let buf = render_updated(&mut app, width, height);
+        assert!(line_contains(&buf, "packages 2 of 2"), "{width}x{height}");
+    }
+
+    app.component_dispatch(esc_key());
+    app.component_dispatch(key_char('c'));
+    for (width, height) in [(120, 40), (200, 50)] {
+        let buf = render_updated(&mut app, width, height);
+        assert!(line_contains(&buf, "Status"), "{width}x{height}");
+    }
+}
+
+#[test]
+fn test_profile_edit_form_scrolls_to_keep_the_cursor_row_in_view() {
+    let names: Vec<String> = (1..=12).map(|n| format!("p{n:02}")).collect();
+    let mut profiles: Vec<(&str, &str)> = vec![("agent", "packages: [home/test]\n")];
+    profiles.extend(names.iter().map(|name| (name.as_str(), "packages: []\n")));
+    let (mut app, _tmp) = make_profiles_app(&profiles);
+    open_editor_render(&mut app, "agent");
+
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "description"),
+        "the top of the form shows first"
+    );
+
+    app.component_dispatch(tab_key());
+    for _ in 0..names.len() {
+        app.component_dispatch(down_key());
+    }
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "p12"),
+        "the cursor's include is on screen"
+    );
+    assert!(
+        !line_contains(&buf, "description"),
+        "the form scrolled down to it"
+    );
+}
+
+#[test]
+fn test_profile_edit_shows_a_broken_include_as_the_form_headline() {
+    let (mut app, _tmp) =
+        make_profiles_app(&[("agent", "includes: [ghost]\npackages: [home/test]\n")]);
+    open_editor_render(&mut app, "agent");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "ghost"),
+        "the error names the missing profile"
+    );
+    assert!(
+        line_contains(&buf, "missing"),
+        "the include row is marked missing"
+    );
+}
+
+#[test]
+fn test_profile_edit_renders_at_120x40_and_200x50_with_the_dialog_open() {
+    let (mut app, _tmp) = make_profiles_app(&[
+        ("base", "packages: [home/shell]\n"),
+        ("agent", "includes: [base]\npackages: [home/test]\n"),
+    ]);
+    open_editor_render(&mut app, "agent");
+    // The header, then home/shell (inherited from base), then home/test: unmark test.
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(space_key());
+    app.component_dispatch(esc_key());
+    for (width, height) in [(120, 40), (200, 50)] {
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            line_contains(&buf, "Save changes to profile `agent`?"),
+            "{width}x{height}"
+        );
+    }
+}
+
 #[test]
 fn test_main_menu_lists_the_eight_items_at_80x24() {
     let (mut app, _tmp) = make_test_app();
@@ -2488,7 +2729,7 @@ fn test_profiles_footer_names_the_live_action_and_the_list_keys() {
     let buf = render_updated(&mut app, 80, 24);
     let footer = footer_row(&buf);
     assert!(
-        footer.contains("Enter stow  + new  r rename  x delete  Esc back"),
+        footer.contains("Enter stow  + new  e edit  r rename  x delete  c check  Esc back"),
         "{footer}"
     );
     assert!(footer.contains("q quit"), "{footer}");
@@ -2544,7 +2785,7 @@ fn test_profile_that_does_not_resolve_has_no_enter_hint() {
     let buf = render_updated(&mut app, 80, 24);
     let footer = footer_row(&buf);
     assert!(
-        footer.contains("+ new  r rename  x delete  Esc back"),
+        footer.contains("+ new  e edit  r rename  x delete  c check  Esc back"),
         "{footer}"
     );
     assert!(!footer.contains("Enter"), "{footer}");

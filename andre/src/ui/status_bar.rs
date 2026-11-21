@@ -40,6 +40,7 @@ pub fn breadcrumb_label(id: &str) -> &str {
         "Help" => "Help",
         "Confirm" => "Confirm",
         "Profiles" => "Profiles",
+        "ProfileEdit" => "Edit",
         "Execute" => "Execute",
         "AdoptTargetSelect" => "Adopt",
         "AdoptFileSelect" => "Files",
@@ -343,6 +344,12 @@ mod tests {
     #[test]
     fn test_breadcrumb_label_unknown_passthrough() {
         assert_eq!(breadcrumb_label("CustomScreen"), "CustomScreen");
+    }
+
+    #[test]
+    fn test_breadcrumb_label_capitalises_the_profile_editor_like_its_siblings() {
+        assert_eq!(breadcrumb_label("Profiles"), "Profiles");
+        assert_eq!(breadcrumb_label("ProfileEdit"), "Edit");
     }
 
     #[test]

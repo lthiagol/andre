@@ -236,7 +236,7 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
 }
 
 /// Hints for the profiles list. `run` is the live action that Enter runs on the selected
-/// profile, or `None` when Enter is off. `r` and `x` need a selected profile.
+/// profile, or `None` when Enter is off. `e`, `r`, `x` and `c` need a selected profile.
 pub fn profiles_hints(run: Option<&'static str>, selected: bool) -> Vec<Hint> {
     let mut hints = Vec::new();
     if let Some(action) = run {
@@ -244,8 +244,10 @@ pub fn profiles_hints(run: Option<&'static str>, selected: bool) -> Vec<Hint> {
     }
     hints.push(Hint::new("+", "new", PRIO_VERB));
     if selected {
+        hints.push(Hint::new("e", "edit", PRIO_VERB));
         hints.push(Hint::new("r", "rename", PRIO_VERB));
         hints.push(Hint::new("x", "delete", PRIO_VERB));
+        hints.push(Hint::new("c", "check", PRIO_VERB));
     }
     hints.push(Hint::new("Esc", "back", PRIO_BACK));
     hints
@@ -264,6 +266,39 @@ pub fn delete_dialog_hints() -> Vec<Hint> {
     vec![
         Hint::new("y", "delete", PRIO_PRIMARY),
         Hint::new("n", "keep", PRIO_BACK),
+    ]
+}
+
+/// Hints for the profile editor. `space_toggles` is true when Space flips something under
+/// the cursor (a package, or an include), false on the description row, where Enter edits.
+pub fn profile_edit_hints(space_toggles: bool) -> Vec<Hint> {
+    let middle = if space_toggles {
+        Hint::new("Space", "toggle", PRIO_VERB)
+    } else {
+        Hint::new("Enter", "edit", PRIO_PRIMARY)
+    };
+    vec![
+        Hint::new("Tab", "pane", PRIO_NAV),
+        middle,
+        Hint::new("w", "save", PRIO_VERB),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
+}
+
+/// Hints while the profile description is being typed.
+pub fn field_edit_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("Enter", "done", PRIO_PRIMARY),
+        Hint::new("Esc", "done", PRIO_BACK),
+    ]
+}
+
+/// Hints for the leave dialog that opens when a profile has unsaved edits.
+pub fn leave_dialog_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("y", "save", PRIO_PRIMARY),
+        Hint::new("n", "discard", PRIO_BACK),
+        Hint::new("Esc", "stay", PRIO_BACK),
     ]
 }
 
@@ -618,16 +653,16 @@ mod tests {
     fn test_profiles_hints_name_the_live_action_and_drop_what_does_not_apply() {
         assert_eq!(
             hint_text(&profiles_hints(Some("stow"), true)),
-            "Enter stow  + new  r rename  x delete  Esc back"
+            "Enter stow  + new  e edit  r rename  x delete  c check  Esc back"
         );
         assert_eq!(
             hint_text(&profiles_hints(Some("unstow"), true)),
-            "Enter unstow  + new  r rename  x delete  Esc back"
+            "Enter unstow  + new  e edit  r rename  x delete  c check  Esc back"
         );
         // A profile that does not resolve: no Enter, but the profile can still be renamed.
         assert_eq!(
             hint_text(&profiles_hints(None, true)),
-            "+ new  r rename  x delete  Esc back"
+            "+ new  e edit  r rename  x delete  c check  Esc back"
         );
         // No profiles: nothing to run, rename or delete.
         assert_eq!(hint_text(&profiles_hints(None, false)), "+ new  Esc back");
