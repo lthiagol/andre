@@ -64,13 +64,14 @@ andre
 ### Navigation Flow
 
 1. **Main Menu** — Choose an action (profiles, packages, new package, unstow, verify status, etc.)
-2. **Packages** — Mark groups and packages (`Space`) and press `Enter` to run them
+2. **Packages** — Mark packages (`Space`, or `*` for all) and press `Enter` to run them
 3. **Confirmation** — Review the stow commands before execution
 4. **Execution** — See live output with progress feedback
 5. **Status** — View results after execution
 
-On the packages screen, `Space` marks a package (on a group row, every package of the group),
-`Enter` runs the marks, or the cursor's package or group, `←` on a package moves to its group's header, `←` on a header folds the group, `→` unfolds it, and `p` opens
+On the packages screen, `Space` marks the cursor's package, `*` marks every package (or unmarks
+them all when every one is marked), and `Enter` runs the marks, or the cursor's package when
+none is marked. `←` and `→` do nothing there. `p` opens
 the profile membership dialog for the cursor's package. In that dialog `Space` ticks a profile
 and `Enter` saves; `Esc` cancels. `i` opens the ignore editor for the cursor's package: `Tab`
 switches between `.gitignore` and `.stow-local-ignore`, `+` adds a line, `Enter` or `e` edits
@@ -208,9 +209,9 @@ FAIL  kitty  (engine=native): Stow failed: target already exists and is not a sy
 ## 🗺️ Main Menu
 
 The main menu is a list on the left and a detail panel on the right. The detail
-panel describes the selected action and shows its facts: group and package
-counts, the stowed count (`–` until every package's status has been checked),
-and the target directories. Keys: `↑`/`↓` (or `j`/`k`) move, `1`–`8` jump to and
+panel describes the selected action and shows its facts: the packages folder,
+the package count, the stowed count (`–` until every package's status has been checked),
+and the target folder the packages link into. Keys: `↑`/`↓` (or `j`/`k`) move, `1`–`8` jump to and
 open an item, `Enter` opens the selected item, `q` quits. On a machine where the
 config folder is not yet linked to `~/.config/andre`, the first row is the set-up item
 (see [Fresh machine](#fresh-machine)) and `0` jumps to it; the big banner gives way to the
@@ -224,11 +225,11 @@ the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 |--------|------|-------------|
 | **set up this machine** | set up / `⌂` | Only while the set-up offer applies: links this config folder into `~/.config/andre` (`0`) |
 | **profiles** | profiles / `◈` | Named sets of packages; run the current action on one (see Profiles) |
-| **packages** | link / `⇢` | Select groups and packages, then run the current action (stow, restow or unstow) |
+| **packages** | link / `⇢` | Select packages, then run the current action (stow, restow or unstow) |
 | **new package** | new package / `+` | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
 | **unstow** | unlink / `≠` | Pick the group, mark the links to remove in its target, then review and remove them together |
 | **verify status** | check / `✓` | View stow status across all groups |
-| **settings** | gear / `≡` | Edit config, add/remove/edit groups, change global options |
+| **settings** | gear / `≡` | Edit the packages folder, theme, icons and global options |
 | **help** | question / `?` | Keyboard reference |
 | **quit** | power / `×` | Exit andre |
 

@@ -13,8 +13,8 @@ use andre_core::{IconSet, StowAction, StowStatus, Theme};
 mod helpers;
 use helpers::{
     browse_cursor_to, down_key, enter_key, esc_key, key_char, make_bootstrap_app, make_empty_app,
-    make_flat_bootstrap_app, make_flat_test_app, make_test_app, make_unstow_app, push_browse,
-    space_key, up_key,
+    make_flat_bootstrap_app, make_flat_packages_app, make_flat_test_app, make_test_app,
+    make_unstow_app, push_browse, space_key, up_key,
 };
 
 fn render_app(app: &mut App, width: u16, height: u16) -> Buffer {
@@ -1541,10 +1541,10 @@ fn test_detail_panel_describes_the_selected_item() {
         "new package description missing"
     );
     assert!(
-        row_containing(&buf, "targets")
-            .expect("new package targets fact missing")
+        row_containing(&buf, "links to")
+            .expect("new package links to fact missing")
             .contains('~'),
-        "targets should be shown relative to home"
+        "links to should be shown relative to home"
     );
 }
 
@@ -1792,15 +1792,15 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
 }
 
 #[test]
-fn test_group_checkboxes_follow_the_icon_set() {
+fn test_package_checkboxes_follow_the_icon_set() {
     let cases = [
         (IconSet::Nerd, NERD.checkbox_on, NERD.checkbox_off),
         (IconSet::Unicode, UNICODE.checkbox_on, UNICODE.checkbox_off),
     ];
     for (icons, on, off) in cases {
-        // The group row is marked when all its packages are, and off when none are.
+        // The package row is marked when it is, and off when it is not.
         for (marked, glyph, other) in [(true, on, off), (false, off, on)] {
-            let (mut app, _tmp) = make_test_app();
+            let (mut app, _tmp) = make_flat_test_app();
             app.ctx.core.icons = icons;
             push_screen(&mut app, "Packages");
             app.update_components();
@@ -1811,8 +1811,8 @@ fn test_group_checkboxes_follow_the_icon_set() {
             let border = list_border(&buf, "packages 1");
             let row = (0..buf.area().height)
                 .map(|y| list_text(&buf, y, border))
-                .find(|text| text.contains("home"))
-                .expect("group row missing");
+                .find(|text| text.contains("test"))
+                .expect("package row missing");
             assert!(
                 row.contains(glyph),
                 "{icons:?}: checkbox {glyph:?} missing: {row:?}"
@@ -1825,7 +1825,7 @@ fn test_group_checkboxes_follow_the_icon_set() {
 #[test]
 fn test_package_status_glyphs_follow_the_icon_set() {
     for icons in [IconSet::Nerd, IconSet::Unicode] {
-        let (mut app, _tmp) = make_test_app();
+        let (mut app, _tmp) = make_flat_test_app();
         app.ctx.core.icons = icons;
         push_screen(&mut app, "Packages");
         let buf = render_updated(&mut app, 80, 24);
@@ -1888,6 +1888,21 @@ const STATUS_FIXTURES: [(&str, StowStatus); 5] = [
 
 /// Writes the packages in `STATUS_FIXTURES` under the test home and links them, or
 /// blocks them, as their status needs.
+/// A flat app whose packages folder is `dotfiles/home`, so the status fixtures are its
+/// packages (`add_status_fixtures`), with the package `test` among them. Links go to HOME.
+fn make_flat_home_app() -> (App, tempfile::TempDir) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("andre.yml");
+    std::fs::write(
+        &path,
+        "global:\n  stow:\n    verbosity: 0\npackages: dotfiles/home\n",
+    )
+    .unwrap();
+    write_package(&tmp.path().join("dotfiles/home"), "test", ".bashrc");
+    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
+    (app, tmp)
+}
+
 fn add_status_fixtures(home: &std::path::Path) {
     let source = home.join("dotfiles/home");
     let write = |package: &str, file: &str| {
@@ -1913,7 +1928,7 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
     for set in [IconSet::Nerd, IconSet::Unicode] {
         let icons = Icons::for_set(set);
 
-        let (mut packages_app, tmp) = make_test_app();
+        let (mut packages_app, tmp) = make_flat_home_app();
         add_status_fixtures(tmp.path());
         packages_app.ctx.core.icons = set;
         let colors = ThemeColors::from_theme(packages_app.ctx.core.theme);
@@ -2044,7 +2059,7 @@ fn make_package_count_app(count: usize) -> (App, tempfile::TempDir) {
     let path = tmp.path().join("andre.yml");
     std::fs::write(
         &path,
-        "global:\n  stow:\n    verbosity: 0\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
+        "global:\n  stow:\n    verbosity: 0\npackages: dotfiles/home\n",
     )
     .unwrap();
     for i in 0..count {
@@ -2062,11 +2077,15 @@ fn make_package_count_app(count: usize) -> (App, tempfile::TempDir) {
 /// name is cut inside the list, and the CJK name is two columns wide per character.
 #[test]
 fn test_long_and_cjk_package_names_keep_the_list_columns_in_line() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, tmp) = make_flat_home_app();
+    let home = tmp.path().join("dotfiles/home");
+    write_package(&home, &long_package(), ".long_rc");
+    write_package(&home, "deploy", ".deploy_rc");
+    write_package(&home, CJK_PACKAGE, ".kanji_rc");
     app.ctx.core.icons = IconSet::Unicode;
     push_screen(&mut app, "Packages");
     let buf = render_updated(&mut app, 80, 24);
-    let border = list_border(&buf, "packages 8");
+    let border = list_border(&buf, "packages 4");
     let glyph = Icons::for_set(IconSet::Unicode).status(StowStatus::Unstowed);
 
     let row_of = |locator: &str| {
@@ -2154,7 +2173,7 @@ fn test_package_list_draws_its_scrollbar_thumb_when_rows_overflow() {
 
 #[test]
 fn test_package_list_draws_no_scrollbar_when_every_row_fits() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Packages");
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
     let buf = render_updated(&mut app, 80, 24);
@@ -2163,39 +2182,6 @@ fn test_package_list_draws_no_scrollbar_when_every_row_fits() {
     let column = list_border(&buf, title);
     let rows = panel_rows_at(&buf, title, column);
     assert!(rows_with_fg(&buf, column, rows, colors.accent).is_empty());
-}
-
-/// A config with `count` groups and no packages: enough groups to overflow the list.
-fn make_many_group_app(count: usize) -> (App, tempfile::TempDir) {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let path = tmp.path().join("andre.yml");
-    let mut yaml = String::from("global:\n  stow:\n    verbosity: 0\ngroups:\n");
-    for i in 0..count {
-        std::fs::create_dir_all(tmp.path().join(format!("dotfiles/group{i:02}"))).unwrap();
-        yaml.push_str(&format!(
-            "  group{i:02}:\n    source: dotfiles/group{i:02}\n    target: \"~\"\n"
-        ));
-    }
-    std::fs::write(&path, yaml).unwrap();
-    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
-    (app, tmp)
-}
-
-#[test]
-fn test_group_list_draws_its_scrollbar_thumb_when_groups_overflow() {
-    let (mut app, _tmp) = make_many_group_app(30);
-    push_screen(&mut app, "Packages");
-    let colors = ThemeColors::from_theme(app.ctx.core.theme);
-    let buf = render_updated(&mut app, 80, 24);
-
-    // Thirty groups and no packages: the title counts packages, and the rows are the groups.
-    let title = "packages 0";
-    let column = list_border(&buf, title);
-    let rows = panel_rows_at(&buf, title, column);
-    assert!(
-        !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
-        "no scrollbar thumb on the group list's right border"
-    );
 }
 
 #[test]
@@ -2512,10 +2498,7 @@ fn make_long_detail_app() -> (App, tempfile::TempDir) {
 global:
   stow:
     verbosity: 0
-groups:
-  home:
-    source: dotfiles/home
-    target: "~"
+packages: dotfiles/home
 "#,
     )
     .unwrap();
@@ -2541,16 +2524,15 @@ groups:
 fn test_package_detail_cuts_a_long_file_name_with_an_ellipsis() {
     let (mut app, _tmp) = make_long_detail_app();
     push_screen(&mut app, "Packages");
-    // Rows: the group, then its packages in name order (`plain`, `wide`).
+    // Rows: `plain`, then `wide`, in name order.
     app.update_components();
-    app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     let buf = render_updated(&mut app, 80, 24);
 
     let y = (0..buf.area().height)
         .find(|&y| row_text(&buf, y).contains(".wide_configuration_file_with"))
         .expect("long file name row missing");
-    let border = panel_right_column(&buf, "home/wide");
+    let border = panel_right_column(&buf, "wide");
     assert!(
         row_text(&buf, y).contains('\u{2026}'),
         "the long file name is not cut with an ellipsis"
@@ -2566,8 +2548,8 @@ fn test_package_detail_cuts_a_long_file_name_with_an_ellipsis() {
 fn test_short_file_names_are_drawn_whole_in_the_detail() {
     let (mut app, _tmp) = make_long_detail_app();
     push_screen(&mut app, "Packages");
+    // The cursor starts on `plain`, the first package in name order.
     app.update_components();
-    app.component_dispatch(down_key()); // plain
     let buf = render_updated(&mut app, 80, 24);
     assert!(
         row_containing(&buf, ".plain_rc").is_some(),
@@ -2577,57 +2559,59 @@ fn test_short_file_names_are_drawn_whole_in_the_detail() {
 
 #[test]
 fn test_packages_screen_has_no_legend_and_counts_the_marks() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     push_screen(&mut app, "Packages");
     app.update_components();
-    app.component_dispatch(space_key()); // marks every package of `home`
+    app.component_dispatch(key_char('*')); // marks every package
     let buf = render_updated(&mut app, 80, 24);
 
     assert!(
         !buffer_text(&buf).contains(" legend "),
         "the legend is back"
     );
-    let border = list_border(&buf, "packages 6 of 8");
-    let group = (0..buf.area().height)
-        .find(|&y| list_text(&buf, y, border).contains("home"))
-        .expect("group row missing");
     assert!(
-        list_text(&buf, group, border).contains("6/6"),
-        "the group row does not count its marks"
+        row_containing(&buf, "packages 3 of 3").is_some(),
+        "the title does not count the marks"
     );
     assert!(
-        line_contains(&buf, "Enter stow 6"),
+        line_contains(&buf, "Enter stow 3"),
         "the footer does not follow the marks"
     );
 }
 
 #[test]
-fn test_partly_marked_group_shows_the_some_box_and_its_count() {
-    let (mut app, _tmp) = make_two_group_app();
+fn test_a_marked_package_shows_the_checked_box_and_the_title_counts_it() {
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     app.ctx.core.icons = IconSet::Unicode;
     push_screen(&mut app, "Packages");
     app.update_components();
-    app.component_dispatch(down_key()); // the first package of `home`
+    app.component_dispatch(down_key()); // nvim
     app.component_dispatch(space_key());
     let buf = render_updated(&mut app, 80, 24);
 
     let icons = Icons::for_set(IconSet::Unicode);
-    let border = list_border(&buf, "packages 1 of 8");
-    let group = (0..buf.area().height)
-        .map(|y| list_text(&buf, y, border))
-        .find(|text| text.contains("home"))
-        .expect("group row missing");
-    assert!(group.contains(icons.fold_open), "{group:?}: no open fold");
+    let border = list_border(&buf, "packages 1 of 3");
+    let row_with = |name: &str| {
+        (0..buf.area().height)
+            .map(|y| list_text(&buf, y, border))
+            .find(|text| text.contains(name))
+            .unwrap_or_else(|| panic!("{name} row missing"))
+    };
+    let marked = row_with("nvim");
     assert!(
-        group.contains(icons.checkbox_some),
-        "{group:?}: no partial box"
+        marked.contains(icons.checkbox_on),
+        "{marked:?}: no checked box"
     );
-    assert!(group.contains("1/6"), "{group:?}: the count is not 1/6");
+    let unmarked = row_with("tmux");
+    assert!(
+        unmarked.contains(icons.checkbox_off),
+        "{unmarked:?}: no empty box"
+    );
 }
 
 #[test]
 fn test_footer_run_verb_follows_the_action_and_the_marks() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     app.ctx.core.flags.action = StowAction::Restow;
     push_screen(&mut app, "Packages");
     app.update_components();
@@ -2649,10 +2633,16 @@ fn test_membership_dialog_scrolls_a_long_profile_list_to_the_cursor() {
         .iter()
         .map(|name| (name.as_str(), "packages: []\n"))
         .collect();
-    let (mut app, _tmp) = make_profiles_app(&yamls);
+    let (mut app, tmp) = make_flat_packages_app(&["test"]);
+    app.ctx.core.icons = IconSet::Unicode;
+    let dir = tmp.path().join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, yaml) in &yamls {
+        std::fs::write(dir.join(format!("{name}.yml")), yaml).unwrap();
+    }
+    app.ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
     push_screen(&mut app, "Packages");
     app.update_components();
-    app.component_dispatch(down_key()); // home/test
     app.component_dispatch(key_char('p'));
 
     let top = render_updated(&mut app, 80, 24);
@@ -2684,16 +2674,188 @@ fn test_membership_dialog_scrolls_a_long_profile_list_to_the_cursor() {
 }
 
 #[test]
-fn test_p_profiles_shows_on_a_package_row_only() {
-    let (mut app, _tmp) = make_test_app();
+fn test_packages_without_a_folder_say_so_and_name_settings_at_80x24() {
+    let (mut app, _tmp) = make_empty_app();
     push_screen(&mut app, "Packages");
-    let on_group = render_updated(&mut app, 120, 24);
+    let buf = render_updated(&mut app, 80, 24);
     assert!(
-        !line_contains(&on_group, "p profiles"),
-        "group row offers p"
+        line_contains(&buf, "no packages folder"),
+        "empty message missing"
+    );
+    assert!(line_contains(&buf, "6 settings"), "settings hint missing");
+    assert!(
+        line_contains(&buf, "sets no `packages:`"),
+        "detail does not name the missing key"
+    );
+}
+
+#[test]
+fn test_packages_with_an_empty_folder_name_it_and_offer_new_package_at_80x24() {
+    let (mut app, _tmp) = make_flat_packages_app(&[]);
+    push_screen(&mut app, "Packages");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "no packages in ~/dotfiles"),
+        "empty message missing"
+    );
+    assert!(
+        line_contains(&buf, "3 new package"),
+        "new package hint missing"
+    );
+    assert!(
+        row_containing(&buf, "packages 0").is_some(),
+        "title does not count zero"
+    );
+}
+
+#[test]
+fn test_package_rows_read_mark_status_then_name_and_draw_no_fold_glyphs() {
+    let (mut app, _tmp) = make_flat_packages_app(&["nvim", "tmux"]);
+    app.ctx.core.icons = IconSet::Unicode;
+    push_screen(&mut app, "Packages");
+    app.update_components();
+    let buf = render_updated(&mut app, 80, 24);
+
+    let icons = Icons::for_set(IconSet::Unicode);
+    let border = list_border(&buf, "packages 2");
+    let row = (0..buf.area().height)
+        .map(|y| list_text(&buf, y, border))
+        .find(|text| text.contains("nvim"))
+        .expect("nvim row missing");
+    let box_at = row
+        .find(icons.checkbox_off)
+        .expect("no checkbox on the row");
+    assert!(
+        box_at < row.find("nvim").unwrap(),
+        "{row:?}: the name comes first"
+    );
+    let text = buffer_text(&buf);
+    assert!(!text.contains(icons.fold_open), "a fold glyph is drawn");
+    assert!(!text.contains(icons.fold_closed), "a fold glyph is drawn");
+}
+
+/// The cursor's row reads bar, checked box, status glyph, then name: `▌■ ◐ shell`.
+#[test]
+fn test_marked_partial_package_under_the_cursor_reads_bar_box_status_then_name() {
+    let (mut app, tmp) = make_flat_packages_app(&["shell"]);
+    app.ctx.core.icons = IconSet::Unicode;
+    // `shell` has two files and one of them is linked into the home: partly stowed.
+    let shell = tmp.path().join("dotfiles/shell");
+    std::fs::write(shell.join(".zshrc"), "x").unwrap();
+    std::os::unix::fs::symlink(shell.join(".zshrc"), tmp.path().join(".zshrc")).unwrap();
+    push_screen(&mut app, "Packages");
+    app.update_components();
+    app.component_dispatch(space_key());
+    let buf = render_updated(&mut app, 80, 24);
+
+    let border = list_border(&buf, "packages 1 of 1");
+    let row = (0..buf.area().height)
+        .map(|y| list_text(&buf, y, border))
+        .find(|text| text.contains("shell"))
+        .expect("shell row missing");
+    let content = row.trim_start_matches(['│', ' ']);
+    assert!(
+        content.starts_with("▌■ ◐ shell"),
+        "{row:?}: the row does not read bar, box, status, name"
+    );
+}
+
+#[test]
+fn test_menu_packages_facts_name_the_folder_and_the_target_and_no_group() {
+    let (mut app, _tmp) = make_flat_test_app();
+    menu_mut(&mut app).list.cursor = 1;
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_containing(&buf, "folder")
+            .expect("folder fact missing")
+            .contains("~/dotfiles"),
+        "folder is not the packages folder"
+    );
+    assert!(
+        row_containing(&buf, "links to")
+            .expect("links to fact missing")
+            .contains('~'),
+        "links to is not the target"
+    );
+    assert!(
+        !buffer_text(&buf).contains("group"),
+        "the menu still says group"
+    );
+}
+
+/// Every menu item's row and detail, one cursor position at a time, avoid the word group.
+#[test]
+fn test_no_menu_item_says_group_at_any_cursor() {
+    let (mut app, _tmp) = make_flat_test_app();
+    for item in 0..menu_mut(&mut app).item_count() {
+        menu_mut(&mut app).list.cursor = item;
+        let buf = render_updated(&mut app, 80, 24);
+        assert!(
+            !buffer_text(&buf).contains("group"),
+            "menu item {item} still says group"
+        );
+    }
+}
+
+#[test]
+fn test_packages_screens_render_at_120x40_and_200x50_without_panic() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_flat_test_app();
+        push_screen(&mut app, "Packages");
+        app.update_components();
+        render_updated(&mut app, width, height);
+        app.component_dispatch(key_char('*'));
+        render_updated(&mut app, width, height);
+        app.component_dispatch(key_char('p'));
+        render_updated(&mut app, width, height);
+
+        let (mut app, _tmp) = make_empty_app();
+        push_screen(&mut app, "Packages");
+        render_updated(&mut app, width, height);
+
+        let (mut app, _tmp) = make_flat_packages_app(&[]);
+        push_screen(&mut app, "Packages");
+        render_updated(&mut app, width, height);
+
+        let (mut app, _tmp) = make_flat_test_app();
+        render_updated(&mut app, width, height);
+    }
+}
+
+#[test]
+fn test_help_packages_topic_describes_marks_and_the_packages_folder() {
+    let (mut app, _tmp) = make_flat_test_app();
+    push_screen(&mut app, "Help");
+    for _ in 0..4 {
+        app.component_dispatch(down_key());
+    }
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "packages"),
+        "the packages topic is not open"
+    );
+    assert!(
+        line_contains(&buf, "* marks them"),
+        "mark-all is not described"
+    );
+    assert!(
+        !buffer_text(&buf).contains("group"),
+        "the packages topic still says group"
+    );
+}
+
+#[test]
+fn test_p_profiles_shows_on_a_package_row_only() {
+    let (mut app, _tmp) = make_flat_packages_app(&[]);
+    push_screen(&mut app, "Packages");
+    let empty = render_updated(&mut app, 120, 24);
+    assert!(
+        !line_contains(&empty, "p profiles"),
+        "an empty folder offers p"
     );
 
-    app.component_dispatch(down_key());
+    let (mut app, _tmp) = make_flat_packages_app(&["test"]);
+    push_screen(&mut app, "Packages");
     let on_package = render_updated(&mut app, 120, 24);
     assert!(
         line_contains(&on_package, "p profiles"),
@@ -2701,15 +2863,15 @@ fn test_p_profiles_shows_on_a_package_row_only() {
     );
 }
 
-/// A package whose group target does not exist cannot be read, so it shows the unknown dot
-/// rather than a status, and nothing is drawn in its place.
+/// A package whose target does not exist cannot be read, so it shows the unknown dot rather
+/// than a status, and nothing is drawn in its place.
 #[test]
 fn test_package_whose_target_is_missing_shows_the_unknown_dot() {
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("andre.yml");
     std::fs::write(
         &path,
-        "global: {}\ngroups:\n  lost:\n    source: dotfiles/lost\n    target: \"missing-target\"\n",
+        "global: {}\npackages: dotfiles/lost\ntarget: \"missing-target\"\n",
     )
     .unwrap();
     write_package(&tmp.path().join("dotfiles/lost"), "pkg", ".rc");
@@ -2731,15 +2893,14 @@ fn test_package_whose_target_is_missing_shows_the_unknown_dot() {
 
 #[test]
 fn test_membership_dialog_names_the_package_and_offers_cancel_and_save() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Packages");
     app.update_components();
-    app.component_dispatch(down_key());
     app.component_dispatch(key_char('p'));
     let buf = render_updated(&mut app, 80, 24);
 
     assert!(
-        line_contains(&buf, "home/test in profiles"),
+        line_contains(&buf, "test in profiles"),
         "dialog title missing"
     );
     assert!(
@@ -2756,10 +2917,9 @@ fn test_membership_dialog_names_the_package_and_offers_cancel_and_save() {
 #[test]
 fn test_packages_render_at_120x40_and_200x50_with_the_dialog_open() {
     for (width, height) in [(120, 40), (200, 50)] {
-        let (mut app, _tmp) = make_test_app();
+        let (mut app, _tmp) = make_flat_test_app();
         push_screen(&mut app, "Packages");
         app.update_components();
-        app.component_dispatch(down_key());
         app.component_dispatch(key_char('p'));
         let buf = render_updated(&mut app, width, height);
         assert!(
@@ -3439,16 +3599,19 @@ fn test_ignore_editor_leave_dialog_names_the_package() {
 
 #[test]
 fn test_packages_footer_offers_i_for_ignore_on_a_package_only() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_packages_app(&[]);
     app.component_dispatch(key_char('2'));
     app.update_components();
-    let on_group = render_updated(&mut app, 80, 24);
-    assert!(!footer_row(&on_group).contains("i ignore"));
+    let empty = render_updated(&mut app, 80, 24);
+    assert!(!footer_row(&empty).contains("i ignore"));
 
-    app.component_dispatch(down_key());
+    let (mut app, _tmp) = make_flat_packages_app(&["test"]);
+    app.component_dispatch(key_char('2'));
+    app.update_components();
     let on_package = render_updated(&mut app, 80, 24);
     let footer = footer_row(&on_package);
     assert!(footer.contains("i ignore"), "{footer}");
+    assert!(footer.contains("* all"), "{footer}");
     assert!(
         footer.find("i ignore").unwrap() < footer.find("p profiles").unwrap(),
         "screen verbs run i then p (SCREENS.md 1.4): {footer}"

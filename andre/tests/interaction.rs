@@ -372,83 +372,9 @@ fn key_right() -> KeyEvent {
     KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)
 }
 
-/// One group with no packages: its source folder exists and is empty.
-fn make_app_with_empty_group() -> (App, tempfile::TempDir) {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let path = tmp.path().join("andre.yml");
-    std::fs::write(
-        &path,
-        "global: {}\ngroups:\n  empty:\n    source: dotfiles/empty\n    target: \"~\"\n",
-    )
-    .unwrap();
-    std::fs::create_dir_all(tmp.path().join("dotfiles/empty")).unwrap();
-    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
-    (app, tmp)
-}
-
-#[test]
-fn test_space_on_a_group_header_marks_its_packages_and_again_unmarks_them() {
-    let (mut app, _tmp) = make_two_group_app();
-    open_packages(&mut app);
-    // Groups sort by name, so `config` is the first row, and the cursor starts on it.
-    assert!(packages(&app).marked().is_empty());
-    app.component_dispatch(space_key());
-    assert_eq!(
-        packages(&app).marked(),
-        vec![("config".to_string(), "nvim".to_string())]
-    );
-    app.component_dispatch(space_key());
-    assert!(packages(&app).marked().is_empty());
-}
-
-#[test]
-fn test_space_on_a_package_marks_only_that_package() {
-    let (mut app, _tmp) = make_two_group_app();
-    open_packages(&mut app);
-    app.component_dispatch(down_key()); // config/nvim
-    app.component_dispatch(space_key());
-    assert_eq!(
-        packages(&app).marked(),
-        vec![("config".to_string(), "nvim".to_string())]
-    );
-    app.component_dispatch(down_key()); // home header
-    app.component_dispatch(down_key()); // home/bash-env
-    app.component_dispatch(space_key());
-    assert_eq!(packages(&app).marked().len(), 2);
-}
-
-#[test]
-fn test_navigation_wraps_through_the_rows() {
-    let (mut app, _tmp) = make_two_group_app();
-    open_packages(&mut app);
-    for _ in 0..packages(&app).rows().len() {
-        app.component_dispatch(down_key());
-    }
-    assert_eq!(packages(&app).list.cursor, 0);
-    app.component_dispatch(up_key());
-    assert_eq!(packages(&app).list.cursor, packages(&app).rows().len() - 1);
-}
-
-/// Two groups. `config` holds two packages, so a group run and a package run differ, and
-/// `home` holds one, so "the whole group" and "everything" differ too.
-fn make_app_with_a_two_package_group() -> (App, tempfile::TempDir) {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let path = tmp.path().join("andre.yml");
-    std::fs::write(
-        &path,
-        "global: {}\ngroups:\n  config:\n    source: dotfiles/config\n    target: \"~\"\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
-    )
-    .unwrap();
-    for package in [
-        "dotfiles/config/nvim",
-        "dotfiles/config/tmux",
-        "dotfiles/home/bash-env",
-    ] {
-        std::fs::create_dir_all(tmp.path().join(package)).unwrap();
-        std::fs::write(tmp.path().join(package).join(".rc"), "x").unwrap();
-    }
-    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
-    (app, tmp)
+/// A flat app with three packages, in name order: `bash-env`, `nvim`, `tmux`.
+fn make_app_with_three_packages() -> (App, tempfile::TempDir) {
+    make_flat_packages_app(&["tmux", "nvim", "bash-env"])
 }
 
 /// The packages the confirm screen runs, by name, sorted.
@@ -460,15 +386,71 @@ fn confirmed(app: &App) -> Vec<String> {
 }
 
 #[test]
-fn test_enter_runs_the_marked_packages_through_the_confirm_screen() {
-    let (mut app, _tmp) = make_app_with_a_two_package_group();
+fn test_space_marks_the_cursor_package_and_again_unmarks_it() {
+    let (mut app, _tmp) = make_app_with_three_packages();
     open_packages(&mut app);
-    app.component_dispatch(down_key()); // config/nvim
+    // The cursor starts on the first package in name order.
+    assert!(packages(&app).marked().is_empty());
     app.component_dispatch(space_key());
-    app.component_dispatch(down_key()); // config/tmux, unmarked: the cursor does not pick what runs
+    assert_eq!(packages(&app).marked(), ["bash-env"]);
+    app.component_dispatch(space_key());
+    assert!(packages(&app).marked().is_empty());
+}
+
+#[test]
+fn test_space_on_a_package_marks_only_that_package() {
+    let (mut app, _tmp) = make_app_with_three_packages();
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // nvim
+    app.component_dispatch(space_key());
+    assert_eq!(packages(&app).marked(), ["nvim"]);
+    app.component_dispatch(down_key()); // tmux
+    app.component_dispatch(space_key());
+    assert_eq!(packages(&app).marked(), ["nvim", "tmux"]);
+}
+
+#[test]
+fn test_star_marks_every_package_then_unmarks_them_all() {
+    let (mut app, _tmp) = make_app_with_three_packages();
+    open_packages(&mut app);
+    app.component_dispatch(key_char('*'));
+    assert_eq!(packages(&app).marked(), ["bash-env", "nvim", "tmux"]);
+    app.component_dispatch(key_char('*'));
+    assert!(packages(&app).marked().is_empty());
+}
+
+#[test]
+fn test_star_with_some_marked_marks_the_rest_and_keeps_the_cursor() {
+    let (mut app, _tmp) = make_app_with_three_packages();
+    open_packages(&mut app);
+    app.component_dispatch(space_key()); // bash-env
+    app.component_dispatch(key_char('*'));
+    assert_eq!(packages(&app).marked(), ["bash-env", "nvim", "tmux"]);
+    assert_eq!(packages(&app).list.cursor, 0, "the cursor stays put");
+}
+
+#[test]
+fn test_navigation_wraps_through_the_rows() {
+    let (mut app, _tmp) = make_app_with_three_packages();
+    open_packages(&mut app);
+    for _ in 0..packages(&app).rows().len() {
+        app.component_dispatch(down_key());
+    }
+    assert_eq!(packages(&app).list.cursor, 0);
+    app.component_dispatch(up_key());
+    assert_eq!(packages(&app).list.cursor, packages(&app).rows().len() - 1);
+}
+
+#[test]
+fn test_enter_runs_the_marked_packages_through_the_confirm_screen() {
+    let (mut app, _tmp) = make_app_with_three_packages();
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // nvim
+    app.component_dispatch(space_key());
+    app.component_dispatch(down_key()); // tmux, unmarked: the cursor does not pick what runs
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "Confirm");
-    assert_eq!(confirmed(&app), ["config/nvim"]);
+    assert_eq!(confirmed(&app), ["nvim"]);
     // Esc returns to the browser, with the mark still there.
     app.component_dispatch(esc_key());
     assert_eq!(component_id(&app), "Packages");
@@ -477,70 +459,95 @@ fn test_enter_runs_the_marked_packages_through_the_confirm_screen() {
 
 #[test]
 fn test_enter_on_a_package_with_no_marks_runs_that_package() {
-    let (mut app, _tmp) = make_app_with_a_two_package_group();
+    let (mut app, _tmp) = make_app_with_three_packages();
     open_packages(&mut app);
-    app.component_dispatch(down_key()); // config/nvim
-    app.component_dispatch(down_key()); // config/tmux
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key()); // tmux
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "Confirm");
-    assert_eq!(confirmed(&app), ["config/tmux"]);
+    assert_eq!(confirmed(&app), ["tmux"]);
 }
 
 #[test]
-fn test_enter_on_a_group_header_with_no_marks_runs_the_whole_group() {
-    let (mut app, _tmp) = make_app_with_a_two_package_group();
-    open_packages(&mut app);
-    app.component_dispatch(enter_key()); // the config header
-    assert_eq!(component_id(&app), "Confirm");
-    assert_eq!(confirmed(&app), ["config/nvim", "config/tmux"]);
-}
-
-#[test]
-fn test_enter_on_a_group_with_no_packages_says_so_and_stays() {
-    let (mut app, _tmp) = make_app_with_empty_group();
+fn test_keys_on_an_empty_folder_change_nothing_and_enter_runs_nothing() {
+    let (mut app, _tmp) = make_flat_packages_app(&[]);
     open_packages(&mut app);
     app.component_dispatch(enter_key());
+    app.component_dispatch(key_char('*'));
+    app.component_dispatch(space_key());
     assert_eq!(component_id(&app), "Packages");
-    let toast = app.ctx.toast.as_ref().map(|t| t.message.as_str());
-    assert_eq!(toast, Some("empty has no packages"));
+    assert!(packages(&app).marked().is_empty());
 }
 
 #[test]
-fn test_left_on_a_package_moves_to_its_header_and_a_second_left_folds_the_group() {
-    let (mut app, _tmp) = make_two_group_app();
+fn test_six_on_a_packages_screen_with_no_folder_opens_settings() {
+    let (mut app, _tmp) = make_empty_app();
     open_packages(&mut app);
-    app.component_dispatch(down_key()); // config/nvim
+    app.component_dispatch(key_char('6'));
+    assert_eq!(component_id(&app), "Settings");
+}
+
+#[test]
+fn test_three_on_an_empty_packages_folder_opens_the_new_package_wizard() {
+    let (mut app, _tmp) = make_flat_packages_app(&[]);
+    open_packages(&mut app);
+    app.component_dispatch(key_char('3'));
+    assert_eq!(component_id(&app), "NewPackage");
+}
+
+#[test]
+fn test_fix_digits_do_nothing_while_the_packages_list_has_rows() {
+    let (mut app, _tmp) = make_app_with_three_packages();
+    open_packages(&mut app);
+    app.component_dispatch(key_char('6'));
+    app.component_dispatch(key_char('3'));
+    assert_eq!(component_id(&app), "Packages");
+    assert!(packages(&app).marked().is_empty());
+}
+
+#[test]
+fn test_left_and_right_leave_the_cursor_where_it_is() {
+    let (mut app, _tmp) = make_app_with_three_packages();
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // nvim
     app.component_dispatch(key_left());
-    assert_eq!(
-        packages(&app).list.cursor,
-        0,
-        "the cursor moves to the header"
-    );
-    assert_eq!(packages(&app).rows().len(), 4, "the group stays open");
-    app.component_dispatch(key_left());
-    assert_eq!(packages(&app).list.cursor, 0);
-    assert_eq!(
-        packages(&app).rows().len(),
-        3,
-        "config folds its one package away"
-    );
     app.component_dispatch(key_right());
-    assert_eq!(packages(&app).list.cursor, 0);
-    assert_eq!(packages(&app).rows().len(), 4);
+    assert_eq!(packages(&app).list.cursor, 1);
+    assert_eq!(packages(&app).rows().len(), 3, "nothing folds");
+}
+
+#[test]
+fn test_i_opens_the_ignore_editor_on_the_cursor_package() {
+    let (mut app, _tmp) = make_app_with_three_packages();
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // nvim
+    app.component_dispatch(key_char('i'));
+    assert_eq!(component_id(&app), "IgnoreEdit");
+}
+
+/// A flat app with the package `test`, and the profile files written.
+fn make_flat_app_with_profiles(profiles: &[(&str, &str)]) -> (App, tempfile::TempDir) {
+    let (mut app, tmp) = make_flat_packages_app(&["test"]);
+    let dir = tmp.path().join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, yaml) in profiles {
+        std::fs::write(dir.join(format!("{name}.yml")), yaml).unwrap();
+    }
+    app.ctx.core.profiles = ProfileSet::load(&dir).unwrap();
+    (app, tmp)
 }
 
 #[test]
 fn test_p_opens_the_membership_dialog_and_enter_saves_the_profile_file() {
-    let (mut app, tmp) = make_app_with_profiles(&[
+    let (mut app, tmp) = make_flat_app_with_profiles(&[
         ("base", "description: Shared by every machine\n"),
-        ("work", "packages: [home/test]\n"),
+        ("work", "packages: [test]\n"),
     ]);
     open_packages(&mut app);
-    app.component_dispatch(down_key()); // home/test
     app.component_dispatch(key_char('p'));
 
     let popup = packages(&app).popup().expect("the dialog is open");
-    assert_eq!(popup.package, "home/test");
+    assert_eq!(popup.package, "test");
     let listed: Vec<(&str, bool)> = popup
         .profiles
         .iter()
@@ -555,27 +562,25 @@ fn test_p_opens_the_membership_dialog_and_enter_saves_the_profile_file() {
     app.component_dispatch(space_key()); // base is the cursor's row
     app.component_dispatch(enter_key());
     assert!(packages(&app).popup().is_none());
-    assert_eq!(stored_packages(&tmp, "base"), vec!["home/test".to_string()]);
-    assert_eq!(stored_packages(&tmp, "work"), vec!["home/test".to_string()]);
+    assert_eq!(stored_packages(&tmp, "base"), vec!["test".to_string()]);
+    assert_eq!(stored_packages(&tmp, "work"), vec!["test".to_string()]);
 }
 
 #[test]
 fn test_esc_in_the_membership_dialog_keeps_the_profile_files() {
-    let (mut app, tmp) = make_app_with_profiles(&[("work", "packages: [home/test]\n")]);
+    let (mut app, tmp) = make_flat_app_with_profiles(&[("work", "packages: [test]\n")]);
     open_packages(&mut app);
-    app.component_dispatch(down_key());
     app.component_dispatch(key_char('p'));
     app.component_dispatch(space_key()); // now off in the dialog
     app.component_dispatch(esc_key());
     assert!(packages(&app).popup().is_none());
-    assert_eq!(stored_packages(&tmp, "work"), vec!["home/test".to_string()]);
+    assert_eq!(stored_packages(&tmp, "work"), vec!["test".to_string()]);
 }
 
 #[test]
 fn test_enter_in_the_membership_dialog_removes_the_package_when_unticked() {
-    let (mut app, tmp) = make_app_with_profiles(&[("work", "packages: [home/test]\n")]);
+    let (mut app, tmp) = make_flat_app_with_profiles(&[("work", "packages: [test]\n")]);
     open_packages(&mut app);
-    app.component_dispatch(down_key());
     app.component_dispatch(key_char('p'));
     app.component_dispatch(space_key());
     app.component_dispatch(enter_key());
@@ -583,14 +588,19 @@ fn test_enter_in_the_membership_dialog_removes_the_package_when_unticked() {
 }
 
 #[test]
-fn test_p_on_a_group_header_does_nothing_and_the_dialog_is_modal() {
-    let (mut app, _tmp) = make_app_with_profiles(&[("work", "packages: []\n")]);
+fn test_p_with_no_package_does_nothing() {
+    let (mut app, _tmp) = make_flat_packages_app(&[]);
     open_packages(&mut app);
     app.component_dispatch(key_char('p'));
     assert!(packages(&app).popup().is_none());
+}
 
-    app.component_dispatch(down_key());
+#[test]
+fn test_the_membership_dialog_is_modal() {
+    let (mut app, _tmp) = make_flat_app_with_profiles(&[("work", "packages: []\n")]);
+    open_packages(&mut app);
     app.component_dispatch(key_char('p'));
+    assert!(packages(&app).popup().is_some());
     let verbosity = app.ctx.core.flags.verbosity;
     app.component_dispatch(key_char('v'));
     assert_eq!(
@@ -601,7 +611,7 @@ fn test_p_on_a_group_header_does_nothing_and_the_dialog_is_modal() {
 
 #[test]
 fn test_global_keys_still_work_on_the_packages_screen() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_app_with_three_packages();
     open_packages(&mut app);
     let initial_verbosity = app.ctx.core.flags.verbosity;
     app.component_dispatch(key_char('v'));
@@ -1669,8 +1679,8 @@ fn test_i_opens_the_ignore_editor_on_the_cursor_package_with_no_files_yet() {
 }
 
 #[test]
-fn test_i_on_a_group_header_does_nothing() {
-    let (mut app, _tmp) = make_test_app();
+fn test_i_on_an_empty_folder_does_nothing() {
+    let (mut app, _tmp) = make_flat_packages_app(&[]);
     open_packages(&mut app);
     app.component_dispatch(key_char('i'));
     assert_eq!(component_id(&app), "Packages");

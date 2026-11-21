@@ -34,6 +34,27 @@ pub fn make_flat_test_app() -> (App, TempDir) {
     (app, tmp)
 }
 
+/// A flat app whose packages folder `dotfiles` holds one package per name in `packages`, each
+/// with one file, `.rc`. HOME is the temp dir, so the target `~` is the temp dir.
+pub fn make_flat_packages_app(packages: &[&str]) -> (App, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("andre.yml");
+    std::fs::write(
+        &path,
+        "packages: dotfiles\nglobal:\n  stow:\n    verbosity: 0\n",
+    )
+    .unwrap();
+    let folder = tmp.path().join("dotfiles");
+    std::fs::create_dir_all(&folder).unwrap();
+    for name in packages {
+        let dir = folder.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(".rc"), "x").unwrap();
+    }
+    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
+    (app, tmp)
+}
+
 pub fn write_test_config(dir: &TempDir) -> PathBuf {
     let path = dir.path().join("andre.yml");
     std::fs::write(

@@ -15,7 +15,6 @@ use andre::components::unstow::UnstowBrowseComponent;
 use andre::components::InputMode;
 use andre::input;
 use andre::ui::icons::Icons;
-use andre::ui::tree::TreeRow;
 use andre_core::profile::ProfileSet;
 use andre_core::Theme;
 use crossterm::event::KeyCode;
@@ -25,8 +24,8 @@ use tempfile::TempDir;
 
 use helpers::{
     click, component_id, down_key, draw, enter_key, esc_key, find_text, key_char, make_empty_app,
-    make_test_app, make_two_group_app, make_unstow_app, push_browse, push_component, row_text,
-    space_key, up_key, wheel,
+    make_flat_packages_app, make_test_app, make_two_group_app, make_unstow_app, push_browse,
+    push_component, row_text, space_key, up_key, wheel,
 };
 
 /// Pushes the named screen and brings it up to date, as the loop does before the first frame.
@@ -96,6 +95,16 @@ fn editor(app: &App) -> &ProfileEditComponent {
 fn make_editor_app(yaml: &str) -> (App, TempDir) {
     let (mut app, tmp) = make_test_app();
     std::fs::create_dir_all(tmp.path().join("dotfiles/home/shell")).unwrap();
+    let dir = tmp.path().join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("agent.yml"), yaml).unwrap();
+    app.ctx.core.profiles = ProfileSet::load(&dir).unwrap();
+    (app, tmp)
+}
+
+/// A flat app with the packages `shell` and `test`, and the profile `agent` written from `yaml`.
+fn make_flat_membership_app(yaml: &str) -> (App, TempDir) {
+    let (mut app, tmp) = make_flat_packages_app(&["shell", "test"]);
     let dir = tmp.path().join("profiles");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("agent.yml"), yaml).unwrap();
@@ -208,7 +217,7 @@ fn test_top_bar_click_does_nothing_while_a_text_field_has_focus() {
 
 #[test]
 fn test_wheel_over_a_chip_or_a_hint_does_nothing() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     open(&mut app, "Packages");
     draw(&mut app, 80, 24);
     let chip = top_bar_hit(&app, 'd');
@@ -222,7 +231,7 @@ fn test_wheel_over_a_chip_or_a_hint_does_nothing() {
 
 #[test]
 fn test_footer_esc_click_pops_the_screen() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     open(&mut app, "Packages");
     draw(&mut app, 80, 24);
     let rect = footer_hit(&app, KeyCode::Esc);
@@ -276,10 +285,11 @@ fn test_click_outside_the_list_changes_nothing() {
 
 #[test]
 fn test_second_click_on_a_package_marks_it_and_does_not_run() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     open(&mut app, "Packages");
     let buf = draw(&mut app, 80, 24);
-    let (x, y) = find_text(&buf, "bash-env").expect("package row");
+    // The cursor starts on bash-env, so nvim is the row the first click selects.
+    let (x, y) = find_text(&buf, "nvim").expect("package row");
     click(&mut app, x, y);
     assert!(
         packages(&app).marked().is_empty(),
@@ -292,12 +302,12 @@ fn test_second_click_on_a_package_marks_it_and_does_not_run() {
 
 #[test]
 fn test_a_click_on_a_checkbox_marks_the_package_in_one_click() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     open(&mut app, "Packages");
     let buf = draw(&mut app, 80, 24);
     let icons = Icons::for_set(app.ctx.core.icons);
-    let (x_name, y) = find_text(&buf, "bash-env").expect("package row");
-    // The name starts 9 columns into the row; its checkbox is 4 columns before it.
+    let (x_name, y) = find_text(&buf, "nvim").expect("package row");
+    // The name starts 5 columns into the row; its checkbox is 4 columns before it.
     let x_box = x_name - 4;
     assert_eq!(buf[(x_box, y)].symbol(), icons.checkbox_off);
     click(&mut app, x_box, y);
@@ -305,41 +315,21 @@ fn test_a_click_on_a_checkbox_marks_the_package_in_one_click() {
 }
 
 #[test]
-fn test_a_click_on_a_fold_triangle_folds_its_group() {
-    let (mut app, _tmp) = make_two_group_app();
-    open(&mut app, "Packages");
-    let buf = draw(&mut app, 80, 24);
-    let icons = Icons::for_set(app.ctx.core.icons);
-    let (x, y) = find_text(&buf, icons.fold_open).expect("a group row");
-    let before = packages(&app).rows().len();
-    click(&mut app, x, y);
-    assert!(
-        packages(&app).rows().len() < before,
-        "the group's packages are hidden"
-    );
-    let row = &packages(&app).rows()[packages(&app).list.cursor];
-    assert!(
-        matches!(row, TreeRow::Group { folded: true, .. }),
-        "{row:?}"
-    );
-}
-
-#[test]
 fn test_wheel_over_the_packages_list_moves_the_cursor() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     open(&mut app, "Packages");
     let buf = draw(&mut app, 80, 24);
-    let (x, y) = find_text(&buf, "bash-env").expect("package row");
+    let (x, y) = find_text(&buf, "nvim").expect("package row");
     wheel(&mut app, x, y, true);
     assert_eq!(packages(&app).list.cursor, 1);
 }
 
 #[test]
 fn test_a_click_behind_an_open_dialog_changes_nothing() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim", "tmux"]);
     open(&mut app, "Packages");
     let buf = draw(&mut app, 80, 24);
-    let (x, y) = find_text(&buf, "bash-env").expect("package row");
+    let (x, y) = find_text(&buf, "nvim").expect("package row");
     click(&mut app, x, y);
     app.component_dispatch(key_char('p'));
     assert!(
@@ -355,6 +345,31 @@ fn test_a_click_behind_an_open_dialog_changes_nothing() {
         before
     );
     assert!(packages(&app).popup().is_some());
+}
+
+/// Clicks the empty state's hint: two rows under its message, `hint_gap` columns in from the
+/// message's first column. The message and the hint are both centred, and the hint starts
+/// four columns left of the message.
+fn click_empty_hint(app: &mut App, message: &str, hint_gap: u16) {
+    let buf = draw(app, 80, 24);
+    let (x, y) = find_text(&buf, message).expect("the empty message");
+    click(app, x + hint_gap, y + 2);
+}
+
+#[test]
+fn test_click_on_the_settings_hint_of_an_unset_folder_opens_settings() {
+    let (mut app, _tmp) = make_empty_app();
+    open(&mut app, "Packages");
+    click_empty_hint(&mut app, "no packages folder", 6);
+    assert_eq!(component_id(&app), "Settings");
+}
+
+#[test]
+fn test_click_on_the_new_package_hint_of_an_empty_folder_opens_the_wizard() {
+    let (mut app, _tmp) = make_flat_packages_app(&[]);
+    open(&mut app, "Packages");
+    click_empty_hint(&mut app, "no packages in", 8);
+    assert_eq!(component_id(&app), "NewPackage");
 }
 
 #[test]
@@ -987,7 +1002,6 @@ fn test_click_on_the_discard_button_of_the_settings_leave_dialog_leaves_settings
 /// The membership dialog of the only package, `home/test`, opened from the packages screen.
 fn open_membership(app: &mut App) {
     open(app, "Packages");
-    app.component_dispatch(down_key());
     app.component_dispatch(key_char('p'));
     assert!(
         packages(app).popup().is_some(),
@@ -997,7 +1011,7 @@ fn open_membership(app: &mut App) {
 
 #[test]
 fn test_click_on_a_profile_row_then_save_writes_the_membership() {
-    let (mut app, _tmp) = make_editor_app("packages: []\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: []\n");
     open_membership(&mut app);
     let buf = draw(&mut app, 80, 24);
     let (x, y) = find_text(&buf, "agent").expect("the profile row");
@@ -1008,7 +1022,7 @@ fn test_click_on_a_profile_row_then_save_writes_the_membership() {
     assert!(packages(&app).popup().is_none(), "the dialog closed");
     let agent = app.ctx.core.profiles.get("agent").expect("the profile");
     assert!(
-        agent.packages.iter().any(|p| p == "home/shell"),
+        agent.packages.iter().any(|p| p == "shell"),
         "the profile lists the package under the cursor: {:?}",
         agent.packages
     );
@@ -1016,7 +1030,7 @@ fn test_click_on_a_profile_row_then_save_writes_the_membership() {
 
 #[test]
 fn test_click_on_the_cancel_button_of_the_membership_dialog_changes_nothing() {
-    let (mut app, _tmp) = make_editor_app("packages: []\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: []\n");
     open_membership(&mut app);
     let buf = draw(&mut app, 80, 24);
     let (x, y) = find_text(&buf, "agent").expect("the profile row");
@@ -1031,11 +1045,11 @@ fn test_click_on_the_cancel_button_of_the_membership_dialog_changes_nothing() {
 
 #[test]
 fn test_a_click_behind_the_membership_dialog_changes_nothing() {
-    let (mut app, _tmp) = make_editor_app("packages: []\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: []\n");
     open_membership(&mut app);
     let cursor = packages(&app).list.cursor;
     let buf = draw(&mut app, 80, 24);
-    let (x, y) = find_text(&buf, "home").expect("the group row behind the dialog");
+    let (x, y) = find_text(&buf, "test").expect("the package row behind the dialog");
     click(&mut app, x, y);
     assert!(packages(&app).popup().is_some(), "the dialog is still open");
     assert_eq!(packages(&app).list.cursor, cursor, "the list did not move");
@@ -1043,7 +1057,7 @@ fn test_a_click_behind_the_membership_dialog_changes_nothing() {
 
 #[test]
 fn test_wheel_over_the_membership_dialog_moves_its_cursor() {
-    let (mut app, tmp) = make_editor_app("packages: []\n");
+    let (mut app, tmp) = make_flat_membership_app("packages: []\n");
     std::fs::write(tmp.path().join("profiles/alpha.yml"), "packages: []\n").unwrap();
     app.ctx.core.profiles = ProfileSet::load(&tmp.path().join("profiles")).unwrap();
     open_membership(&mut app);

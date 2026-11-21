@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
 use andre_core::bootstrap::{self, Bootstrap};
-use andre_core::{discover_packages, EngineKind, StowStatus};
+use andre_core::{EngineKind, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{
     layout::Rect,
@@ -22,7 +21,7 @@ use crate::components::settings::SettingsComponent;
 use crate::components::status::StatusComponent;
 use crate::components::target_select::unstow_screen;
 use crate::components::wizard::NewPackageWizard;
-use crate::components::{grouped_name, AppContext, Component, Transition};
+use crate::components::{AppContext, Component, Transition};
 use crate::input;
 use crate::theme::ThemeColors;
 use crate::ui::detail::{render_detail, Detail, VALUE_WIDTH};
@@ -31,7 +30,7 @@ use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, click_list, render_list_panel, ListView};
 use crate::ui::selection;
-use crate::ui::{display_path, elide, plural};
+use crate::ui::{display_path, elide};
 
 /// The main menu's rows. The eight in [`MenuItem::ALL`] are always there, in jump-digit
 /// order (`1`..`8`). `Setup` is the fresh-machine item, shown only while
@@ -105,11 +104,11 @@ impl MenuItem {
             MenuItem::Profiles => {
                 "Named sets of packages. Pick one and run the current action on all of it."
             }
-            MenuItem::Stow => "Pick groups and packages, then run the current action.",
-            MenuItem::NewPackage => "Create a package from files that already sit in a target.",
-            MenuItem::Unstow => "Remove symlinks from a target, one link at a time.",
+            MenuItem::Stow => "Pick packages, then run the current action on them.",
+            MenuItem::NewPackage => "Create a package, empty or from files that already live in ~.",
+            MenuItem::Unstow => "Remove links from the target.",
             MenuItem::Status => "Check every package's links against its source tree.",
-            MenuItem::Settings => "Edit the config file, groups, theme, icons and stow options.",
+            MenuItem::Settings => "Edit the packages folder, theme, icons and stow options.",
             MenuItem::Help => "Keyboard reference and what each screen does.",
             MenuItem::Quit => "Leave andre. Nothing is changed.",
         }
@@ -269,6 +268,9 @@ impl MainMenuComponent {
         ctx.core.theme.name().hash(&mut hasher);
         engine_label(ctx.core.config.effective_engine()).hash(&mut hasher);
         ctx.config_path.hash(&mut hasher);
+        ctx.core.config.packages.hash(&mut hasher);
+        ctx.core.config.target.hash(&mut hasher);
+        // Interim: a `groups:` config still yields entries until G10 removes groups.
         for (name, group) in &ctx.core.config.groups {
             name.hash(&mut hasher);
             group.source.hash(&mut hasher);
@@ -351,11 +353,10 @@ fn list_row(
     )
 }
 
-/// Stow-status counts for every configured group. Reads the status cache only:
-/// packages with no cached status count as unknown.
+/// Stow-status counts for every package. Reads the status cache only: packages with no
+/// cached status count as unknown.
 #[derive(Default)]
 struct Tally {
-    groups: usize,
     packages: usize,
     known: usize,
     stowed: usize,
@@ -374,52 +375,36 @@ impl Tally {
 
 fn tally(ctx: &AppContext) -> Tally {
     let cache = ctx.status_cache.borrow();
-    let mut tally = Tally {
-        groups: ctx.core.config.groups.len(),
-        ..Tally::default()
-    };
-    for name in ctx.core.config.groups.keys() {
-        let Some(source) = ctx
-            .core
-            .config
-            .get_group_source(name, &ctx.config_dir, &ctx.home_dir)
-        else {
-            continue;
-        };
-        for pkg in discover_packages(&source) {
-            tally.packages += 1;
-            match cache.get(&grouped_name(name, &pkg)) {
-                Some(StowStatus::Stowed) => {
-                    tally.known += 1;
-                    tally.stowed += 1;
-                }
-                Some(_) => tally.known += 1,
-                None => {}
+    let mut tally = Tally::default();
+    for entry in ctx.package_entries() {
+        tally.packages += 1;
+        match cache.get(&entry.name) {
+            Some(StowStatus::Stowed) => {
+                tally.known += 1;
+                tally.stowed += 1;
             }
+            Some(_) => tally.known += 1,
+            None => {}
         }
     }
     tally
 }
 
-/// The distinct target directories of all groups, `~`-relative where possible.
-fn targets(ctx: &AppContext) -> String {
-    let set: BTreeSet<String> = ctx
-        .core
+/// The packages folder, `~`-relative where possible. `not set` until `packages:` is.
+fn folder(ctx: &AppContext) -> String {
+    ctx.core
         .config
-        .groups
-        .keys()
-        .filter_map(|name| {
-            ctx.core
-                .config
-                .resolve_group_target(name, &ctx.config_dir, &ctx.home_dir)
-        })
-        .map(|path| display_path(&path, &ctx.home_dir))
-        .collect();
-    if set.is_empty() {
-        "none configured".to_string()
-    } else {
-        set.into_iter().collect::<Vec<_>>().join(", ")
-    }
+        .packages_dir(&ctx.config_dir, &ctx.home_dir)
+        .map_or_else(
+            || "not set".to_string(),
+            |dir| display_path(&dir, &ctx.home_dir),
+        )
+}
+
+/// The target every package links into, `~`-relative where possible.
+fn target(ctx: &AppContext) -> String {
+    let dir = ctx.core.config.target_dir(&ctx.config_dir, &ctx.home_dir);
+    display_path(&dir, &ctx.home_dir)
 }
 
 /// The facts for the set-up item: what would be linked, from where, and that Enter
@@ -468,33 +453,35 @@ fn build_detail(item: MenuItem, ctx: &AppContext, bootstrap: Option<&Bootstrap>)
             let t = tally(ctx);
             vec![
                 ("profiles", ctx.core.profiles.iter().count().to_string()),
-                (
-                    "packages",
-                    format!(
-                        "{} in {} {}",
-                        t.packages,
-                        t.groups,
-                        plural(t.groups, "group", "groups")
-                    ),
-                ),
+                ("packages", t.packages.to_string()),
                 ("stowed", t.stowed_text()),
             ]
         }
-        MenuItem::Stow | MenuItem::Status => {
+        MenuItem::Stow => {
             let t = tally(ctx);
-            let mut facts = Vec::new();
-            if item == MenuItem::Stow {
-                facts.push(("groups", t.groups.to_string()));
-            }
-            facts.push(("packages", t.packages.to_string()));
-            facts.push(("stowed", t.stowed_text()));
-            facts
+            vec![
+                ("folder", folder(ctx)),
+                ("packages", t.packages.to_string()),
+                ("stowed", t.stowed_text()),
+                ("links to", target(ctx)),
+            ]
         }
-        MenuItem::NewPackage => vec![
-            ("groups", ctx.core.config.groups.len().to_string()),
-            ("targets", targets(ctx)),
-        ],
-        MenuItem::Unstow => vec![("targets", targets(ctx))],
+        MenuItem::Status => {
+            let t = tally(ctx);
+            vec![
+                ("packages", t.packages.to_string()),
+                ("stowed", t.stowed_text()),
+            ]
+        }
+        MenuItem::NewPackage => {
+            let t = tally(ctx);
+            vec![
+                ("folder", folder(ctx)),
+                ("packages", t.packages.to_string()),
+                ("links to", target(ctx)),
+            ]
+        }
+        MenuItem::Unstow => vec![("target", target(ctx))],
         MenuItem::Settings => vec![
             ("config", display_path(&ctx.config_path, &ctx.home_dir)),
             (
@@ -546,20 +533,16 @@ mod tests {
     use super::*;
     use andre_core::config::Config;
 
-    /// A context whose only group `home` lives under a temp dir, holding `packages`.
-    /// The temp dir is returned so it outlives the test body.
+    /// A context whose packages folder `dotfiles` lives under a temp dir and holds
+    /// `packages`. The temp dir is returned so it outlives the test body.
     fn fixture(packages: &[&str]) -> (tempfile::TempDir, AppContext) {
         let dir = tempfile::TempDir::new().unwrap();
-        let source = dir.path().join("dotfiles/home");
+        let source = dir.path().join("dotfiles");
         for pkg in packages {
             std::fs::create_dir_all(source.join(pkg)).unwrap();
         }
         let config_path = dir.path().join("andre.yml");
-        std::fs::write(
-            &config_path,
-            "global: {}\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
-        )
-        .unwrap();
+        std::fs::write(&config_path, "global: {}\npackages: dotfiles\n").unwrap();
         let config = Config::load(&config_path).unwrap();
         let ctx = AppContext::for_tests(config, dir.path());
         (dir, ctx)
@@ -626,12 +609,12 @@ mod tests {
         let (_dir, mut ctx) = fixture(&["bash", "nvim"]);
         let detail = detail_of(MenuItem::Profiles, &mut ctx);
         assert_eq!(fact(&detail, "profiles"), "0");
-        assert_eq!(fact(&detail, "packages"), "2 in 1 group");
+        assert_eq!(fact(&detail, "packages"), "2");
         assert_eq!(fact(&detail, "stowed"), "\u{2013}");
 
         let dir = ctx.config_dir.join("profiles");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("base.yml"), "packages: [home/bash]\n").unwrap();
+        std::fs::write(dir.join("base.yml"), "packages: [bash]\n").unwrap();
         ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
         let detail = detail_of(MenuItem::Profiles, &mut ctx);
         assert_eq!(fact(&detail, "profiles"), "1");
@@ -647,7 +630,7 @@ mod tests {
 
         let dir = ctx.config_dir.join("profiles");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("base.yml"), "packages: [home/bash]\n").unwrap();
+        std::fs::write(dir.join("base.yml"), "packages: [bash]\n").unwrap();
         ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
         menu.update(&mut ctx);
         assert_ne!(
@@ -657,12 +640,17 @@ mod tests {
     }
 
     #[test]
-    fn test_stow_facts_count_groups_and_packages() {
+    fn test_stow_facts_name_the_folder_count_packages_and_the_target() {
         let (_dir, mut ctx) = fixture(&["bash", "nvim"]);
         let detail = detail_of(MenuItem::Stow, &mut ctx);
-        assert_eq!(fact(&detail, "groups"), "1");
+        assert_eq!(fact(&detail, "folder"), "~/dotfiles");
         assert_eq!(fact(&detail, "packages"), "2");
         assert_eq!(fact(&detail, "stowed"), "\u{2013}", "nothing cached yet");
+        assert_eq!(fact(&detail, "links to"), "~");
+        assert!(
+            detail.facts.iter().all(|(label, _)| *label != "groups"),
+            "no groups fact"
+        );
     }
 
     #[test]
@@ -670,34 +658,36 @@ mod tests {
         let (_dir, mut ctx) = fixture(&["bash", "nvim"]);
         ctx.status_cache
             .borrow_mut()
-            .insert("home/bash".to_string(), StowStatus::Stowed);
+            .insert("bash".to_string(), StowStatus::Stowed);
         let detail = detail_of(MenuItem::Status, &mut ctx);
         assert_eq!(fact(&detail, "stowed"), "\u{2013}", "nvim is still unknown");
 
         ctx.status_cache
             .borrow_mut()
-            .insert("home/nvim".to_string(), StowStatus::Unstowed);
+            .insert("nvim".to_string(), StowStatus::Unstowed);
         let detail = detail_of(MenuItem::Status, &mut ctx);
         assert_eq!(fact(&detail, "stowed"), "1 of 2");
     }
 
     #[test]
-    fn test_new_package_and_unstow_list_the_targets_relative_to_home() {
+    fn test_new_package_and_unstow_name_the_folder_and_the_target() {
         let (_dir, mut ctx) = fixture(&["bash"]);
         let new_package = detail_of(MenuItem::NewPackage, &mut ctx);
-        assert_eq!(fact(&new_package, "groups"), "1");
-        assert_eq!(fact(&new_package, "targets"), "~");
+        assert_eq!(fact(&new_package, "folder"), "~/dotfiles");
+        assert_eq!(fact(&new_package, "packages"), "1");
+        assert_eq!(fact(&new_package, "links to"), "~");
 
         let unstow = detail_of(MenuItem::Unstow, &mut ctx);
-        assert_eq!(fact(&unstow, "targets"), "~");
+        assert_eq!(fact(&unstow, "target"), "~");
     }
 
     #[test]
-    fn test_no_groups_means_no_targets() {
+    fn test_no_packages_folder_says_not_set() {
         let (_dir, mut ctx) = fixture(&[]);
-        ctx.core.config.groups.clear();
-        let unstow = detail_of(MenuItem::Unstow, &mut ctx);
-        assert_eq!(fact(&unstow, "targets"), "none configured");
+        ctx.core.config.set_packages(None);
+        let new_package = detail_of(MenuItem::NewPackage, &mut ctx);
+        assert_eq!(fact(&new_package, "folder"), "not set");
+        assert_eq!(fact(&new_package, "packages"), "0");
     }
 
     #[test]

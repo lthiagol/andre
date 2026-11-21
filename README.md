@@ -36,7 +36,7 @@ See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configurati
 ## ✨ Features
 
 - **Multi-group config** — Define multiple stow targets (e.g., `~`, `~/.config`) each with its own source directory
-- **Interactive package selection** — Browse packages per group, select/unselect with Space, smart pre-selection based on action
+- **Interactive package selection** — Browse the packages in one list, select/unselect with Space (`*` for all), smart pre-selection based on action
 - **Live settings toggles** — Toggle dry-run, verbosity, adopt, no-folding on the fly from any screen
 - **Config editor built-in** — Edit `andre.yml` from within the TUI: add/remove/edit groups, change global defaults
 - **Headless mode (`--yolo`)** — Auto-stow all packages without interaction, for scripts and automation

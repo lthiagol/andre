@@ -11,6 +11,9 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- **`*` marks every package on the packages browser.** It marks them all, or unmarks
+  them all when every package is already marked.
+
 - **Headless `--profile <name>`.** `andre --yolo --profile work` stows only the packages
   the profile resolves to (its own and its includes'); refs that name no package are
   skipped with the usual profile warning. `andre --profile work` alone opens the TUI on
@@ -162,6 +165,11 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   every subfolder is a package, folders starting with `.` are skipped) and an optional
   `target:` (default: your home folder). Profile refs are plain package names (`nvim`),
   not `group/package`.
+- **The packages browser is one flat list.** It has one row per package in name order,
+  with no group rows and no folding (`←` and `→` do nothing there). An empty packages folder
+  says `no packages folder` (hint `6 settings`) or `no packages in <folder>` (hint
+  `3 new package`); a click on the hint opens that screen. The main menu's packages and new
+  package items show `folder` and `links to` instead of groups.
 - **The review is one flat list of packages.** It lists the selection in name order
   (`stow 3 packages`, one row per package, no group header) and runs in that order. A
   package's status and its stow preview count `global.ignore`, so a file the ignore list

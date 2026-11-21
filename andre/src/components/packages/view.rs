@@ -1,12 +1,13 @@
-//! What the packages browser shows beside and over its list: the detail of the cursor's row
-//! and the membership dialog. Everything here is built from the app context, so `update`
-//! builds it and paint only draws it.
+//! What the packages browser shows beside and over its list: the detail of the cursor's
+//! package, the empty state and the membership dialog. Everything here is built from the app
+//! context, so `update` builds it and paint only draws it.
 
 use std::borrow::Cow;
 use std::ops::Range;
+use std::path::Path;
 
-use andre_core::stow::linkable_files;
-use andre_core::{IgnoreFile, StowStatus};
+use andre_core::ignore::global_ignore_in;
+use andre_core::{file_links, FileLink, IgnoreFile, PackageEntry, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
@@ -23,13 +24,54 @@ use crate::ui::detail::{Detail, VALUE_WIDTH};
 use crate::ui::dialog::{dialog_rect, render_dialog, Button, Dialog};
 use crate::ui::icons::Icons;
 use crate::ui::selection;
-use crate::ui::status_style::{status_headline, SUMMARY_ORDER};
-use crate::ui::{display_path, elide, plural};
+use crate::ui::status_style::{status_color, status_headline};
+use crate::ui::{display_path, elide};
 
 /// Most file names the package detail lists. The rest are counted.
 const FILES_SHOWN: usize = 8;
 /// Widest a file name may be, so it stays on one line in the detail pane at 80 columns.
 const NAME_WIDTH: usize = 34;
+
+/// The screen an empty list's hint opens when the user clicks it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fix {
+    /// `6 settings`: where the packages folder is set.
+    Settings,
+    /// `3 new package`: where the first package is made.
+    NewPackage,
+}
+
+impl Fix {
+    /// The key and label the empty state draws under its message.
+    pub fn hint(self) -> (&'static str, &'static str) {
+        match self {
+            Fix::Settings => ("6", "settings"),
+            Fix::NewPackage => ("3", "new package"),
+        }
+    }
+}
+
+/// What an empty list says, and the fix its hint opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Blank {
+    pub message: String,
+    pub fix: Fix,
+}
+
+/// The empty state of a list with no packages: no packages folder is set, or the folder that
+/// is set holds none.
+pub fn blank(ctx: &AppContext) -> Blank {
+    match ctx.core.config.packages_dir(&ctx.config_dir, &ctx.home_dir) {
+        Some(dir) => Blank {
+            message: format!("no packages in {}", shown(&dir, ctx)),
+            fix: Fix::NewPackage,
+        },
+        None => Blank {
+            message: "no packages folder".to_string(),
+            fix: Fix::Settings,
+        },
+    }
+}
 
 /// The list title: the packages, with the marked count once something is marked.
 pub fn packages_title(marked: usize, total: usize) -> String {
@@ -39,91 +81,70 @@ pub fn packages_title(marked: usize, total: usize) -> String {
     }
 }
 
-/// The detail for one package: its status, where it links, the files it links and the
-/// profiles that list it.
+/// The detail for one package: its status, its folder and where it links, the files it links
+/// and the profiles that list it. Each file is drawn with its link's status.
 pub fn package_detail(
     ctx: &AppContext,
-    group: &str,
-    package: &str,
+    entry: &PackageEntry,
     status: Option<StowStatus>,
 ) -> Detail {
     let colors = ThemeColors::from_theme(ctx.core.theme);
     let icons = Icons::for_set(ctx.core.icons);
-    let config = &ctx.core.config;
-    let source = config.get_group_source(group, &ctx.config_dir, &ctx.home_dir);
-    let target = config.get_group_target(group, &ctx.config_dir, &ctx.home_dir);
-    let ignores = config
-        .groups
-        .get(group)
-        .and_then(|g| g.ignore.clone())
-        .unwrap_or_default();
-    let global = andre_core::ignore::global_ignore_in(&ctx.home_dir);
-    let dir = source.as_ref().map(|source| source.join(package));
+    let global = global_ignore_in(&ctx.home_dir);
+    let links = file_links(
+        &entry.source,
+        &entry.target,
+        &entry.folder_name(),
+        &entry.ignores,
+        Some(&global),
+    )
+    .unwrap_or_default();
+    let linked = links
+        .iter()
+        .filter(|(_, link)| *link == FileLink::Linked)
+        .count();
 
-    let files: Vec<String> = dir
-        .as_ref()
-        .map(|dir| {
-            linkable_files(dir, &ignores, Some(&global))
-                .unwrap_or_default()
-                .iter()
-                .map(|file| {
-                    let name = file.strip_prefix(dir).unwrap_or(file.as_path());
-                    elide(&name.display().to_string(), NAME_WIDTH)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let reference = format!("{group}/{package}");
     let profiles: Vec<&str> = ctx
         .core
         .profiles
         .iter()
-        .filter(|profile| profile.packages.contains(&reference))
+        .filter(|profile| profile.packages.contains(&entry.name))
         .map(|profile| profile.name.as_str())
         .collect();
 
-    let mut facts = vec![
+    let files = match links.len() {
+        0 => "0".to_string(),
+        count => format!("{count}  ({linked} linked)"),
+    };
+    let facts = vec![
+        fact("folder", shown(&entry.dir, ctx)),
+        fact("links to", shown(&entry.target, ctx)),
+        fact("files", files),
         fact(
-            "group",
-            match &target {
-                Some(target) => format!("{group}  \u{2192}  {}", shown(target, ctx)),
-                None => format!("{group}  \u{2192}  not found"),
-            },
-        ),
-        fact(
-            "source",
-            dir.as_ref()
-                .map_or("not found".to_string(), |dir| shown(dir, ctx)),
-        ),
-        fact("files", files.len().to_string()),
-    ];
-    if let Some(dir) = &dir {
-        facts.push(fact(
             "ignore",
             format!(
                 "{} .gitignore  {} stow",
-                flag(IgnoreFile::GitIgnore.path_in(dir).is_file(), icons),
-                flag(IgnoreFile::StowLocal.path_in(dir).is_file(), icons),
+                flag(IgnoreFile::GitIgnore.path_in(&entry.dir).is_file(), icons),
+                flag(IgnoreFile::StowLocal.path_in(&entry.dir).is_file(), icons),
             ),
-        ));
-    }
-    facts.push(fact(
-        "profiles",
-        match profiles.is_empty() {
-            true => "none".to_string(),
-            false => profiles.join(", "),
-        },
-    ));
+        ),
+        fact(
+            "profiles",
+            match profiles.is_empty() {
+                true => "none".to_string(),
+                false => profiles.join(", "),
+            },
+        ),
+    ];
 
-    let mut sections: Vec<Line<'static>> = files
+    let mut sections: Vec<Line<'static>> = links
         .iter()
         .take(FILES_SHOWN)
-        .map(|file| Line::styled(file.clone(), Style::default().fg(colors.text)))
+        .map(|(file, link)| file_line(file, *link, icons, &colors))
         .collect();
-    if files.len() > FILES_SHOWN {
+    if links.len() > FILES_SHOWN {
         sections.push(Line::styled(
-            format!("+ {} more", files.len() - FILES_SHOWN),
+            format!("+ {} more", links.len() - FILES_SHOWN),
             Style::default().fg(colors.text_dim),
         ));
     }
@@ -135,63 +156,63 @@ pub fn package_detail(
     }
 }
 
-/// The detail for one group: its size, where it links, a summary of its packages' statuses
-/// and how many are marked. `statuses` holds one entry per package, `None` when unknown.
-pub fn group_detail(
-    ctx: &AppContext,
-    group: &str,
-    statuses: &[Option<StowStatus>],
-    marked: usize,
-) -> Detail {
-    let colors = ThemeColors::from_theme(ctx.core.theme);
-    let icons = Icons::for_set(ctx.core.icons);
-    let config = &ctx.core.config;
-    let source = config.get_group_source(group, &ctx.config_dir, &ctx.home_dir);
-    let target = config.get_group_target(group, &ctx.config_dir, &ctx.home_dir);
-    let count = statuses.len();
-
-    let headline = Line::styled(
-        format!("Group of {count} {}.", plural(count, "package", "packages")),
-        Style::default().fg(colors.text),
-    );
-    let mut sections = Vec::new();
-    if count > 0 {
-        sections.push(Line::styled(
-            "Space marks every package in the group; again unmarks them.",
-            Style::default().fg(colors.text_dim),
-        ));
-    }
-    Detail {
-        headline: vec![headline],
-        facts: vec![
-            fact(
-                "source",
-                source.map_or("not found".to_string(), |path| shown(&path, ctx)),
-            ),
-            fact(
-                "target",
-                target.map_or("not found".to_string(), |path| shown(&path, ctx)),
-            ),
-            fact("status", status_summary(statuses, icons)),
-            fact("marked", format!("{marked} of {count}")),
-        ],
-        sections,
-    }
+/// One file of a package: its link as a status glyph, then its name. A file that is not
+/// linked shows the unlinked glyph; a real file or a wrong link shows the conflict glyph.
+fn file_line(file: &Path, link: FileLink, icons: &Icons, colors: &ThemeColors) -> Line<'static> {
+    let status = match link {
+        FileLink::Linked => StowStatus::Stowed,
+        FileLink::Unlinked => StowStatus::Unstowed,
+        FileLink::RealFile | FileLink::WrongLink => StowStatus::Conflict,
+    };
+    let name = elide(&file.display().to_string(), NAME_WIDTH);
+    Line::from(vec![
+        Span::styled(
+            icons.status(status),
+            Style::default().fg(status_color(colors, status)),
+        ),
+        Span::styled(format!(" {name}"), Style::default().fg(colors.text)),
+    ])
 }
 
-/// The detail when there are no groups: what the browser lists, and where groups come from.
+/// The detail when the list is empty. With no packages folder set, it says so first; either
+/// way it explains what a package is.
 pub fn empty_detail(ctx: &AppContext) -> Detail {
     let colors = ThemeColors::from_theme(ctx.core.theme);
-    Detail {
-        headline: vec![Line::styled(
-            "No groups yet.",
-            Style::default().fg(colors.text),
-        )],
-        facts: Vec::new(),
-        sections: vec![Line::styled(
-            "Groups are set in andre.yml. Each one has a source folder of packages and a target folder they link into.",
-            Style::default().fg(colors.text_dim),
-        )],
+    let text = |s: &'static str| Line::styled(s, Style::default().fg(colors.text));
+    let explain = [
+        text("A package is a folder inside the packages folder. Its files mirror your home folder: shell/.bashrc links to ~/.bashrc."),
+        Line::raw(""),
+    ];
+
+    match ctx.core.config.packages {
+        None => Detail {
+            headline: vec![Line::from(vec![
+                Span::styled("! ", Style::default().fg(colors.warn)),
+                Span::styled(
+                    "andre.yml sets no `packages:`",
+                    Style::default().fg(colors.text),
+                ),
+            ])],
+            facts: Vec::new(),
+            sections: [
+                explain.to_vec(),
+                vec![text(
+                    "Set the folder in settings, or add `packages: ~/dotfiles` to andre.yml.",
+                )],
+            ]
+            .concat(),
+        },
+        Some(_) => Detail {
+            headline: Vec::new(),
+            facts: Vec::new(),
+            sections: [
+                explain.to_vec(),
+                vec![text(
+                    "Make one with new package, or add a folder to the packages folder.",
+                )],
+            ]
+            .concat(),
+        },
     }
 }
 
@@ -313,34 +334,12 @@ fn flag(on: bool, icons: &Icons) -> &'static str {
 }
 
 /// A path with `~` for home, as the detail shows it.
-fn shown(path: &std::path::Path, ctx: &AppContext) -> String {
+fn shown(path: &Path, ctx: &AppContext) -> String {
     display_path(path, &ctx.home_dir)
-}
-
-/// Each status a group holds, with its glyph and count: `✓ 2  ◐ 1`. `—` when the group has
-/// no packages, and unknown statuses are counted with `·`.
-fn status_summary(statuses: &[Option<StowStatus>], icons: &Icons) -> String {
-    let mut parts: Vec<String> = SUMMARY_ORDER
-        .iter()
-        .filter_map(|status| {
-            let count = statuses.iter().filter(|s| **s == Some(*status)).count();
-            (count > 0).then(|| format!("{} {count}", icons.status(*status)))
-        })
-        .collect();
-    let unknown = statuses.iter().filter(|s| s.is_none()).count();
-    if unknown > 0 {
-        parts.push(format!("{} {unknown}", icons.unknown));
-    }
-    match parts.is_empty() {
-        true => "\u{2014}".to_string(),
-        false => parts.join("  "),
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use andre_core::IconSet;
-
     use super::*;
     use crate::ui::footer::{packages_hints, Hint};
     use crate::ui::status_style::status_meaning;
@@ -386,42 +385,38 @@ mod tests {
     }
 
     #[test]
-    fn test_status_summary_counts_each_status_and_the_unknown_ones() {
-        let icons = Icons::for_set(IconSet::Unicode);
-        assert_eq!(status_summary(&[], icons), "\u{2014}");
-
-        let statuses = [
-            Some(StowStatus::Stowed),
-            Some(StowStatus::Stowed),
-            Some(StowStatus::Partial),
-            Some(StowStatus::Unstowed),
-            None,
-        ];
-        let expected = format!(
-            "{} 2  {} 1  {} 1  {} 1",
-            icons.status(StowStatus::Stowed),
-            icons.status(StowStatus::Partial),
-            icons.status(StowStatus::Unstowed),
-            icons.unknown,
+    fn test_blank_names_the_fix_for_each_empty_state() {
+        let mut ctx = AppContext::for_tests(
+            andre_core::config::Config::default_empty(),
+            Path::new("/home/u/.config/andre"),
         );
-        assert_eq!(status_summary(&statuses, icons), expected);
+        assert_eq!(
+            blank(&ctx),
+            Blank {
+                message: "no packages folder".to_string(),
+                fix: Fix::Settings,
+            }
+        );
+        assert_eq!(Fix::Settings.hint(), ("6", "settings"));
+
+        ctx.core
+            .config
+            .set_packages(Some("/home/u/dotfiles".into()));
+        let empty = blank(&ctx);
+        assert_eq!(empty.fix, Fix::NewPackage);
+        assert_eq!(empty.message, "no packages in /home/u/dotfiles");
+        assert_eq!(Fix::NewPackage.hint(), ("3", "new package"));
     }
 
     #[test]
-    fn test_packages_hints_name_the_run_and_offer_p_and_i_only_on_a_package() {
+    fn test_packages_hints_name_the_run_and_offer_mark_all_on_a_package_only() {
         let keys =
             |hints: &[Hint]| -> Vec<String> { hints.iter().map(|h| h.key.to_string()).collect() };
-        let on_package = packages_hints(Some("stow 2".into()), true, true);
-        assert_eq!(
-            keys(&on_package),
-            ["Enter", "Space", "i", "p", "\u{2190}\u{2192}", "Esc"]
-        );
+        let on_package = packages_hints(Some("stow 2".into()), true);
+        assert_eq!(keys(&on_package), ["Enter", "Space", "*", "i", "p", "Esc"]);
         assert_eq!(on_package[0].label, "stow 2");
 
-        let on_group = packages_hints(None, true, false);
-        assert_eq!(keys(&on_group), ["Space", "\u{2190}\u{2192}", "Esc"]);
-
-        let empty = packages_hints(None, false, false);
+        let empty = packages_hints(None, false);
         assert_eq!(keys(&empty), ["Esc"]);
     }
 }

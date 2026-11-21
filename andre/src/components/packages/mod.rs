@@ -1,23 +1,29 @@
-//! The packages browser. Groups are rows with their packages folded under them. Space marks
-//! packages to run, and Enter runs the marks, or else the cursor's package or group, through
-//! the confirm screen. `p` opens the profile membership dialog for the cursor's package, and
-//! `i` its ignore editor.
+//! The packages browser: one flat list of the packages in the packages folder. Space marks a
+//! package to run, and `*` marks them all or unmarks them all. Enter runs the marks, or else
+//! the cursor's package, through the confirm screen. `p` opens the profile membership dialog
+//! for the cursor's package, and `i` its ignore editor.
 
 mod view;
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
 use andre_core::ignore::global_ignore_in;
 use andre_core::profile::ProfileSet;
-use andre_core::{discover_packages, PackageEntry};
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
-use ratatui::{layout::Rect, text::Line, Frame};
+use andre_core::PackageEntry;
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::{
+    layout::{Position, Rect},
+    text::Line,
+    Frame,
+};
 
 use crate::components::confirm::ConfirmComponent;
 use crate::components::ignore::IgnoreEditComponent;
-use crate::components::{grouped_name, AppContext, Component, InputMode, Transition};
+use crate::components::settings::SettingsComponent;
+use crate::components::wizard::NewPackageWizard;
+use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::detail::{fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail};
@@ -25,14 +31,18 @@ use crate::ui::dialog::{dialog_body_rect, dialog_click, dialog_row_click};
 use crate::ui::footer::{membership_dialog_hints, packages_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
+use crate::ui::list_panel::{
+    self, click_list, empty_hint_rect, render_list_panel, Empty, ListView,
+};
+use crate::ui::package_list::{mark_hit, package_line, Mark, PackageList, PackageRow};
 use crate::ui::plural;
-use crate::ui::tree::{click_key, tree_line, Mark, Toggle, Tree, TreeGroup, TreePackage, TreeRow};
+
+use view::{Blank, Fix};
 
 /// The profile membership dialog open over the browser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Membership {
-    /// `group/package`.
+    /// The package's name.
     pub package: String,
     /// Every profile, in name order.
     pub profiles: Vec<MemberRow>,
@@ -74,15 +84,15 @@ impl Membership {
 pub struct PackagesComponent {
     /// The cursor and the window over the rows.
     pub list: ListView,
-    /// Groups, folds and marks. Built by `rebuild`.
-    tree: Tree,
-    /// The tree's visible rows, as of the last change to the tree.
-    rows: Vec<TreeRow>,
-    /// Every package in each configured group, in name order. Enter on a group row runs these.
-    listing: BTreeMap<String, Vec<String>>,
-    /// The cursor row's facts. Built by `rebuild`.
+    /// One row per package, with its status and its mark. Built by `rebuild`.
+    packages: PackageList,
+    /// Each package's entry, in the same order as `packages`. Built by `rebuild`.
+    entries: Vec<PackageEntry>,
+    /// What the list says when it has no rows. `None` while it has some. Built by `rebuild`.
+    blank: Option<Blank>,
+    /// The cursor's facts, or the empty state's. Built by `rebuild`.
     detail: Detail,
-    /// What `rows` and `detail` were built from. `None` until the first update.
+    /// What `rebuild` was built from. `None` until the first update.
     detail_key: Option<u64>,
     popup: Option<Membership>,
     /// The content area, as of the last `prepare`. The membership dialog is centred in it.
@@ -93,6 +103,8 @@ pub struct PackagesComponent {
     scroll_row: usize,
     /// The detail pane as the last `prepare` laid it out.
     detail_rect: Rect,
+    /// The empty state's hint, as the last `prepare` laid it out. A click on it opens its fix.
+    hint_rect: Option<Rect>,
 }
 
 impl Component for PackagesComponent {
@@ -124,36 +136,24 @@ impl Component for PackagesComponent {
             }
             return Transition::Handled;
         }
-        if Input::handle_list_navigation(&key, &mut self.list.cursor, self.rows.len()) {
+        if Input::handle_list_navigation(&key, &mut self.list.cursor, self.packages.rows().len()) {
             return Transition::Handled;
         }
         match key.code {
             KeyCode::Char(' ') => {
-                if let Toggle::Changed = self.tree.toggle_mark(self.list.cursor) {
-                    self.rows = self.tree.rows();
-                }
+                self.packages.toggle_mark(self.list.cursor);
             }
-            KeyCode::Left => {
-                // On a package, Left moves to its group's header. On a header, it folds the group.
-                let header = self.group_header(self.list.cursor);
-                if header != self.list.cursor {
-                    self.list.cursor = header;
-                } else {
-                    self.tree.fold(header, true);
-                    self.rows = self.tree.rows();
-                }
-            }
-            KeyCode::Right => {
-                self.tree.fold(self.list.cursor, false);
-                self.rows = self.tree.rows();
+            KeyCode::Char('*') => {
+                self.packages.toggle_all();
             }
             KeyCode::Char('p') => {
-                if let Some((group, package)) = self.selected_package() {
-                    let package = format!("{group}/{package}");
-                    self.popup = Some(Membership::open(package, &ctx.core.profiles));
+                if let Some(entry) = self.selected_entry() {
+                    self.popup = Some(Membership::open(entry.name.clone(), &ctx.core.profiles));
                 }
             }
             KeyCode::Char('i') => return self.open_ignore(ctx),
+            // The empty state's hint names this key; it opens the same screen as a click.
+            KeyCode::Char(c) if self.blank_key(c) => return self.open_fix(),
             KeyCode::Enter => return self.run(ctx),
             KeyCode::Esc => return Transition::Pop,
             _ => return Transition::None,
@@ -170,14 +170,10 @@ impl Component for PackagesComponent {
         match self.popup {
             Some(_) => membership_dialog_hints(),
             None => {
-                let count = self.selection_pairs().len();
+                let count = self.selection().len();
                 let run =
                     (count > 0).then(|| format!("{} {count}", ctx.core.flags.action.as_str()));
-                packages_hints(
-                    run,
-                    !self.rows.is_empty(),
-                    self.selected_package().is_some(),
-                )
+                packages_hints(run, self.selected_entry().is_some())
             }
         }
     }
@@ -198,21 +194,34 @@ impl Component for PackagesComponent {
             self.scroll = wheel_scroll(&self.detail, self.detail_rect, &colors, self.scroll, down);
             return Transition::Handled;
         }
-        let len = self.rows.len();
+        let on_hint = self
+            .hint_rect
+            .is_some_and(|hint| hint.contains(Position::new(ev.column, ev.row)));
+        if on_hint && ev.kind == MouseEventKind::Down(MouseButton::Left) {
+            return self.open_fix();
+        }
+        let len = self.packages.rows().len();
         let Some(click) = click_list(&mut self.list, ev, len) else {
             return Transition::None;
         };
-        match click_key(&self.rows[click.row], click, true, Some(KeyCode::Char(' '))) {
-            Some(code) => self.handle_key(input::key(code), ctx),
-            None => Transition::Handled,
+        // A click on the checkbox marks the row; a click on the row the cursor already
+        // rests on marks it too, as Space does.
+        let marks = mark_hit(&self.packages.rows()[click.row], click.col, true);
+        if marks || click.activate {
+            return self.handle_key(input::key(KeyCode::Char(' ')), ctx);
         }
+        Transition::Handled
     }
 
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, Shape::TwoPane);
         self.content = area;
         self.detail_rect = rects.detail;
-        self.list.prepare(rects.list, self.rows.len());
+        self.list.prepare(rects.list, self.packages.rows().len());
+        self.hint_rect = self
+            .blank
+            .as_ref()
+            .and_then(|blank| empty_hint_rect(list_panel::inner(rects.list), &empty_state(blank)));
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
@@ -222,26 +231,15 @@ impl Component for PackagesComponent {
 
         let width = list_panel::inner(rects.list).width;
         let lines: Vec<Line> = self
-            .rows
+            .packages
+            .rows()
             .iter()
             .enumerate()
-            .map(|(i, row)| tree_line(row, i == self.list.cursor, icons, &colors, width))
+            .map(|(i, row)| package_line(row, i == self.list.cursor, true, icons, &colors, width))
             .collect();
-        let total: usize = self.listing.values().map(Vec::len).sum();
-        let title = view::packages_title(self.tree.marked().len(), total);
-        let empty = Empty {
-            message: "no groups in andre.yml",
-            hint: None,
-        };
-        render_list_panel(
-            frame,
-            rects.list,
-            &colors,
-            &title,
-            lines,
-            &self.list,
-            Some(empty),
-        );
+        let title = view::packages_title(self.packages.marked().len(), self.packages.rows().len());
+        let empty = self.blank.as_ref().map(empty_state);
+        render_list_panel(frame, rects.list, &colors, &title, lines, &self.list, empty);
 
         render_detail_scrolled(
             frame,
@@ -306,70 +304,55 @@ impl PackagesComponent {
         self.popup.as_ref()
     }
 
-    /// The `(group, package)` pairs marked by the user, in config order.
-    pub fn marked(&self) -> Vec<(String, String)> {
-        self.tree.marked()
+    /// The names of the packages the user marked, in list order.
+    pub fn marked(&self) -> Vec<String> {
+        self.packages.marked()
     }
 
-    /// The rows as drawn: each group, then its packages unless it is folded.
-    pub fn rows(&self) -> &[TreeRow] {
-        &self.rows
+    /// The rows as drawn: one per package, in name order.
+    pub fn rows(&self) -> &[PackageRow] {
+        self.packages.rows()
     }
 
-    /// The package under the cursor, as `(group, package)`. `None` on a group row.
-    fn selected_package(&self) -> Option<(String, String)> {
-        match self.rows.get(self.list.cursor) {
-            Some(TreeRow::Package { group, name, .. }) => Some((group.clone(), name.clone())),
-            _ => None,
-        }
+    /// The entry of the package under the cursor. `None` when the list is empty.
+    fn selected_entry(&self) -> Option<&PackageEntry> {
+        self.entries.get(self.list.cursor)
     }
 
-    /// The row of the group header that `row` sits under, or `row` when it is a header.
-    fn group_header(&self, row: usize) -> usize {
-        self.rows
-            .iter()
-            .take(row + 1)
-            .rposition(|r| matches!(r, TreeRow::Group { .. }))
-            .unwrap_or(row)
-    }
-
-    /// The packages Enter runs, as `(group, package)`: the marked ones, else the cursor's
-    /// package, else every package of the cursor's group.
-    fn selection_pairs(&self) -> Vec<(String, String)> {
-        let marked = self.tree.marked();
+    /// The packages Enter runs: the marked ones, else the cursor's package.
+    fn selection(&self) -> Vec<String> {
+        let marked = self.packages.marked();
         if !marked.is_empty() {
             return marked;
         }
-        match self.rows.get(self.list.cursor) {
-            Some(TreeRow::Package { group, name, .. }) => vec![(group.clone(), name.clone())],
-            Some(TreeRow::Group { name, .. }) => self
-                .listing
-                .get(name)
-                .into_iter()
-                .flatten()
-                .map(|package| (name.clone(), package.clone()))
-                .collect(),
-            None => Vec::new(),
+        self.selected_entry()
+            .map(|entry| vec![entry.name.clone()])
+            .unwrap_or_default()
+    }
+
+    /// Whether `c` is the key the empty state's hint names. Only an empty list has one.
+    fn blank_key(&self, c: char) -> bool {
+        self.blank
+            .as_ref()
+            .is_some_and(|blank| blank.fix.hint().0 == c.to_string())
+    }
+
+    /// Opens the screen that fixes the empty list: settings when no packages folder is set,
+    /// the new-package wizard when the folder holds no packages.
+    fn open_fix(&self) -> Transition {
+        match self.blank.as_ref().map(|blank| blank.fix) {
+            Some(Fix::Settings) => Transition::Push(Box::new(SettingsComponent::default())),
+            Some(Fix::NewPackage) => Transition::Push(Box::new(NewPackageWizard::default())),
+            None => Transition::Handled,
         }
     }
 
-    /// Opens the ignore editor on the cursor's package. A package without a folder says so.
+    /// Opens the ignore editor on the cursor's package.
     fn open_ignore(&self, ctx: &mut AppContext) -> Transition {
-        let Some((group, package)) = self.selected_package() else {
+        let Some(entry) = self.selected_entry() else {
             return Transition::Handled;
         };
-        let source = ctx
-            .core
-            .config
-            .get_group_source(&group, &ctx.config_dir, &ctx.home_dir);
-        let Some(dir) = source
-            .map(|source| source.join(&package))
-            .filter(|dir| dir.is_dir())
-        else {
-            ctx.show_error_toast(format!("{group}/{package} has no folder"));
-            return Transition::Handled;
-        };
-        match IgnoreEditComponent::open(format!("{group}/{package}"), dir, ctx.core.theme) {
+        match IgnoreEditComponent::open(entry.name.clone(), entry.dir.clone(), ctx.core.theme) {
             Ok(editor) => Transition::Push(Box::new(editor)),
             Err(err) => {
                 ctx.show_error_toast(err.to_string());
@@ -378,27 +361,19 @@ impl PackagesComponent {
         }
     }
 
-    /// Runs the selection through the confirm screen. A group with no packages says so.
+    /// Runs the selection through the confirm screen.
     fn run(&self, ctx: &mut AppContext) -> Transition {
-        let pairs = self.selection_pairs();
-        if pairs.is_empty() {
-            if let Some(TreeRow::Group { name, .. }) = self.rows.get(self.list.cursor) {
-                ctx.show_error_toast(format!("{name} has no packages"));
-            }
+        let names = self.selection();
+        if names.is_empty() {
             return Transition::Handled;
         }
-        let names = pairs
-            .into_iter()
-            .map(|(group, package)| grouped_name(&group, &package))
-            .collect();
         Transition::Push(Box::new(ConfirmComponent::new(names, ctx)))
     }
 
-    /// The detail title: `group/package` for a package, the group's name for a group.
+    /// The detail title: the cursor's package name, or `packages` when there are none.
     fn detail_title(&self) -> String {
-        match self.rows.get(self.list.cursor) {
-            Some(TreeRow::Package { group, name, .. }) => format!("{group}/{name}"),
-            Some(TreeRow::Group { name, .. }) => name.clone(),
+        match self.selected_entry() {
+            Some(entry) => entry.name.clone(),
             None => "packages".to_string(),
         }
     }
@@ -425,8 +400,11 @@ impl PackagesComponent {
     fn fingerprint(&self, ctx: &AppContext) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.list.cursor.hash(&mut hasher);
-        self.tree.marked().hash(&mut hasher);
+        self.packages.marked().hash(&mut hasher);
         ctx.status_cache.borrow().generation().hash(&mut hasher);
+        ctx.core.config.packages.hash(&mut hasher);
+        ctx.core.config.target.hash(&mut hasher);
+        // Interim: a `groups:` config still yields entries until G10 removes groups.
         for (name, group) in &ctx.core.config.groups {
             name.hash(&mut hasher);
             group.source.hash(&mut hasher);
@@ -440,83 +418,58 @@ impl PackagesComponent {
         hasher.finish()
     }
 
-    /// Rescans the groups, keeping the marks and folds, then builds the rows and the detail.
+    /// Rereads the packages, keeping the marks, then builds the rows and the detail.
     /// Statuses are read through the cache, which fills in what it has not seen.
     fn rebuild(&mut self, ctx: &AppContext) {
-        let marked: BTreeSet<(String, String)> = self.tree.marked().into_iter().collect();
+        let marked: BTreeSet<String> = self.packages.marked().into_iter().collect();
         let global = global_ignore_in(&ctx.home_dir);
-        let entries = ctx.package_entries();
-        let mut groups = Vec::new();
-        let mut listing = BTreeMap::new();
-        for name in ctx.core.config.groups.keys() {
-            let source = ctx
-                .core
-                .config
-                .get_group_source(name, &ctx.config_dir, &ctx.home_dir);
-            let target = ctx
-                .core
-                .config
-                .get_group_target(name, &ctx.config_dir, &ctx.home_dir);
-            let names = source.as_deref().map(discover_packages).unwrap_or_default();
-            if let (Some(_), Some(_)) = (&source, &target) {
-                let group_entries: Vec<PackageEntry> = entries
-                    .iter()
-                    .filter(|entry| entry.name.starts_with(&format!("{name}/")))
-                    .cloned()
-                    .collect();
-                ctx.status_cache
-                    .borrow_mut()
-                    .prefetch_all(&group_entries, Some(&global));
-            }
-            let packages = names
-                .iter()
-                .map(|package| TreePackage {
-                    name: package.clone(),
-                    status: ctx.status_cache.borrow().get(&grouped_name(name, package)),
-                    mark: Some(if marked.contains(&(name.clone(), package.clone())) {
-                        Mark::On
-                    } else {
-                        Mark::Off
-                    }),
-                    meta: String::new(),
-                })
-                .collect();
-            groups.push(TreeGroup {
-                name: name.clone(),
-                packages,
-            });
-            listing.insert(name.clone(), names);
+        self.entries = ctx.package_entries();
+        // A package whose target folder is missing has no status: it reads as unknown, as the
+        // review and the run treat it.
+        let mut cache = ctx.status_cache.borrow_mut();
+        for entry in self.entries.iter().filter(|entry| entry.target.is_dir()) {
+            cache.prefetch(entry, Some(&global));
         }
-
-        self.tree.replace_groups(groups);
-        self.listing = listing;
-        self.rows = self.tree.rows();
-        self.list.cursor = self.list.cursor.min(self.rows.len().saturating_sub(1));
+        drop(cache);
+        let rows = self
+            .entries
+            .iter()
+            .map(|entry| PackageRow {
+                name: entry.name.clone(),
+                status: ctx.status_cache.borrow().get(&entry.name),
+                mark: Some(match marked.contains(&entry.name) {
+                    true => Mark::On,
+                    false => Mark::Off,
+                }),
+                meta: String::new(),
+            })
+            .collect();
+        self.packages = PackageList::new(rows);
+        self.blank = self.packages.rows().is_empty().then(|| view::blank(ctx));
+        self.list.cursor = self
+            .list
+            .cursor
+            .min(self.packages.rows().len().saturating_sub(1));
         self.detail = self.build_detail(ctx);
     }
 
-    /// The detail of the cursor's row: the package's facts, or the group's summary.
+    /// The detail of the cursor's package, or the empty state's when there is none.
     fn build_detail(&self, ctx: &AppContext) -> Detail {
-        match self.rows.get(self.list.cursor) {
-            Some(TreeRow::Package {
-                group,
-                name,
-                status,
-                ..
-            }) => view::package_detail(ctx, group, name, *status),
-            Some(TreeRow::Group { name, .. }) => {
-                let statuses: Vec<_> = self
-                    .listing
-                    .get(name)
-                    .into_iter()
-                    .flatten()
-                    .map(|package| ctx.status_cache.borrow().get(&grouped_name(name, package)))
-                    .collect();
-                let marked = self.tree.marked().iter().filter(|(g, _)| g == name).count();
-                view::group_detail(ctx, name, &statuses, marked)
-            }
-            None => view::empty_detail(ctx),
+        match (
+            self.selected_entry(),
+            self.packages.rows().get(self.list.cursor),
+        ) {
+            (Some(entry), Some(row)) => view::package_detail(ctx, entry, row.status),
+            _ => view::empty_detail(ctx),
         }
+    }
+}
+
+/// The empty state drawn for `blank`: its message and the hint that names its fix.
+fn empty_state(blank: &Blank) -> Empty<'_> {
+    Empty {
+        message: &blank.message,
+        hint: Some(blank.fix.hint()),
     }
 }
 
@@ -613,20 +566,15 @@ mod tests {
         assert_eq!(component.scroll, 0, "and a notch up takes them back");
     }
 
-    /// One group `dots` with packages `alpha` and `beta`, each with one file.
+    /// A flat config whose packages folder holds `alpha` and `beta`, each with one file.
     fn fixture() -> (tempfile::TempDir, AppContext) {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join("src/alpha")).unwrap();
         std::fs::create_dir_all(tmp.path().join("src/beta")).unwrap();
-        std::fs::create_dir_all(tmp.path().join("tgt")).unwrap();
         std::fs::write(tmp.path().join("src/alpha/f"), "").unwrap();
         std::fs::write(tmp.path().join("src/beta/g"), "").unwrap();
         let mut config = Config::default_empty();
-        config.add_group(
-            "dots".into(),
-            tmp.path().join("src").display().to_string(),
-            tmp.path().join("tgt").display().to_string(),
-        );
+        config.set_packages(Some(tmp.path().join("src").display().to_string()));
         let ctx = AppContext::for_tests(config, tmp.path());
         (tmp, ctx)
     }
@@ -650,13 +598,30 @@ mod tests {
 
         component.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), &mut ctx);
         component.update(&mut ctx);
-        assert_eq!(component.list.cursor, 1, "the cursor is on alpha");
+        assert_eq!(component.list.cursor, 1, "the cursor is on beta");
         let colors = ThemeColors::from_theme(ctx.core.theme);
         assert!(
             detail_rows(&component.detail, pane, &colors)
                 > usize::from(WHEEL_ROWS) + usize::from(detail_inner(pane).height),
-            "alpha's detail overflows the pane"
+            "beta's detail overflows the pane"
         );
-        assert_eq!(component.scroll, 0, "alpha's detail starts at its top");
+        assert_eq!(component.scroll, 0, "beta's detail starts at its top");
+    }
+
+    #[test]
+    fn test_blank_is_set_only_while_the_list_is_empty() {
+        let (_tmp, ctx) = fixture();
+        let mut component = PackagesComponent::default();
+        component.sync(&ctx);
+        assert!(
+            component.blank.is_none(),
+            "two packages leave nothing to say"
+        );
+
+        let mut config = Config::default_empty();
+        config.set_packages(None);
+        let ctx = AppContext::for_tests(config, std::path::Path::new("/"));
+        component.sync(&ctx);
+        assert_eq!(component.blank.as_ref().map(|b| b.fix), Some(Fix::Settings));
     }
 }

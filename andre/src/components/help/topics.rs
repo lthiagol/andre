@@ -128,12 +128,16 @@ impl Topic {
             },
             Topic::Packages => Detail {
                 headline: vec![prose(
-                    "A package is a folder inside a group's source. Its files mirror the group's target, so shell/.bashrc links to .bashrc in the target.",
+                    "A package is a folder inside the packages folder. Its files mirror the target, so shell/.bashrc links to .bashrc in the target.",
                     &colors,
                 )],
                 sections: vec![
                     prose(
-                        "Space marks packages. Enter runs the action on the marks, or on the cursor's package or group when none are marked.",
+                        "Space marks a package. * marks them all, or unmarks them when all are marked.",
+                        &colors,
+                    ),
+                    prose(
+                        "Enter runs the action on the marks, or on the cursor's package when none are marked.",
                         &colors,
                     ),
                     prose("i edits the package's ignore files. p sets which profiles hold it.", &colors),

@@ -436,22 +436,18 @@ pub fn settings_hints(on_group: bool) -> Vec<Hint> {
 }
 
 /// Hints for the packages browser. `run` is the Enter label (`stow 3`), or `None` when Enter
-/// does nothing. `on_row` says there is a row to mark and fold; `on_package` that the cursor
-/// is on a package, which has profiles and ignore files to edit.
-pub fn packages_hints(run: Option<String>, on_row: bool, on_package: bool) -> Vec<Hint> {
+/// does nothing. `on_package` says the cursor is on a package: the mark, ignore and profile
+/// keys are offered only then.
+pub fn packages_hints(run: Option<String>, on_package: bool) -> Vec<Hint> {
     let mut hints = Vec::new();
     if let Some(label) = run {
         hints.push(Hint::new("Enter", label, PRIO_PRIMARY));
     }
-    if on_row {
-        hints.push(Hint::new("Space", "mark", PRIO_VERB));
-    }
     if on_package {
+        hints.push(Hint::new("Space", "mark", PRIO_VERB));
+        hints.push(Hint::new("*", "all", PRIO_VERB));
         hints.push(Hint::new("i", "ignore", PRIO_VERB));
         hints.push(Hint::new("p", "profiles", PRIO_VERB));
-    }
-    if on_row {
-        hints.push(Hint::new("\u{2190}\u{2192}", "fold", PRIO_VERB));
     }
     hints.push(Hint::new("Esc", "back", PRIO_BACK));
     hints
