@@ -53,7 +53,6 @@ pub mod packages;
 pub mod profiles;
 pub mod settings;
 pub mod status;
-pub mod target_select;
 pub mod unstow;
 pub mod wizard;
 
@@ -122,6 +121,13 @@ impl AppContext {
         self.core
             .config
             .package(name, &self.config_dir, &self.home_dir)
+    }
+
+    /// The folder every package links into: `target:`, or the home folder.
+    pub fn target_dir(&self) -> PathBuf {
+        self.core
+            .config
+            .target_dir(&self.config_dir, &self.home_dir)
     }
 
     /// Record a log entry. Nothing runs when debug is disabled: `message` is only

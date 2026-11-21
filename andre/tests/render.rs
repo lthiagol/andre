@@ -111,9 +111,6 @@ fn push_screen(app: &mut App, name: &str) {
         "Status" => app.component_stack.push(Box::new(
             andre::components::status::StatusComponent::default(),
         )),
-        "UnstowTargetSelect" => app.component_stack.push(Box::new(
-            andre::components::target_select::TargetSelectComponent::unstow(),
-        )),
         "NewPackage" => app.component_stack.push(Box::new(
             andre::components::wizard::NewPackageWizard::default(),
         )),
@@ -134,12 +131,9 @@ fn push_screen(app: &mut App, name: &str) {
                 )));
         }
         "UnstowBrowse" => {
-            let path = app.ctx.home_dir.join("dotfiles/home");
+            let target = app.ctx.home_dir.clone();
             app.component_stack.push(Box::new(
-                andre::components::unstow::UnstowBrowseComponent::with_path(
-                    "home".to_string(),
-                    path,
-                ),
+                andre::components::unstow::UnstowBrowseComponent::at(target),
             ));
         }
         _ => {}
@@ -156,7 +150,7 @@ fn screen_names() -> Vec<&'static str> {
         "Help",
         "Confirm",
         "Execute",
-        "UnstowTargetSelect",
+        "UnstowBrowse",
         "NewPackage",
     ]
 }
@@ -695,34 +689,22 @@ fn test_execute_completed_list_scrolls() {
     );
 }
 
+/// Unstow opens the browse screen at the target: there is no group list.
 #[test]
-fn test_unstow_target_select_lists_each_group_with_its_target_and_facts() {
-    let (mut app, _tmp) = make_test_app();
-    push_screen(&mut app, "UnstowTargetSelect");
-    let buf = render_updated(&mut app, 80, 24);
-    assert!(line_contains(&buf, "groups 1"), "list title missing");
-    assert!(line_contains(&buf, "home"), "group name missing");
-    assert!(line_contains(&buf, "packages"), "packages fact missing");
-    assert!(
-        !line_contains(&buf, "(target:"),
-        "the old target label is back"
-    );
-}
-
-/// One group means unstow opens its browse screen: the group list is skipped.
-#[test]
-fn test_unstow_with_one_group_opens_its_browse_screen() {
-    let (mut app, _tmp) = make_test_app();
+fn test_unstow_opens_the_browse_screen_at_the_target() {
+    let (mut app, _tmp) = make_flat_test_app();
     app.component_dispatch(key_char('4'));
     let buf = render_updated(&mut app, 80, 24);
     assert!(
-        !line_contains(&buf, "groups 1"),
-        "the group list should be skipped"
+        row_text(&buf, 1).contains("andre  main › unstow"),
+        "title row: {:?}",
+        row_text(&buf, 1)
     );
     assert!(
         line_contains(&buf, "folder"),
         "the cursor folder's detail is missing"
     );
+    assert!(!line_contains(&buf, "groups"), "the group list is back");
 }
 
 #[test]
@@ -732,7 +714,10 @@ fn test_unstow_browse_shows_the_link_detail_and_no_path_line() {
     browse_cursor_to(&mut app, ".bashrc");
     let buf = render_updated(&mut app, 80, 24);
     assert!(line_contains(&buf, "points to"), "link target missing");
-    assert!(line_contains(&buf, "home/test"), "owning package missing");
+    assert!(
+        line_contains(&buf, "package   test"),
+        "owning package missing"
+    );
     assert!(!line_contains(&buf, "Path:"), "the path line is back");
     assert!(!line_contains(&buf, " legend "), "the legend is back");
     assert!(
@@ -753,13 +738,22 @@ fn row_of(buf: &Buffer, fragment: &str) -> u16 {
 #[test]
 fn test_unstow_browse_wraps_points_to_under_its_value_column() {
     let (mut app, tmp) = make_unstow_app();
+    // A package name long enough that the target does not fit one row.
+    let package = tmp.path().join("dotfiles/terminal-emulator");
+    std::fs::create_dir_all(&package).unwrap();
+    std::fs::write(package.join(".bashrc"), "").unwrap();
+    std::os::unix::fs::symlink(
+        "dotfiles/terminal-emulator/.bashrc",
+        tmp.path().join(".wrapped"),
+    )
+    .unwrap();
     push_browse(&mut app, tmp.path());
-    browse_cursor_to(&mut app, ".bashrc");
+    browse_cursor_to(&mut app, ".wrapped");
     let buf = render_updated(&mut app, 80, 24);
     let y = row_of(&buf, "points to");
-    let value = column_of(&buf, y, "~/dotfiles/home/test/").expect("first row of the target");
+    let value = column_of(&buf, y, "~/dotfiles/").expect("first row of the target");
     assert_eq!(
-        column_of(&buf, y + 1, ".bashrc"),
+        column_of(&buf, y + 1, "terminal-emulator"),
         Some(value),
         "{:?}",
         row_text(&buf, y + 1)
@@ -793,6 +787,85 @@ fn test_unstow_browse_marks_links_with_boxes_and_folders_with_none() {
     assert!(
         !text.contains('■') && !text.contains('□'),
         "a folder has no box: {text:?}"
+    );
+}
+
+/// The review's `points to` is a fact row directly under `remove`, with the target from the
+/// packages folder under the same value column.
+#[test]
+fn test_unstow_review_points_to_is_a_fact_row_under_remove() {
+    let (mut app, tmp) = make_unstow_app();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".bashrc");
+    app.component_dispatch(enter_key());
+    let buf = render_updated(&mut app, 80, 24);
+    let y = row_of(&buf, "~/.bashrc");
+    assert_eq!(
+        column_of(&buf, y + 1, "points to"),
+        Some(column_of(&buf, y, "remove").expect("the remove label")),
+        "{:?}",
+        row_text(&buf, y + 1)
+    );
+    assert_eq!(
+        column_of(&buf, y + 1, "test/.bashrc"),
+        column_of(&buf, y, "~/.bashrc"),
+        "{:?}",
+        row_text(&buf, y + 1)
+    );
+    assert!(
+        !buffer_text(&buf).contains("dotfiles/test/.bashrc"),
+        "{}",
+        buffer_text(&buf)
+    );
+}
+
+/// A review target too long for one value row wraps under its value column, as the browse
+/// does, and does not break inside a folder name at column 0.
+#[test]
+fn test_unstow_review_wraps_points_to_under_its_value_column() {
+    let (mut app, tmp) = make_unstow_app();
+    let file = tmp
+        .path()
+        .join("dotfiles/terminal-emulator/.config/terminal-emulator/config.toml");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "").unwrap();
+    std::os::unix::fs::symlink(
+        "dotfiles/terminal-emulator/.config/terminal-emulator/config.toml",
+        tmp.path().join(".wrapped"),
+    )
+    .unwrap();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".wrapped");
+    app.component_dispatch(enter_key());
+    let buf = render_updated(&mut app, 80, 24);
+    let y = row_of(&buf, "points to");
+    let value = column_of(&buf, y, "terminal-emulator/").expect("first row of the target");
+    assert_eq!(
+        column_of(&buf, y + 1, "terminal-emulator/"),
+        Some(value),
+        "{:?}",
+        row_text(&buf, y + 1)
+    );
+    assert_eq!(
+        column_of(&buf, y + 2, "config.toml"),
+        Some(value),
+        "{:?}",
+        row_text(&buf, y + 2)
+    );
+}
+
+/// The review says which package to restow to put a removed link back.
+#[test]
+fn test_unstow_review_names_the_package_to_restow() {
+    let (mut app, tmp) = make_unstow_app();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".bashrc");
+    app.component_dispatch(enter_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        buffer_text(&buf).contains("Restow test"),
+        "{}",
+        buffer_text(&buf)
     );
 }
 
@@ -880,13 +953,13 @@ fn test_help_screen_scrollbar_render() {
 fn test_footer_context_hints_per_screen_family() {
     // (screen push name or "" for MainMenu, distinctive footer fragment)
     let cases: &[(&str, &str)] = &[
-        ("", "navigate"),                 // MainMenu
-        ("Packages", "mark"),             // packages browser
-        ("Settings", "change"),           // settings
-        ("Help", "back"),                 // help
-        ("Confirm", "cancel"),            // review y/n
-        ("Execute", "inspect"),           // run screen, not finished
-        ("UnstowTargetSelect", "browse"), // unstow group list
+        ("", "navigate"),           // MainMenu
+        ("Packages", "mark"),       // packages browser
+        ("Settings", "change"),     // settings
+        ("Help", "back"),           // help
+        ("Confirm", "cancel"),      // review y/n
+        ("Execute", "inspect"),     // run screen, not finished
+        ("UnstowBrowse", "review"), // unstow browse
     ];
 
     for (name, fragment) in cases {
@@ -1570,7 +1643,7 @@ fn test_detail_text_is_inset_from_the_panel_border() {
 
 /// Every screen the render tests can draw, with the cursor row that `push_screen`
 /// leaves selected. Each one is checked for the shared cursor style.
-const CURSOR_SCREENS: [&str; 4] = ["Packages", "Settings", "UnstowTargetSelect", "UnstowBrowse"];
+const CURSOR_SCREENS: [&str; 3] = ["Packages", "Settings", "UnstowBrowse"];
 
 fn buffer_text(buf: &Buffer) -> String {
     (0..buf.area().height)
@@ -1788,7 +1861,6 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
         ("Status", "packages 1", "Stow Status"),
         ("Settings", "settings", ""),
         ("Help", "help", ""),
-        ("UnstowTargetSelect", "groups 1", "Select Target for Unstow"),
     ];
     for (screen, title, old_title) in cases {
         let (mut app, _tmp) = make_test_app();
@@ -2983,7 +3055,6 @@ fn test_touched_screens_render_at_120x40_and_200x50_without_panic() {
         "Help",
         "Confirm",
         "Execute",
-        "UnstowTargetSelect",
         "UnstowBrowse",
         "NewPackage",
     ];
@@ -4722,9 +4793,10 @@ fn test_unlink_review_removes_then_says_so() {
     let link = tmp.path().join("link.txt");
     std::os::unix::fs::symlink(&source, &link).unwrap();
     app.component_stack
-        .push(Box::new(UnstowConfirmComponent::with_paths(vec![
-            link.clone()
-        ])));
+        .push(Box::new(UnstowConfirmComponent::with_paths(
+            vec![link.clone()],
+            None,
+        )));
 
     let buf = render_updated(&mut app, 80, 24);
     assert!(line_contains(&buf, "remove 1 link"), "list title missing");
@@ -4783,7 +4855,10 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
 
         let link = tmp.path().join("missing-link");
         app.component_stack
-            .push(Box::new(UnstowConfirmComponent::with_paths(vec![link])));
+            .push(Box::new(UnstowConfirmComponent::with_paths(
+                vec![link],
+                None,
+            )));
         render_updated(&mut app, width, height);
     }
 }
@@ -5219,26 +5294,35 @@ fn test_help_page_down_brings_the_end_of_a_long_topic_into_view_and_stops_there(
     );
 }
 
+/// The title row names the screen and the crumb is `unstow`; the list panel names the folder
+/// being browsed.
 #[test]
-fn test_unstow_browse_title_row_names_the_folder_being_browsed() {
+fn test_unstow_browse_title_row_is_unstow_and_the_list_names_the_folder() {
     let (mut app, tmp) = make_unstow_app();
     std::fs::create_dir_all(tmp.path().join(".config")).unwrap();
-    push_screen(&mut app, "UnstowTargetSelect");
     push_browse(&mut app, tmp.path());
     let buf = render_updated(&mut app, 80, 24);
     assert!(
-        row_text(&buf, 1).contains("andre  main › unstow › ~"),
+        row_text(&buf, 1).contains("andre  main › unstow"),
         "title row: {:?}",
         row_text(&buf, 1)
+    );
+    assert!(
+        line_contains(&buf, "╭ ~ "),
+        "the target's list title is missing"
     );
 
     app.component_stack.pop();
     push_browse(&mut app, &tmp.path().join(".config"));
     let buf = render_updated(&mut app, 80, 24);
     assert!(
-        row_text(&buf, 1).contains("andre  main › unstow › ~/.config"),
+        row_text(&buf, 1).contains("andre  main › unstow"),
         "title row after opening a folder: {:?}",
         row_text(&buf, 1)
+    );
+    assert!(
+        line_contains(&buf, "╭ ~/.config "),
+        "the browsed folder's list title is missing"
     );
 }
 

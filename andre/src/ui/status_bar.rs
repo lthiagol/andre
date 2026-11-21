@@ -50,7 +50,7 @@ pub fn breadcrumb_label(id: &str) -> &str {
         "Profiles" => "profiles",
         "NewPackage" => "new package",
         "Execute" => "run",
-        "UnstowTargetSelect" => "unstow",
+        "UnstowBrowse" => "unstow",
         "UnstowConfirm" => "review",
         other => other,
     }

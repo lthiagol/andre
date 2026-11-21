@@ -1,11 +1,22 @@
-//! The unstow browse screen: the folders and links of one group's target. Space marks links,
-//! Enter reviews the marked links (or the link under the cursor) for removal. Regular files
-//! are not listed, since they are not stowed links.
+//! The unstow browse screen: the folders and links of the target, opened at the target. Space
+//! marks links, Enter reviews the marked links (or the link under the cursor) for removal.
+//! Regular files are not listed, since they are not stowed links.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::path::{Component as PathPart, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
+use crate::components::browser::{all_entries, Browser};
+use crate::components::{AppContext, Component, Transition};
+use crate::input::{self, Input};
+use crate::theme::ThemeColors;
+use crate::ui::detail::{render_detail, wrap_value, Detail, VALUE_WIDTH};
+use crate::ui::display_path;
+use crate::ui::footer::{unstow_browse_hints, Hint};
+use crate::ui::icons::Icons;
+use crate::ui::layout::{screen_rects, Shape};
+use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
+use crate::ui::selection::row_with_glyphs;
 use andre_core::{TargetEntry, Theme};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{
@@ -14,25 +25,15 @@ use ratatui::{
     text::{Line, Span},
     Frame,
 };
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::components::browser::{all_entries, Browser};
-use crate::components::{AppContext, Component, Transition};
-use crate::input::{self, Input};
-use crate::theme::ThemeColors;
-use crate::ui::detail::{render_detail, Detail, VALUE_WIDTH};
-use crate::ui::display_path;
-use crate::ui::footer::{unstow_browse_hints, Hint};
-use crate::ui::icons::Icons;
-use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
-use crate::ui::selection::row_with_glyphs;
+use super::owner::{owning_package, resolve_link};
 
 /// The column of a link's checkbox: the gutter is column 0.
 const MARK_COL: u16 = 1;
 
 pub struct UnstowBrowseComponent {
-    pub group_name: String,
+    /// The target folder the browse opened at. `←` never climbs above it.
+    root: PathBuf,
     /// The folder being browsed and its listing. Its cursor is not used; `list` holds it.
     pub browser: Browser,
     /// The cursor and the window over the listed entries.
@@ -55,10 +56,11 @@ impl UnstowBrowseComponent {
         &self.marks
     }
 
-    pub fn with_path(group_name: String, browse_path: PathBuf) -> Self {
+    /// The browse screen opened at `target`, the folder every package links into.
+    pub fn at(target: PathBuf) -> Self {
         Self {
-            group_name,
-            browser: Browser::new(browse_path, linked_entries),
+            root: target.clone(),
+            browser: Browser::new(target, linked_entries),
             list: ListView::default(),
             marks: Vec::new(),
             targets: BTreeMap::new(),
@@ -141,8 +143,11 @@ impl UnstowBrowseComponent {
             let label = if i == 0 { "points to" } else { "" };
             facts.push((Cow::Borrowed(label), row));
         }
-        if let Some(package) = resolved.as_deref().and_then(|at| self.owner(ctx, at)) {
-            facts.push((Cow::Borrowed("package"), package));
+        let packages = ctx.core.config.packages_dir(&ctx.config_dir, &ctx.home_dir);
+        if let (Some(target), Some(packages)) = (target, &packages) {
+            if let Some(package) = owning_package(&path, target, packages) {
+                facts.push((Cow::Borrowed("package"), package));
+            }
         }
         Detail {
             headline: Vec::new(),
@@ -152,23 +157,6 @@ impl UnstowBrowseComponent {
                 Style::default().fg(colors.text_dim),
             )],
         }
-    }
-
-    /// The `group/package` a resolved link points into, when it points into this group's
-    /// source folder.
-    fn owner(&self, ctx: &AppContext, resolved: &Path) -> Option<String> {
-        let source = ctx.core.config.resolve_group_source(
-            &self.group_name,
-            &ctx.config_dir,
-            &ctx.home_dir,
-        )?;
-        let inside = resolved.strip_prefix(normalize(&source)).ok()?;
-        let package = inside.components().next()?;
-        Some(format!(
-            "{}/{}",
-            self.group_name,
-            package.as_os_str().to_string_lossy()
-        ))
     }
 
     fn reset_cursor(&mut self) {
@@ -186,8 +174,11 @@ impl UnstowBrowseComponent {
         self.refresh();
     }
 
-    /// Left: back to the parent folder.
+    /// Left: back to the parent folder, but never above the target.
     fn go_up(&mut self) {
+        if self.browser.path == self.root {
+            return;
+        }
         self.browser.go_up();
         self.reset_cursor();
         self.refresh();
@@ -216,7 +207,7 @@ impl UnstowBrowseComponent {
     }
 
     /// Enter: reviews the marked links, or the link under the cursor when none is marked.
-    fn review(&self) -> Transition {
+    fn review(&self, ctx: &AppContext) -> Transition {
         let paths = if self.marks.is_empty() {
             match self.current().filter(|e| e.is_symlink) {
                 Some(entry) => vec![self.browser.path.join(&entry.name)],
@@ -225,7 +216,11 @@ impl UnstowBrowseComponent {
         } else {
             self.marks.clone()
         };
-        Transition::Push(Box::new(super::UnstowConfirmComponent::with_paths(paths)))
+        let packages = ctx.core.config.packages_dir(&ctx.config_dir, &ctx.home_dir);
+        Transition::Push(Box::new(super::UnstowConfirmComponent::with_paths(
+            paths,
+            packages.as_deref(),
+        )))
     }
 
     fn list_title(&self, home: &Path) -> String {
@@ -283,7 +278,7 @@ impl UnstowBrowseComponent {
             }
             KeyCode::Right => self.open_dir(),
             KeyCode::Left | KeyCode::Backspace => self.go_up(),
-            KeyCode::Enter => return self.review(),
+            KeyCode::Enter => return self.review(ctx),
             KeyCode::Esc => return Transition::Pop,
             _ => return Transition::None,
         }
@@ -300,66 +295,9 @@ fn linked_entries(path: &Path) -> Vec<TargetEntry> {
         .collect()
 }
 
-/// Where a link points, as an absolute path. A relative target is taken from the link's
-/// folder. Nothing is read from the disk.
-fn resolve_link(link: &Path, target: &str) -> PathBuf {
-    let target = Path::new(target);
-    if target.is_absolute() {
-        return normalize(target);
-    }
-    match link.parent() {
-        Some(folder) => normalize(&folder.join(target)),
-        None => normalize(target),
-    }
-}
-
-/// `text` split into rows of at most `width` columns. A row breaks after a `/` where it can,
-/// so a path wraps between its folders; a piece wider than a row breaks inside itself.
-fn wrap_value(text: &str, width: usize) -> Vec<String> {
-    let mut rows = Vec::new();
-    let mut row = String::new();
-    for piece in text.split_inclusive('/') {
-        if row.width() + piece.width() <= width {
-            row.push_str(piece);
-            continue;
-        }
-        if !row.is_empty() {
-            rows.push(std::mem::take(&mut row));
-        }
-        for ch in piece.chars() {
-            if !row.is_empty() && row.width() + ch.width().unwrap_or(0) > width {
-                rows.push(std::mem::take(&mut row));
-            }
-            row.push(ch);
-        }
-    }
-    rows.push(row);
-    rows
-}
-
-/// `path` with `.` dropped and each `..` taken from the part before it. Nothing is read
-/// from the disk, so a link through a symlinked folder keeps its written path.
-fn normalize(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for part in path.components() {
-        match part {
-            PathPart::ParentDir => {
-                out.pop();
-            }
-            PathPart::CurDir => {}
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
-
 impl Component for UnstowBrowseComponent {
     fn id(&self) -> &'static str {
         "UnstowBrowse"
-    }
-
-    fn crumbs(&self, ctx: &AppContext) -> Vec<Cow<'static, str>> {
-        vec![Cow::Owned(display_path(&self.browser.path, &ctx.home_dir))]
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -453,30 +391,26 @@ mod tests {
     use andre_core::config::Config;
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    /// A home folder with a `home` group whose package `shell` holds `.bashrc`, a folder
-    /// `.config`, a regular file `notes.txt` and a link `~/.bashrc` that points into the
-    /// package by a relative path.
+    /// A flat config: the packages folder `dotfiles` holds the package `shell`, with its
+    /// `.bashrc`. The home folder is the target. It holds a folder `.config`, a regular file
+    /// `notes.txt` and a link `~/.bashrc` that points into the package by a relative path.
     fn fixture() -> (tempfile::TempDir, AppContext) {
         let tmp = tempfile::TempDir::new().unwrap();
         let home = tmp.path();
-        std::fs::write(
-            home.join("andre.yml"),
-            "global: {}\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
-        )
-        .unwrap();
-        let package = home.join("dotfiles/home/shell");
+        std::fs::write(home.join("andre.yml"), "packages: dotfiles\nglobal: {}\n").unwrap();
+        let package = home.join("dotfiles/shell");
         std::fs::create_dir_all(&package).unwrap();
         std::fs::write(package.join(".bashrc"), "alias l=ls").unwrap();
         std::fs::create_dir_all(home.join(".config")).unwrap();
         std::fs::write(home.join("notes.txt"), "").unwrap();
-        std::os::unix::fs::symlink("dotfiles/home/shell/.bashrc", home.join(".bashrc")).unwrap();
+        std::os::unix::fs::symlink("dotfiles/shell/.bashrc", home.join(".bashrc")).unwrap();
         let config = Config::load(&home.join("andre.yml")).unwrap();
         let ctx = AppContext::for_tests(config, home);
         (tmp, ctx)
     }
 
     fn browse(home: &Path) -> UnstowBrowseComponent {
-        UnstowBrowseComponent::with_path("home".to_string(), home.to_path_buf())
+        UnstowBrowseComponent::at(home.to_path_buf())
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -515,14 +449,36 @@ mod tests {
     }
 
     #[test]
-    fn test_left_goes_up_and_resets_the_cursor() {
-        let (_tmp, mut ctx) = fixture();
+    fn test_the_crumb_is_unstow_whatever_folder_is_browsed() {
+        let (_tmp, ctx) = fixture();
         let mut component = browse(&ctx.home_dir.join(".config"));
-        component.list.cursor = 1;
+        component.sync(&ctx);
+        let crumbs = component.crumbs(&ctx);
+        let crumbs: Vec<&str> = crumbs.iter().map(|crumb| crumb.as_ref()).collect();
+        assert_eq!(crumbs, ["unstow"]);
+    }
+
+    #[test]
+    fn test_left_goes_up_to_the_target_and_resets_the_cursor() {
+        let (_tmp, mut ctx) = fixture();
+        let mut component = browse(&ctx.home_dir);
+        select(&mut component, &ctx, ".config");
+        component.handle_key(key(KeyCode::Right), &mut ctx);
+        assert_eq!(component.browser.path, ctx.home_dir.join(".config"));
+
         let transition = component.handle_key(key(KeyCode::Left), &mut ctx);
         assert!(matches!(transition, Transition::Handled));
         assert_eq!(component.browser.path, ctx.home_dir);
         assert_eq!(component.list.cursor, 0);
+    }
+
+    #[test]
+    fn test_left_at_the_target_stays_there() {
+        let (_tmp, mut ctx) = fixture();
+        let mut component = browse(&ctx.home_dir);
+        component.handle_key(key(KeyCode::Left), &mut ctx);
+        component.handle_key(key(KeyCode::Backspace), &mut ctx);
+        assert_eq!(component.browser.path, ctx.home_dir);
     }
 
     #[test]
@@ -551,13 +507,13 @@ mod tests {
         let (_tmp, ctx) = fixture();
         let mut component = browse(&ctx.home_dir);
         select(&mut component, &ctx, ".config");
-        assert!(matches!(component.review(), Transition::None));
+        assert!(matches!(component.review(&ctx), Transition::None));
 
         select(&mut component, &ctx, ".bashrc");
-        assert!(matches!(component.review(), Transition::Push(_)));
+        assert!(matches!(component.review(&ctx), Transition::Push(_)));
 
         component.toggle_mark().unwrap();
-        assert!(matches!(component.review(), Transition::Push(_)));
+        assert!(matches!(component.review(&ctx), Transition::Push(_)));
         assert_eq!(component.hints(&ctx).len(), 5);
     }
 
@@ -576,33 +532,21 @@ mod tests {
             facts,
             [
                 ("link", "~/.bashrc"),
-                ("points to", "~/dotfiles/home/shell/"),
-                ("", ".bashrc"),
-                ("package", "home/shell"),
+                ("points to", "~/dotfiles/shell/.bashrc"),
+                ("package", "shell"),
             ]
         );
-    }
-
-    #[test]
-    fn test_wrap_value_breaks_after_a_slash_then_inside_a_long_piece() {
-        assert_eq!(
-            wrap_value("~/dotfiles/home/shell/.bashrc", 27),
-            ["~/dotfiles/home/shell/", ".bashrc"]
-        );
-        assert_eq!(wrap_value("~/.bashrc", 27), ["~/.bashrc"]);
-        assert_eq!(wrap_value("abcdefghij", 4), ["abcd", "efgh", "ij"]);
-        assert_eq!(wrap_value("", 4), [""]);
     }
 
     #[test]
     fn test_folder_detail_counts_the_links_inside_it_not_the_listing() {
         let (_tmp, ctx) = fixture();
         std::os::unix::fs::symlink(
-            "dotfiles/home/shell/.bashrc",
+            "dotfiles/shell/.bashrc",
             ctx.home_dir.join(".config/init.lua"),
         )
         .unwrap();
-        std::os::unix::fs::symlink("dotfiles/home/shell/.bashrc", ctx.home_dir.join(".profile"))
+        std::os::unix::fs::symlink("dotfiles/shell/.bashrc", ctx.home_dir.join(".profile"))
             .unwrap();
         let mut component = browse(&ctx.home_dir);
         select(&mut component, &ctx, ".config");
@@ -630,25 +574,5 @@ mod tests {
             "the two themes must differ to prove anything"
         );
         assert_eq!(component.detail.sections[0].style.fg, Some(after));
-    }
-
-    #[test]
-    fn test_normalize_takes_dot_dot_from_the_text() {
-        assert_eq!(
-            normalize(Path::new("/a/b/../c/./d")),
-            PathBuf::from("/a/c/d")
-        );
-    }
-
-    #[test]
-    fn test_resolve_link_takes_a_relative_target_from_the_links_folder() {
-        assert_eq!(
-            resolve_link(Path::new("/home/u/.bashrc"), "dotfiles/home/shell/.bashrc"),
-            PathBuf::from("/home/u/dotfiles/home/shell/.bashrc")
-        );
-        assert_eq!(
-            resolve_link(Path::new("/home/u/.config/x"), "../../src/y"),
-            PathBuf::from("/home/src/y")
-        );
     }
 }

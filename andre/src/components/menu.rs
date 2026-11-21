@@ -19,7 +19,7 @@ use crate::components::packages::PackagesComponent;
 use crate::components::profiles::ProfilesComponent;
 use crate::components::settings::SettingsComponent;
 use crate::components::status::StatusComponent;
-use crate::components::target_select::unstow_screen;
+use crate::components::unstow::UnstowBrowseComponent;
 use crate::components::wizard::NewPackageWizard;
 use crate::components::{AppContext, Component, Transition};
 use crate::input;
@@ -298,7 +298,9 @@ impl MainMenuComponent {
             MenuItem::Profiles => Transition::Push(Box::new(ProfilesComponent::default())),
             MenuItem::Stow => Transition::Push(Box::new(PackagesComponent::default())),
             MenuItem::NewPackage => Transition::Push(Box::new(NewPackageWizard::default())),
-            MenuItem::Unstow => Transition::Push(unstow_screen(ctx)),
+            MenuItem::Unstow => {
+                Transition::Push(Box::new(UnstowBrowseComponent::at(ctx.target_dir())))
+            }
             MenuItem::Status => Transition::Push(Box::new(StatusComponent::default())),
             MenuItem::Settings => Transition::Push(Box::new(SettingsComponent::default())),
             MenuItem::Help => Transition::Push(Box::new(HelpComponent::default())),

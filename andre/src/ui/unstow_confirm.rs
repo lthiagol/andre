@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use crate::theme::ThemeColors;
-use crate::ui::detail::{text_lines, Detail};
+use crate::ui::detail::{text_lines, wrap_value, Detail, VALUE_WIDTH};
 use crate::ui::display_path;
 use crate::ui::selection::row_with_glyphs;
 
@@ -19,6 +19,10 @@ pub struct UnstowLink {
     pub path: PathBuf,
     /// What the link points at, or `(unresolvable)`.
     pub target: String,
+    /// The package the link points into, when it points into the packages folder.
+    pub package: Option<String>,
+    /// The target from the packages folder, such as `shell/.bashrc`, when it points into it.
+    pub inside: Option<String>,
 }
 
 /// Where the unlink stands.
@@ -61,23 +65,30 @@ pub fn link_detail(
 ) -> Detail {
     let path = display_path(&link.path, home);
     let target = display_path(Path::new(&link.target), home);
-    let keep = Line::styled(
-        "The source file stays in the package.",
-        Style::default().fg(colors.text_dim),
-    );
+    // Restow puts the link back; it needs the package's name.
+    let stays = match &link.package {
+        Some(package) => {
+            format!("The source file stays in the package. Restow {package} to put the link back.")
+        }
+        None => "The source file stays in the package.".to_string(),
+    };
+    let keep = Line::styled(stays, Style::default().fg(colors.text_dim));
     match outcome {
-        Outcome::Pending => Detail {
-            headline: Vec::new(),
-            facts: vec![(Cow::Borrowed("remove"), path)],
-            sections: vec![
-                Line::styled(
-                    format!("points to {target}"),
-                    Style::default().fg(colors.text),
-                ),
-                Line::raw(""),
-                keep,
-            ],
-        },
+        Outcome::Pending => {
+            // Inside the packages folder the target reads from there; elsewhere, as typed.
+            let points_to = link.inside.clone().unwrap_or(target);
+            let mut facts = vec![(Cow::Borrowed("remove"), path)];
+            // The label sits on the first row; the rest of the target wraps under the value.
+            for (i, row) in wrap_value(&points_to, VALUE_WIDTH).into_iter().enumerate() {
+                let label = if i == 0 { "points to" } else { "" };
+                facts.push((Cow::Borrowed(label), row));
+            }
+            Detail {
+                headline: Vec::new(),
+                facts,
+                sections: vec![keep],
+            }
+        }
         Outcome::Removed => Detail {
             headline: vec![Line::styled(
                 "\u{2713} removed",
@@ -101,6 +112,93 @@ pub fn link_detail(
 mod tests {
     use super::*;
 
+    /// The keep line names the package, so the user knows what to restow.
+    #[test]
+    fn test_keep_line_names_the_package_to_restow() {
+        let colors = ThemeColors::from_theme(andre_core::Theme::Default);
+        let link = UnstowLink {
+            path: PathBuf::from("/home/u/.bashrc"),
+            target: "/home/u/dotfiles/shell/.bashrc".into(),
+            package: Some("shell".into()),
+            inside: Some("shell/.bashrc".into()),
+        };
+        let detail = link_detail(&link, Path::new("/home/u"), Outcome::Pending, &colors);
+        let keep: String = detail.sections[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(
+            keep,
+            "The source file stays in the package. Restow shell to put the link back."
+        );
+    }
+
+    /// Pending, `points to` is a fact under `remove`: the target from the packages folder
+    /// when it points into one, else the target as typed.
+    #[test]
+    fn test_pending_points_to_is_a_fact_under_remove() {
+        let colors = ThemeColors::from_theme(andre_core::Theme::Default);
+        let inside = UnstowLink {
+            path: PathBuf::from("/home/u/.bashrc"),
+            target: "/home/u/dotfiles/test/.bashrc".into(),
+            package: Some("test".into()),
+            inside: Some("test/.bashrc".into()),
+        };
+        let detail = link_detail(&inside, Path::new("/home/u"), Outcome::Pending, &colors);
+        let facts: Vec<(&str, &str)> = detail
+            .facts
+            .iter()
+            .map(|(label, value)| (label.as_ref(), value.as_str()))
+            .collect();
+        assert_eq!(
+            facts,
+            [("remove", "~/.bashrc"), ("points to", "test/.bashrc")]
+        );
+        assert_eq!(
+            detail.sections.len(),
+            1,
+            "the keep line is the only section"
+        );
+
+        let outside = UnstowLink {
+            path: PathBuf::from("/home/u/.profile"),
+            target: "/etc/profile".into(),
+            package: None,
+            inside: None,
+        };
+        let detail = link_detail(&outside, Path::new("/home/u"), Outcome::Pending, &colors);
+        assert_eq!(detail.facts[1].1, "/etc/profile");
+    }
+
+    /// A `points to` longer than the value column wraps onto `""`-labelled rows under it.
+    #[test]
+    fn test_pending_points_to_wraps_under_its_value_column() {
+        let colors = ThemeColors::from_theme(andre_core::Theme::Default);
+        let link = UnstowLink {
+            path: PathBuf::from("/home/u/.config/terminal-emulator/config.toml"),
+            target: "/home/u/dotfiles/terminal-emulator/.config/terminal-emulator/config.toml"
+                .into(),
+            package: Some("terminal-emulator".into()),
+            inside: Some("terminal-emulator/.config/terminal-emulator/config.toml".into()),
+        };
+        let detail = link_detail(&link, Path::new("/home/u"), Outcome::Pending, &colors);
+        let facts: Vec<(&str, &str)> = detail
+            .facts
+            .iter()
+            .map(|(label, value)| (label.as_ref(), value.as_str()))
+            .collect();
+        assert_eq!(
+            facts,
+            [
+                ("remove", "~/.config/terminal-emulator/config.toml"),
+                ("points to", "terminal-emulator/.config/"),
+                ("", "terminal-emulator/"),
+                ("", "config.toml"),
+            ]
+        );
+    }
+
     /// A failed unlink keeps each line of its message on its own row.
     #[test]
     fn test_failed_message_is_one_section_row_per_line() {
@@ -108,6 +206,8 @@ mod tests {
         let link = UnstowLink {
             path: PathBuf::from("/home/u/.bashrc"),
             target: "(unresolvable)".into(),
+            package: None,
+            inside: None,
         };
         let detail = link_detail(
             &link,

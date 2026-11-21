@@ -111,13 +111,15 @@ fn test_enter_on_new_package_opens_the_wizard() {
 }
 
 #[test]
-fn test_enter_on_unstow_goes_to_unstow_target() {
-    let (mut app, _) = make_two_group_app();
+fn test_enter_on_unstow_opens_the_browse_screen_at_the_target() {
+    let (mut app, tmp) = make_flat_test_app();
     for _ in 0..3 {
         app.component_dispatch(down_key());
     }
     app.component_dispatch(enter_key());
-    assert_eq!(component_id(&app), "UnstowTargetSelect");
+    assert_eq!(component_id(&app), "UnstowBrowse");
+    let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
+    assert_eq!(browse.browser.path, tmp.path());
 }
 
 #[test]
@@ -169,7 +171,7 @@ fn test_digit_key_jumps_and_activates() {
         ('1', "Profiles"),
         ('2', "Packages"),
         ('3', "NewPackage"),
-        ('4', "UnstowBrowse"), // one group: unstow goes straight to its browse screen
+        ('4', "UnstowBrowse"), // unstow opens its browse screen at the target
         ('5', "Status"),
         ('6', "Settings"),
         ('7', "Help"),
@@ -909,7 +911,7 @@ fn test_app_update_drains_execution_update_into_execute() {
     );
 }
 
-// --- Target selection with several groups (groups are listed by name) ---
+// --- Unstow browse: opens at the target, and `←` stops there ---
 
 fn top_component<T: 'static>(app: &App) -> &T {
     app.component_stack
@@ -921,39 +923,24 @@ fn top_component<T: 'static>(app: &App) -> &T {
 }
 
 #[test]
-fn test_unstow_target_enter_opens_highlighted_group() {
-    let (mut app, tmp) = make_two_group_app();
+fn test_unstow_opens_the_browse_screen_at_the_configured_target() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let config = tmp.path().join("andre.yml");
+    std::fs::write(
+        &config,
+        "packages: dotfiles\ntarget: \"~/.config\"\nglobal: {}\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("dotfiles")).unwrap();
+    std::fs::create_dir_all(tmp.path().join(".config")).unwrap();
+    let mut app = App::with_home(config, tmp.path().to_path_buf()).unwrap();
     for _ in 0..3 {
         app.component_dispatch(down_key());
     }
     app.component_dispatch(enter_key());
-    assert_eq!(component_id(&app), "UnstowTargetSelect");
-
-    // "config" sorts before "home", so it is the first row the user sees.
-    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "UnstowBrowse");
     let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
-    assert_eq!(browse.group_name, "config");
-    assert_eq!(
-        browse.browser.path,
-        andre_core::path::resolve_path("~/.config", tmp.path(), tmp.path())
-    );
-}
-
-#[test]
-fn test_unstow_target_second_row_opens_second_group() {
-    let (mut app, tmp) = make_two_group_app();
-    for _ in 0..3 {
-        app.component_dispatch(down_key());
-    }
-    app.component_dispatch(enter_key());
-    app.component_dispatch(down_key());
-    app.component_dispatch(enter_key());
-    let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
-    assert_eq!(browse.group_name, "home");
-    assert_eq!(
-        browse.browser.path,
-        andre_core::path::resolve_path("~", tmp.path(), tmp.path())
-    );
+    assert_eq!(browse.browser.path, tmp.path().join(".config"));
 }
 
 #[test]
@@ -2136,9 +2123,54 @@ fn test_unstow_browse_marks_links_and_enter_reviews_all_of_them() {
     assert!(!tmp.path().join(".bashrc").is_symlink());
     assert!(!tmp.path().join(".profile").is_symlink());
     assert!(
-        tmp.path().join("dotfiles/home/test/.bashrc").is_file(),
+        tmp.path().join("dotfiles/test/.bashrc").is_file(),
         "the package keeps its files"
     );
+}
+
+#[test]
+fn test_unstow_browse_left_stops_at_the_target() {
+    let (mut app, tmp) = make_unstow_app();
+    std::fs::create_dir_all(tmp.path().join(".config")).unwrap();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".config");
+    let right = KeyEvent::new(KeyCode::Right, KeyModifiers::NONE);
+    let left = KeyEvent::new(KeyCode::Left, KeyModifiers::NONE);
+
+    app.component_dispatch(right);
+    let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
+    assert_eq!(browse.browser.path, tmp.path().join(".config"));
+
+    app.component_dispatch(left);
+    app.component_dispatch(left);
+    let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
+    assert_eq!(
+        browse.browser.path,
+        tmp.path(),
+        "← never climbs above the target"
+    );
+}
+
+/// Esc pops the browse screen whatever folder it shows: back to the menu, not up a folder.
+#[test]
+fn test_esc_on_unstow_browse_returns_to_the_menu() {
+    let (mut app, tmp) = make_unstow_app();
+    std::fs::create_dir_all(tmp.path().join(".config")).unwrap();
+    app.component_dispatch(key_char('4'));
+    assert_eq!(component_id(&app), "UnstowBrowse");
+    app.component_dispatch(esc_key());
+    assert_eq!(component_id(&app), "MainMenu");
+    assert_eq!(app.component_stack.len(), 1);
+
+    app.component_dispatch(key_char('4'));
+    app.update_components();
+    browse_cursor_to(&mut app, ".config");
+    app.component_dispatch(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+    let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
+    assert_eq!(browse.browser.path, tmp.path().join(".config"));
+    app.component_dispatch(esc_key());
+    assert_eq!(component_id(&app), "MainMenu");
+    assert_eq!(app.component_stack.len(), 1);
 }
 
 #[test]

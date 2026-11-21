@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
     Frame,
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::theme::ThemeColors;
 use crate::ui::block::themed_panel;
@@ -188,6 +188,31 @@ pub fn text_lines(text: &str, style: Style) -> Vec<Line<'static>> {
         .collect()
 }
 
+/// `text` split into rows of at most `width` columns. A row breaks after a `/` where it can,
+/// so a path wraps between its folders; a piece wider than a row breaks inside itself.
+/// A fact's value wraps this way under its label, see `VALUE_WIDTH`.
+pub fn wrap_value(text: &str, width: usize) -> Vec<String> {
+    let mut rows = Vec::new();
+    let mut row = String::new();
+    for piece in text.split_inclusive('/') {
+        if row.width() + piece.width() <= width {
+            row.push_str(piece);
+            continue;
+        }
+        if !row.is_empty() {
+            rows.push(std::mem::take(&mut row));
+        }
+        for ch in piece.chars() {
+            if !row.is_empty() && row.width() + ch.width().unwrap_or(0) > width {
+                rows.push(std::mem::take(&mut row));
+            }
+            row.push(ch);
+        }
+    }
+    rows.push(row);
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use crossterm::event::{MouseButton, MouseEventKind};
@@ -311,6 +336,17 @@ mod tests {
         );
         assert_eq!(text_rows("abcdefghij", 4), 3, "4 + 4 + 2 columns");
         assert_eq!(text_rows("", 4), 1, "an empty line still takes a row");
+    }
+
+    #[test]
+    fn test_wrap_value_breaks_after_a_slash_then_inside_a_long_piece() {
+        assert_eq!(
+            wrap_value("~/dotfiles/home/shell/.bashrc", 27),
+            ["~/dotfiles/home/shell/", ".bashrc"]
+        );
+        assert_eq!(wrap_value("~/.bashrc", 27), ["~/.bashrc"]);
+        assert_eq!(wrap_value("abcdefghij", 4), ["abcd", "efgh", "ij"]);
+        assert_eq!(wrap_value("", 4), [""]);
     }
 
     #[test]

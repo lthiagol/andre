@@ -130,7 +130,6 @@ pub fn push_component(app: &mut App, name: &str) {
         "Settings" => Box::new(settings::SettingsComponent::default()),
         "Status" => Box::new(status::StatusComponent::default()),
         "Help" => Box::new(help::HelpComponent::default()),
-        "UnstowTargetSelect" => Box::new(target_select::TargetSelectComponent::unstow()),
         "NewPackage" => Box::new(wizard::NewPackageWizard::default()),
         _ => return,
     });
@@ -218,23 +217,21 @@ pub fn make_flat_bootstrap_app() -> (App, TempDir) {
     (app, tmp)
 }
 
-/// `make_test_app` with two stowed links into the `test` package, `.bashrc` and `.profile`,
-/// and the package's `.profile` file in place.
+/// `make_flat_test_app` with two stowed links into the `test` package, `.bashrc` and
+/// `.profile`, and the package's `.profile` file in place.
 pub fn make_unstow_app() -> (App, TempDir) {
-    let (app, tmp) = make_test_app();
-    std::fs::write(tmp.path().join("dotfiles/home/test/.profile"), "export X=1").unwrap();
-    std::os::unix::fs::symlink("dotfiles/home/test/.bashrc", tmp.path().join(".bashrc")).unwrap();
-    std::os::unix::fs::symlink("dotfiles/home/test/.profile", tmp.path().join(".profile")).unwrap();
+    let (app, tmp) = make_flat_test_app();
+    std::fs::write(tmp.path().join("dotfiles/test/.profile"), "export X=1").unwrap();
+    std::os::unix::fs::symlink("dotfiles/test/.bashrc", tmp.path().join(".bashrc")).unwrap();
+    std::os::unix::fs::symlink("dotfiles/test/.profile", tmp.path().join(".profile")).unwrap();
     (app, tmp)
 }
 
-/// Pushes the unstow browse screen for the `home` group, opened at `home`, and updates it.
-pub fn push_browse(app: &mut App, home: &std::path::Path) {
+/// Pushes the unstow browse screen opened at `folder` (the target, unless a test browses
+/// a folder inside it), and updates it.
+pub fn push_browse(app: &mut App, folder: &std::path::Path) {
     app.component_stack.push(Box::new(
-        andre::components::unstow::UnstowBrowseComponent::with_path(
-            "home".to_string(),
-            home.to_path_buf(),
-        ),
+        andre::components::unstow::UnstowBrowseComponent::at(folder.to_path_buf()),
     ));
     app.update_components();
 }

@@ -21,8 +21,8 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## TUI
 
-- Wire mouse rows and wheel into the settings group, browse and ignore dialogs (their buttons already work): rows of the group menu, folders and patterns.
-- Wire the wheel into the detail panes of the ignore editor, unstow browse, unstow review, review, target select, main menu and the new-package wizard.
+- Wire mouse rows and wheel into the browse and ignore dialogs (their buttons already work): folders and patterns.
+- Wire the wheel into the detail panes of the ignore editor, unstow browse, unstow review, review, main menu and the new-package wizard.
 - Regenerate `docs/screenshots/*.png` with `make screenshots` now that the redesign batches are done (they still show the old UI).
 - Decide whether to keep ratatui's scrollbar thumb-length convention (6 of 8 rows visible draws a 3-of-6 thumb); if not, size the thumb from `content_len - viewport_len + 1`.
 

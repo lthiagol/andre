@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, text::Line, Frame};
@@ -14,6 +14,8 @@ use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, click_list, render_list_panel, ListView};
 use crate::ui::plural;
 use crate::ui::unstow_confirm::{link_detail, link_row, Outcome, UnstowLink};
+
+use super::owner::{inside_packages, owning_package};
 
 /// Reviews the links to remove. `y` removes them all; each row then says how its own
 /// removal went.
@@ -31,15 +33,25 @@ pub struct UnstowConfirmComponent {
 
 impl UnstowConfirmComponent {
     /// Reviews the links, in the order given. Reads each link's target now, so the screen
-    /// paints without touching the disk.
-    pub fn with_paths(paths: Vec<PathBuf>) -> Self {
+    /// paints without touching the disk. `packages` is the packages folder, which names
+    /// the package each link belongs to.
+    pub fn with_paths(paths: Vec<PathBuf>, packages: Option<&Path>) -> Self {
         let links = paths
             .into_iter()
             .map(|path| {
                 let target = std::fs::read_link(&path)
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|_| "(unresolvable)".to_string());
-                UnstowLink { path, target }
+                let package = packages.and_then(|dir| owning_package(&path, &target, dir));
+                let inside = packages
+                    .and_then(|dir| inside_packages(&path, &target, dir))
+                    .map(|inside| inside.display().to_string());
+                UnstowLink {
+                    path,
+                    target,
+                    package,
+                    inside,
+                }
             })
             .collect();
         Self {
@@ -241,7 +253,7 @@ mod tests {
         let link = tmp.path().join("link.txt");
         std::os::unix::fs::symlink(&source, &link).unwrap();
 
-        let component = UnstowConfirmComponent::with_paths(vec![link.clone()]);
+        let component = UnstowConfirmComponent::with_paths(vec![link.clone()], None);
         assert_eq!(component.links.len(), 1);
         assert_eq!(component.links[0].path, link);
         assert_eq!(component.links[0].target, source.display().to_string());
@@ -250,8 +262,29 @@ mod tests {
     #[test]
     fn test_with_paths_marks_missing_link_unresolvable() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let component = UnstowConfirmComponent::with_paths(vec![tmp.path().join("absent")]);
+        let component = UnstowConfirmComponent::with_paths(vec![tmp.path().join("absent")], None);
         assert_eq!(component.links[0].target, "(unresolvable)");
+    }
+
+    /// Each link names the package its target sits in; a link outside the packages folder
+    /// names none.
+    #[test]
+    fn test_with_paths_names_the_package_each_link_points_into() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let packages = tmp.path().join("dotfiles");
+        let source = packages.join("shell/.bashrc");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, "").unwrap();
+        let inside = tmp.path().join(".bashrc");
+        std::os::unix::fs::symlink("dotfiles/shell/.bashrc", &inside).unwrap();
+        let outside = tmp.path().join(".profile");
+        std::os::unix::fs::symlink("/etc/profile", &outside).unwrap();
+
+        let component = UnstowConfirmComponent::with_paths(vec![inside, outside], Some(&packages));
+        assert_eq!(component.links[0].package.as_deref(), Some("shell"));
+        assert_eq!(component.links[0].inside.as_deref(), Some("shell/.bashrc"));
+        assert_eq!(component.links[1].package, None);
+        assert_eq!(component.links[1].inside, None);
     }
 
     /// Removing a stowed link changes the tree, so cached stow statuses must go.
@@ -268,7 +301,7 @@ mod tests {
             .borrow_mut()
             .insert("link.txt".to_string(), StowStatus::Stowed);
 
-        let mut component = UnstowConfirmComponent::with_paths(vec![link.clone()]);
+        let mut component = UnstowConfirmComponent::with_paths(vec![link.clone()], None);
         let yes = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
         component.handle_key(yes, &mut ctx);
 
@@ -291,8 +324,10 @@ mod tests {
         std::fs::write(&plain, "").unwrap();
 
         let mut ctx = AppContext::for_tests(Config::default_empty(), tmp.path());
-        let mut component =
-            UnstowConfirmComponent::with_paths(vec![first.clone(), plain.clone(), second.clone()]);
+        let mut component = UnstowConfirmComponent::with_paths(
+            vec![first.clone(), plain.clone(), second.clone()],
+            None,
+        );
         assert_eq!(component.list_title(), "remove 3 links");
 
         let yes = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
@@ -310,8 +345,10 @@ mod tests {
     fn test_arrows_move_the_cursor_through_the_links() {
         let tmp = tempfile::TempDir::new().unwrap();
         let mut ctx = AppContext::for_tests(Config::default_empty(), tmp.path());
-        let mut component =
-            UnstowConfirmComponent::with_paths(vec![tmp.path().join("a"), tmp.path().join("b")]);
+        let mut component = UnstowConfirmComponent::with_paths(
+            vec![tmp.path().join("a"), tmp.path().join("b")],
+            None,
+        );
         let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         component.handle_key(down, &mut ctx);
         assert_eq!(component.list.cursor, 1);

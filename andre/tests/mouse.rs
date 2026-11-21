@@ -370,7 +370,6 @@ fn test_the_touched_screens_render_at_120x40_and_200x50() {
             "Status",
             "Help",
             "Settings",
-            "UnstowTargetSelect",
             "NewPackage",
         ] {
             let (mut app, _tmp): (App, TempDir) = make_two_group_app();
@@ -563,18 +562,12 @@ fn test_second_click_on_a_link_marks_it() {
 }
 
 #[test]
-fn test_click_on_a_group_selects_it_and_a_second_click_opens_its_browse() {
-    let (mut app, _tmp) = make_two_group_app();
-    push_component(&mut app, "UnstowTargetSelect");
-    app.update_components();
+fn test_click_on_the_unstow_row_twice_opens_the_browse_at_the_target() {
+    let (mut app, tmp) = make_flat_test_app();
     let buf = draw(&mut app, 80, 24);
-    let (x, y) = find_text(&buf, "home").expect("the home group row");
+    let (x, y) = find_text(&buf, "unstow").expect("the unstow row");
     click(&mut app, x, y);
-    assert_eq!(
-        component_id(&app),
-        "UnstowTargetSelect",
-        "the first click selects"
-    );
+    assert_eq!(component_id(&app), "MainMenu", "the first click selects");
     draw(&mut app, 80, 24);
     click(&mut app, x, y);
     assert_eq!(
@@ -582,6 +575,7 @@ fn test_click_on_a_group_selects_it_and_a_second_click_opens_its_browse() {
         "UnstowBrowse",
         "the second click opens it"
     );
+    assert_eq!(browse(&app).browser.path, tmp.path());
 }
 
 #[test]

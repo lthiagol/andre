@@ -289,7 +289,6 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
             esc("back"),
         ],
         "Settings" => settings_hints(),
-        "UnstowTargetSelect" => vec![arrows("move"), enter("browse"), esc("back")],
         "UnstowBrowse" => unstow_browse_hints(0),
         _ => Vec::new(),
     }
@@ -591,7 +590,7 @@ mod tests {
     /// Inner width at the 80-column minimum: border and margin take four.
     const INNER_WIDTH: usize = 76;
 
-    const SCREENS: [&str; 10] = [
+    const SCREENS: [&str; 9] = [
         "MainMenu",
         "Packages",
         "Settings",
@@ -599,7 +598,6 @@ mod tests {
         "Execute",
         "Help",
         "Confirm",
-        "UnstowTargetSelect",
         "UnstowBrowse",
         "UnstowConfirm",
     ];

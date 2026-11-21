@@ -186,6 +186,10 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   and the live-files picker opens at `target`. With no packages folder the name step says
   `set a packages folder in settings` and Enter does nothing. Esc on the name step leaves at
   once, or asks first (`Enter leave`, `Esc stay`) when anything is typed or chosen.
+- **Unstow opens its browse screen at the target.** The group list is gone: the menu's
+  unstow item opens the target folder at once. `←` stops at the target. The crumb is
+  `unstow`; a link's detail names its package (`package shell`), and the review says
+  `Restow shell to put the link back.`
 
 ### Changed
 
