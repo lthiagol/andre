@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
+use crate::state::{StowAction, StowFlags};
 use crate::stow::build_stow_args;
 
 #[derive(Debug, Clone)]
@@ -112,16 +113,10 @@ pub fn plan_adoption(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn execute_adoption(
-    plan: &AdoptionPlan,
-    verbosity: u8,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
-    ignores: &[String],
-) -> Result<()> {
+/// Move the selected files into the package, then stow it. Adoption always stows,
+/// so `flags.action` is ignored.
+pub fn execute_adoption(plan: &AdoptionPlan, flags: &StowFlags, ignores: &[String]) -> Result<()> {
+    let dry_run = flags.dry_run;
     if !plan.package_dir.exists() {
         fs::create_dir_all(&plan.package_dir)?;
     }
@@ -157,16 +152,15 @@ pub fn execute_adoption(
         return Ok(());
     }
 
+    let stow_flags = StowFlags {
+        action: StowAction::Stow,
+        ..*flags
+    };
     let mut cmd = build_stow_args(
         &plan.source_path,
         &plan.target_path,
         &plan.package_name,
-        "stow",
-        verbosity,
-        dry_run,
-        no_folding,
-        adopt,
-        dotfiles,
+        &stow_flags,
         ignores,
     );
 
@@ -332,7 +326,7 @@ mod tests {
         fs::write(&file, original).unwrap();
 
         let plan = plan_adoption(&target, &source, "shell", std::slice::from_ref(&file)).unwrap();
-        execute_adoption(&plan, 0, false, false, false, false, &[]).unwrap();
+        execute_adoption(&plan, &StowFlags::default(), &[]).unwrap();
 
         let dest = source.join("shell").join(".bashrc");
         assert!(dest.exists(), "File should exist in package dir");

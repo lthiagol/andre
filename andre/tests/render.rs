@@ -65,16 +65,16 @@ fn push_screen(app: &mut App, name: &str) {
             andre::components::status::StatusComponent::default(),
         )),
         "AdoptTargetSelect" => app.component_stack.push(Box::new(
-            andre::components::adopt::AdoptTargetSelectComponent::default(),
+            andre::components::target_select::TargetSelectComponent::adopt(),
         )),
         "UnstowTargetSelect" => app.component_stack.push(Box::new(
-            andre::components::unstow::UnstowTargetSelectComponent::default(),
+            andre::components::target_select::TargetSelectComponent::unstow(),
         )),
         "Confirm" => {
             app.component_stack
                 .push(Box::new(andre::components::confirm::ConfirmComponent::new(
                     std::collections::HashMap::new(),
-                    "stow".to_string(),
+                    &app.ctx,
                 )))
         }
         "Execute" => {
@@ -118,7 +118,7 @@ fn test_all_screens_render_without_panic() {
 #[test]
 fn test_status_bar_shows_verbosity() {
     let (mut app, _) = make_test_app();
-    app.ctx.core.verbosity = 3;
+    app.ctx.core.flags.verbosity = 3;
     let buf = render_app(&mut app, 80, 24);
     assert!(line_contains(&buf, "3"), "verbosity not shown");
 }
@@ -142,10 +142,10 @@ fn test_status_bar_toggle_colors_distinguish_on_from_off() {
     let buf = render_app(&mut app, 140, 24);
 
     // Set every toggle ON so we can find each ON cell.
-    app.ctx.core.dry_run = true;
-    app.ctx.core.no_folding = true;
-    app.ctx.core.adopt = true;
-    app.ctx.core.dotfiles = true;
+    app.ctx.core.flags.dry_run = true;
+    app.ctx.core.flags.no_folding = true;
+    app.ctx.core.flags.adopt = true;
+    app.ctx.core.flags.dotfiles = true;
     let buf_on = render_app(&mut app, 140, 24);
 
     // Find the fg color of the "ON " token in each rendering. We pick "ON "
@@ -377,13 +377,8 @@ fn test_execute_progress_preserves_total_with_skips() {
     app.component_stack
         .push(Box::new(ExecuteComponent::new(rx, 3, skipped)));
 
-    // AsyncExecutor Progress.total is commands-only (2)
-    tx.try_send(ExecutionUpdate::Progress {
-        current: 1,
-        total: 2,
-        _package: "home / bash".into(),
-    })
-    .unwrap();
+    tx.try_send(ExecutionUpdate::Progress { current: 1 })
+        .unwrap();
     app.update_components();
 
     let buf = render_app(&mut app, 80, 24);
@@ -676,8 +671,8 @@ fn test_breadcrumb_updates_on_deeper_stack() {
 #[test]
 fn test_status_toggles_still_live_with_breadcrumb() {
     let (mut app, _) = make_test_app();
-    app.ctx.core.verbosity = 2;
-    app.ctx.core.dry_run = true;
+    app.ctx.core.flags.verbosity = 2;
+    app.ctx.core.flags.dry_run = true;
     let buf = render_app(&mut app, 140, 24);
     // Breadcrumb now lives in the panel title; toggles still live in the status bar.
     assert!(
@@ -805,8 +800,7 @@ fn test_confirm_preview_is_engine_aware_native_default() {
     selected.insert("home".to_string(), vec!["test".to_string()]);
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
-            selected,
-            "stow".to_string(),
+            selected, &app.ctx,
         )));
     let buf = render_app(&mut app, 120, 24);
     assert!(

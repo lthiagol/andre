@@ -11,6 +11,53 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- Settings directory picker, unstow/adopt browse screens, and the stow status
+  and package lists now keep their rows out of paint (refactor; no intended
+  behaviour change except as noted):
+  - `components/browser.rs`: one `Browser` (path, cursor, cached listing,
+    `refresh`/`enter_dir`/`go_up`/`step`) backs the unstow and adopt browse
+    screens and the settings directory dialogs. The settings dialogs list their
+    directory when they open and after each move, so the popup paints the
+    cached listing.
+  - The adopt and unstow target pickers are one `TargetSelectComponent`
+    (`TargetSelectComponent::adopt()` / `::unstow()`). The
+    `UnstowTargetSelectComponent` and `AdoptTargetSelectComponent` types and
+    their `target_select.rs` files are gone; screen ids are unchanged.
+  - `UnstowBrowseComponent::new` / `AdoptFileSelectComponent::new` delegate to
+    `with_path`. `UnstowBrowseComponent::selected_path` (never read) is removed.
+  - `settings/dialogs.rs`: one handler per dialog variant that edits the dialog
+    in place and returns a `Next` (stay / go to / close); text entry and group
+    picking are shared helpers. Keys, rename and ignore results are unchanged.
+  - `FileBrowserWidget` no longer has the `dirs_only` fallback that listed
+    directories during paint; callers pass cached entries.
+  - The package select caches its rows. They are built in `update()` and
+    rebuilt only when the new `StatusCache::generation()` changes; Space
+    updates the selected row in place. Packages added on disk while the screen
+    is open appear on the next visit, not live.
+  - The status screen builds its rows once, on entry, after the status
+    prefetch; paint reads them and no longer changes component state. Packages
+    added on disk while the screen is open appear on the next visit.
+  - The review (`Review Commands`) and unlink screens build their rows when
+    they are created: group paths and the link target are read there, and
+    paint only draws the result. `ui::ConfirmRow` and `ui::UnstowLink` carry
+    the precomputed text. The review screen keeps the global flag keys live,
+    so it rebuilds its `stow` command preview in `update()` when a flag
+    changes; the preview always shows the flags that `y` will run with.
+  - `input::step_cursor` is the one cursor-wrap implementation. The list keys,
+    the unstow and adopt browse screens, the settings pickers and the adopt
+    skip-unselectable loop all use it. The settings dialogs share
+    `list_cursor_key` and `home_browser`.
+  - The package select scans each selected group once per rebuild (one
+    `discover_packages` call, one prefetch, rows from the same scan).
+  - New tests: the settings directory picker re-lists after Right and Left, and
+    Enter picks from the directory entered; a status visit builds its rows from
+    the fresh prefetch and keeps them for the rest of the visit; the unlink
+    screen records its link target when it is created; the review list records
+    its resolved previews and its stow preview follows a dry-run toggle made
+    while the screen is open.
+  - Coverage (`make coverage-check`, floors unchanged): andre-core 95.86%
+    (2550/2660 lines), andre 69.21% (3713/5365 lines).
+
 - CI runner images pinned to `ubuntu-24.04` in both workflows (what GitHub's
   `ubuntu-latest` currently maps to) for stability. The test gates stay
   Linux-only by decision: the TUI is exercised locally on macOS, so no macOS
@@ -33,6 +80,109 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   secrets (it held a classic PAT GitHub already rejected with `401`; the tap
   job authenticates with `ANDRE_TAP_SSH_KEY` + `ANDRE_TAP_PR_TOKEN`). The
   explanatory comment in `stable-ci.yml` was rewritten accordingly.
+- `ExecutionUpdate::Progress` no longer carries an unread `_package` string,
+  and `ExecutionState` has only the `Running` and `Completed` states that are
+  actually reached. `spawn_execution` replaces `AsyncExecutor::spawn` and
+  returns just the update receiver. `ExecutionUpdate::Progress` also drops its
+  `total` field: the Execute screen fixes the total (commands + skipped) at
+  construction, and the sent count was never read.
+- In-flight execution cannot be cancelled, as before. `q` and `Ctrl+C` quit
+  the app; the Execute screen has no cancel key. README.md and REFERENCE.md
+  key tables now say "Quit" instead of "Quit / Cancel execution".
+- `andre-core` test helpers moved from `tests/helpers.rs` to
+  `tests/helpers/mod.rs`; the helper self-tests now run inside the
+  `integration` binary. `run_awesome_stow`/`awesome_stow_binary` are renamed
+  `run_andre`/`andre_binary`.
+- `StowEngine::apply` passes `false` for dry-run to `execute_stow` explicitly
+  (the dry-run case already returned early, so `-n` is never emitted).
+- Clippy hygiene: redundant clones and closures removed, and
+  `MainMenuComponent::activate` is now an associated fn. Fully-qualified
+  method paths from `clippy --fix` (`std::vec::Vec::len`,
+  `std::string::String::as_str`, `<[std::string::String]>::to_vec`,
+  `std::string::ToString::to_string`) are shortened to their prelude forms. The engine
+  dry-run test's `filter_map(std::result::Result::ok)` is now `.flatten()`,
+  and the `config.rs` tests use `".git".to_string()`. No behavior change.
+- `Config::groups` is a `BTreeMap`, so groups are listed and written to
+  `andre.yml` in name order. Saves no longer reshuffle the group block, and
+  every screen shares one order; the ad-hoc `sort()` calls in the group list
+  widgets are gone.
+- `Theme::ALL` and `StowAction::ALL` are the single list behind the Settings
+  pickers and `Theme::next`. `Theme::from_str` accepts each `Theme::name()`
+  case-insensitively, with `_` as an alias for `-`.
+- `PendingSettings::to_config` builds the on-disk config from every pending
+  setting, and `apply_to` commits the same config to core. `save_config` has
+  one success path and one error path. Saves now always write `global.theme`
+  (including `theme: default`), and a theme changed with the global `t` key
+  before Settings was opened is persisted with the next save.
+- Doc drift from the helper and executor moves fixed: AGENTS.md and
+  REFERENCE.md point at `helpers/mod.rs` (not `helpers.rs`), and the
+  dependency table names `execute::spawn_execution` instead of
+  `AsyncExecutor`.
+- The stow options (action, verbosity, dry-run, no-folding, adopt, dotfiles)
+  travel as one `StowFlags` value from config through settings, `LinkOp`, the
+  stow argument builder, `run_job`, `execute_stow`, and `execute_adoption`,
+  replacing long runs of positional `bool`/`u8` parameters. `Config::stow_flags`
+  and `Config::set_stow_flags` replace the six `effective_*` and `set_*` pairs.
+- Stringly-typed values are enums: `StowAction` is used throughout (the
+  confirm screen no longer keeps its own action string), and the new
+  `EngineKind` (`Native` / `Stow`) replaces `"native"`/`"stow"` strings in
+  `Config::effective_engine` and `engine_for`.
+- Settings flag edits and the `v`/`d`/`n`/`a`/`o` shortcuts share one
+  `StowFlags::toggle` path. `MAX_VERBOSITY` (5) replaces the hard-coded `% 6`
+  cycle and `> 5` range check.
+- Settings ignore and group-path edits go through `Config` methods
+  (`set_group_ignore`, `add_global_ignore`, `remove_global_ignore`,
+  `update_group_source`, `update_group_target`). Removing the last ignore of a
+  group now drops the `ignore` key on save instead of writing `ignore: []`.
+- Group path lookups (`resolve_group_source`/`_target`, `get_group_source`/
+  `_target`) share one private resolver.
+- `App::new`, `App::with_home`, and `App::with_debug` no longer take a `yolo`
+  argument, and `AppState::yolo_mode` is removed (it was written but never
+  read). `--yolo` is still handled in `main`.
+- Confirm and execution share one `build_execution_results`, which returns
+  `LinkOp`s directly instead of an anonymous tuple, and the four result arms
+  collapse into one `ExecutionResult` construction.
+- `Transition::name` returns `&'static str`, and `AppContext::log` takes a
+  closure so debug messages are only formatted while debugging is on.
+
+### Removed
+
+- Dead configuration state: `AppState::effective_action` and
+  `AppState::yolo_mode`. The per-option `Config::effective_*` and `set_*`
+  accessors were replaced by `stow_flags`/`set_stow_flags` (see Changed).
+- Dead cancel/abort machinery: `AsyncExecutor::abort`, `App::executor`, the
+  executor payload on `Transition::Replace`, and the `ExecutionState::Pending`,
+  `Cancelling`, and `ErrorPrompt` variants with their render arms.
+- Unused public API: `yolo::run_all` and `YoloResult` (`--yolo` still reports
+  through `main`; its exit code is unchanged), `build_stow_args_multi`,
+  `ui::packages::build_flat_items`, `ui::adopt_browse`, `ui::unstow_browse`,
+  `settings::rows::row_at_index`, `StatusCache::invalidate_group`,
+  `App::handle_key`, `App::is_quitting`, `AppContext::show_toast_for`,
+  `LogLevel::Info`, the `DryRun`/`NoFolding`/`Adopt`/`Dotfiles` picker fields,
+  and `GroupEditField::Ignore`.
+- Unused `andre-core` test helpers: `run_stow`, `assert_no_symlinks`,
+  `assert_target_exists`, `count_symlinks`, `cleanup_symlinks`.
+
+### Fixed
+
+- On the Unstow and Adopt target screens, Enter could open a different group
+  than the highlighted row when a config has two or more groups. The group
+  list is now name-ordered everywhere, so Enter opens the group shown under
+  the cursor.
+- Renaming a group from Settings (Edit > Name) did not rename it. Typing
+  rewrote the key the group was looked up by, so Enter found nothing; a name
+  that matched another group re-added that group and dropped its ignores. A
+  rename now keeps the group's source, target and per-group ignores. An empty
+  or already-taken name keeps the prompt open, and Esc returns to the field
+  menu under the original name.
+- Theme changes made in Settings (the `t` key or the theme picker) were never
+  written to `andre.yml`. They now persist on save.
+- The Settings theme picker offered Catppuccin themes as `catppuccin mocha`
+  (with a space). The config parser rejected that, so picking one was silently
+  ignored. The picker now lists the same names the config uses, and each one
+  round-trips.
+- A failed config save no longer prints to stderr while the TUI owns the
+  terminal; the error toast is the only report.
 
 ## [1.0.0-rc1] — 2026-10-30
 

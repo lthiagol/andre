@@ -55,9 +55,9 @@ test-tui:
 test-e2e:
 	@echo "Using runner: $(TEST_RUNNER) (filter: test-e2e)"
 	@if [ -n "$(NEXTTEST)" ]; then \
-		$(TEST_RUNNER) --workspace --all-features -E 'binary(/^(tui_e2e|e2e|integration|helpers)/)'; \
+		$(TEST_RUNNER) --workspace --all-features -E 'binary(/^(tui_e2e|e2e|integration)/)'; \
 	else \
-		$(TEST_RUNNER) --test tui_e2e --test e2e --test integration --test helpers --all-features; \
+		$(TEST_RUNNER) --test tui_e2e --test e2e --test integration --all-features; \
 	fi
 
 # Full suite via the nextest-preferring runner. lint already runs in `make test`.

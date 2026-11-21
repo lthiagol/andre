@@ -6,12 +6,11 @@ use ratatui::{
     Frame,
 };
 
-use crate::components::adopt::AdoptTargetSelectComponent;
 use crate::components::help::HelpComponent;
 use crate::components::settings::SettingsComponent;
 use crate::components::status::StatusComponent;
 use crate::components::stow::GroupSelectComponent;
-use crate::components::unstow::UnstowTargetSelectComponent;
+use crate::components::target_select::TargetSelectComponent;
 use crate::components::{AppContext, Component, Transition};
 use crate::input;
 use crate::theme::ThemeColors;
@@ -46,7 +45,7 @@ impl Component for MainMenuComponent {
             // dispatcher never swallows Ctrl+C / Ctrl+1 / etc.
             return Transition::Quit;
         } else if key.code == KeyCode::Enter {
-            return self.activate(self.index);
+            return Self::activate(self.index);
         } else if let KeyCode::Char(c) = key.code {
             // Unmodified digit keys 1..=7 jump to and activate the Nth menu
             // item, matching the labels rendered in `render`. '0' and '8'..='9'
@@ -56,7 +55,7 @@ impl Component for MainMenuComponent {
                     if (1..=items_len as u32).contains(&d) {
                         let idx = (d - 1) as usize;
                         self.index = idx;
-                        return self.activate(idx);
+                        return Self::activate(idx);
                     }
                 }
             }
@@ -67,7 +66,7 @@ impl Component for MainMenuComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
-        let action = ctx.core.effective_action().to_uppercase();
+        let action = ctx.core.flags.action.as_str().to_uppercase();
 
         let items = vec![
             ListItem::new(format!("1. {} selected packages", action)),
@@ -97,11 +96,11 @@ impl Component for MainMenuComponent {
 impl MainMenuComponent {
     /// Activate the Nth menu item. Extracted so digit-key dispatch and
     /// Enter share the same transition table.
-    fn activate(&self, index: usize) -> Transition {
+    fn activate(index: usize) -> Transition {
         match index {
             0 => Transition::Push(Box::new(GroupSelectComponent::default())),
-            1 => Transition::Push(Box::new(AdoptTargetSelectComponent::default())),
-            2 => Transition::Push(Box::new(UnstowTargetSelectComponent::default())),
+            1 => Transition::Push(Box::new(TargetSelectComponent::adopt())),
+            2 => Transition::Push(Box::new(TargetSelectComponent::unstow())),
             3 => Transition::Push(Box::new(StatusComponent::default())),
             4 => Transition::Push(Box::new(SettingsComponent::default())),
             5 => Transition::Push(Box::new(HelpComponent::default())),

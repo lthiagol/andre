@@ -3,42 +3,27 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{layout::Rect, widgets::ListState, Frame};
 
+use crate::components::browser::{all_entries, Browser};
 use crate::components::{AppContext, Component, Transition};
 use crate::theme::ThemeColors;
 use crate::ui::widgets::file_browser::FileBrowserWidget;
 
 pub struct UnstowBrowseComponent {
     pub group_name: String,
-    pub browse_path: PathBuf,
-    pub cursor: usize,
-    pub selected_path: Option<PathBuf>,
-    cached_entries: Option<Vec<andre_core::TargetEntry>>,
-    cached_path: PathBuf,
-    cached_symlinks: Option<Vec<(String, String)>>,
+    pub browser: Browser,
+    cached_symlinks: Vec<(String, String)>,
 }
 
 impl UnstowBrowseComponent {
     pub fn new(group_name: String) -> Self {
-        Self {
-            group_name,
-            browse_path: PathBuf::from("."),
-            cursor: 0,
-            selected_path: None,
-            cached_entries: None,
-            cached_path: PathBuf::new(),
-            cached_symlinks: None,
-        }
+        Self::with_path(group_name, PathBuf::from("."))
     }
 
     pub fn with_path(group_name: String, browse_path: PathBuf) -> Self {
         Self {
             group_name,
-            browse_path,
-            cursor: 0,
-            selected_path: None,
-            cached_entries: None,
-            cached_path: PathBuf::new(),
-            cached_symlinks: None,
+            browser: Browser::new(browse_path, all_entries),
+            cached_symlinks: Vec::new(),
         }
     }
 }
@@ -57,80 +42,57 @@ impl Component for UnstowBrowseComponent {
     }
 
     fn update(&mut self, _ctx: &mut AppContext) -> Transition {
-        if self.cached_path != self.browse_path || self.cached_entries.is_none() {
-            let entries =
-                andre_core::adopt::list_target_entries(&self.browse_path).unwrap_or_default();
-            self.cached_symlinks = Some(
-                entries
-                    .iter()
-                    .filter(|e| e.is_symlink)
-                    .map(|e| {
-                        let link = self.browse_path.join(&e.name);
-                        let target = std::fs::read_link(&link)
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_else(|_| "?".to_string());
-                        (e.name.clone(), target)
-                    })
-                    .collect(),
-            );
-            self.cached_entries = Some(entries);
-            self.cached_path = self.browse_path.clone();
+        if self.browser.refresh() {
+            self.cached_symlinks = self
+                .browser
+                .entries()
+                .iter()
+                .filter(|e| e.is_symlink)
+                .map(|e| {
+                    let link = self.browser.path.join(&e.name);
+                    let target = std::fs::read_link(&link)
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|_| "?".to_string());
+                    (e.name.clone(), target)
+                })
+                .collect();
         }
         Transition::None
     }
 
     fn handle_key(&mut self, key: KeyEvent, _ctx: &mut AppContext) -> Transition {
-        let len = self.cached_entries.as_ref().map_or(0, |e| e.len());
-        let mut cursor = self.cursor;
-
-        if crate::input::Input::handle_list_navigation(&key, &mut cursor, len) {
-            self.cursor = cursor;
+        if self.browser.move_cursor(&key) {
             return Transition::None;
         }
 
-        if key.code == KeyCode::Right {
-            if let Some(entries) = &self.cached_entries {
-                if let Some(entry) = entries.get(cursor) {
-                    if entry.is_dir {
-                        self.browse_path.push(&entry.name);
-                        cursor = 0;
-                    }
+        match key.code {
+            KeyCode::Right => self.browser.enter_dir(),
+            KeyCode::Enter => {
+                if let Some(entry) = self.browser.current().filter(|e| e.is_symlink) {
+                    let path = self.browser.path.join(&entry.name);
+                    return Transition::Push(Box::new(super::UnstowConfirmComponent::with_path(
+                        path,
+                    )));
                 }
             }
-        } else if key.code == KeyCode::Enter {
-            if let Some(entries) = &self.cached_entries {
-                if let Some(entry) = entries.get(cursor) {
-                    if entry.is_symlink {
-                        let path = self.browse_path.join(&entry.name);
-                        return Transition::Push(Box::new(
-                            super::UnstowConfirmComponent::with_path(path),
-                        ));
-                    }
-                }
-            }
-        } else if key.code == KeyCode::Left || key.code == KeyCode::Backspace {
-            if self.browse_path.parent().is_some() {
-                self.browse_path.pop();
-                cursor = 0;
-            }
-        } else if key.code == KeyCode::Esc {
-            return Transition::Pop;
+            KeyCode::Left | KeyCode::Backspace => self.browser.go_up(),
+            KeyCode::Esc => return Transition::Pop,
+            _ => {}
         }
-
-        self.cursor = cursor;
         Transition::None
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
         let mut state = ListState::default();
-        let widget =
-            FileBrowserWidget::new(&colors, &self.browse_path, self.cursor, "Unstow Symlinks")
-                .unstow_mode()
-                .with_entries(
-                    self.cached_entries.as_deref().unwrap_or_default(),
-                    self.cached_symlinks.as_deref().unwrap_or_default(),
-                );
+        let widget = FileBrowserWidget::new(
+            &colors,
+            &self.browser.path,
+            self.browser.cursor,
+            "Unstow Symlinks",
+        )
+        .unstow_mode()
+        .with_entries(self.browser.entries(), &self.cached_symlinks);
         frame.render_stateful_widget(widget, area, &mut state);
     }
 }
@@ -148,7 +110,7 @@ mod tests {
 
         let mut component =
             UnstowBrowseComponent::with_path("test".to_string(), tmp.path().join("subdir"));
-        component.cursor = 1;
+        component.browser.cursor = 1;
         (component, tmp)
     }
 
@@ -160,10 +122,7 @@ mod tests {
     fn test_cursor_resets_on_navigate_up() {
         let (mut component, _tmp) = make_test_component();
         let mut ctx = crate::components::AppContext {
-            core: andre_core::AppState::from_config(
-                andre_core::config::Config::default_empty(),
-                false,
-            ),
+            core: andre_core::AppState::from_config(andre_core::config::Config::default_empty()),
             config_dir: std::path::PathBuf::from("."),
             config_path: std::path::PathBuf::from("."),
             home_dir: std::path::PathBuf::from("."),
@@ -178,11 +137,11 @@ mod tests {
         };
 
         component.update(&mut ctx);
-        assert_eq!(component.cursor, 1);
+        assert_eq!(component.browser.cursor, 1);
 
         let result = component.handle_key(left_key(), &mut ctx);
         assert!(matches!(result, Transition::None));
-        assert_eq!(component.cursor, 0);
-        assert_eq!(component.browse_path, _tmp.path());
+        assert_eq!(component.browser.cursor, 0);
+        assert_eq!(component.browser.path, _tmp.path());
     }
 }

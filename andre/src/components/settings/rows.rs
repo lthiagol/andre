@@ -1,4 +1,4 @@
-use andre_core::Config;
+use andre_core::{Config, StowFlag};
 
 /// Rows in the settings list, in display order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +17,18 @@ pub enum SettingsRow {
     GroupLine { count: usize },
     SaveButton,
     SavedMessage,
+}
+
+/// The stow option a settings row edits, if the row is a flag row.
+pub fn flag_at_row(row: usize) -> Option<StowFlag> {
+    match row {
+        ROW_VERBOSITY => Some(StowFlag::Verbosity),
+        ROW_DRY_RUN => Some(StowFlag::DryRun),
+        ROW_NO_FOLDING => Some(StowFlag::NoFolding),
+        ROW_ADOPT => Some(StowFlag::Adopt),
+        ROW_DOTFILES => Some(StowFlag::Dotfiles),
+        _ => None,
+    }
 }
 
 /// Row index constants — used by mod.rs for cursor-based key dispatch.
@@ -39,7 +51,7 @@ pub const ROW_COUNT_BASE: usize = 13;
 
 /// Build the flat list of settings rows, optionally appending the saved message.
 pub fn build_flat_items(config: &Config) -> Vec<SettingsRow> {
-    let rows = vec![
+    vec![
         SettingsRow::ConfigPathInfo,
         SettingsRow::ConfigResolveInfo,
         SettingsRow::Verbosity,
@@ -57,8 +69,7 @@ pub fn build_flat_items(config: &Config) -> Vec<SettingsRow> {
             count: config.groups.len(),
         },
         SettingsRow::SaveButton,
-    ];
-    rows
+    ]
 }
 
 /// Total row count including optional saved-message row.
@@ -73,11 +84,11 @@ pub fn row_count(show_saved_message: bool) -> usize {
 /// Returns true if the row is interactive (navigable / actionable).
 pub fn is_interactive_row(index: usize, show_saved_message: bool) -> bool {
     // ConfigPathInfo and ConfigResolveInfo are display-only
-    if index < 2 {
+    if index < ROW_VERBOSITY {
         return false;
     }
     // Spacer row
-    if index == 10 {
+    if index == ROW_SPACER {
         return false;
     }
     // SavedMessage row
@@ -85,19 +96,6 @@ pub fn is_interactive_row(index: usize, show_saved_message: bool) -> bool {
         return false;
     }
     true
-}
-
-/// Convert index to the corresponding SettingsRow variant.
-pub fn row_at_index(
-    index: usize,
-    config: &Config,
-    show_saved_message: bool,
-) -> Option<SettingsRow> {
-    let rows = build_flat_items(config);
-    if show_saved_message && index == ROW_COUNT_BASE {
-        return Some(SettingsRow::SavedMessage);
-    }
-    rows.get(index).cloned()
 }
 
 #[cfg(test)]
@@ -111,5 +109,45 @@ mod tests {
         assert_eq!(base.len(), ROW_COUNT_BASE);
         assert_eq!(row_count(false), ROW_COUNT_BASE);
         assert_eq!(row_count(true), ROW_COUNT_BASE + 1);
+
+        // Each ROW_* constant must index the variant it is named for. Swapping two
+        // constants keeps the length and every other check green, so pin them all.
+        assert_eq!(base[ROW_CONFIG_PATH], SettingsRow::ConfigPathInfo);
+        assert_eq!(base[ROW_CONFIG_RESOLVE], SettingsRow::ConfigResolveInfo);
+        assert_eq!(base[ROW_VERBOSITY], SettingsRow::Verbosity);
+        assert_eq!(base[ROW_DRY_RUN], SettingsRow::DryRun);
+        assert_eq!(base[ROW_NO_FOLDING], SettingsRow::NoFolding);
+        assert_eq!(base[ROW_ADOPT], SettingsRow::Adopt);
+        assert_eq!(base[ROW_DOTFILES], SettingsRow::Dotfiles);
+        assert_eq!(base[ROW_ACTION], SettingsRow::Action);
+        assert_eq!(base[ROW_THEME], SettingsRow::ThemeName);
+        assert!(matches!(base[ROW_IGNORE], SettingsRow::IgnoreLine { .. }));
+        assert_eq!(base[ROW_SPACER], SettingsRow::Spacer);
+        assert!(matches!(
+            base[ROW_GROUP_LINE],
+            SettingsRow::GroupLine { .. }
+        ));
+        assert_eq!(base[ROW_SAVE_BUTTON], SettingsRow::SaveButton);
+    }
+
+    #[test]
+    fn test_flag_at_row_maps_each_flag_row() {
+        assert_eq!(flag_at_row(ROW_VERBOSITY), Some(StowFlag::Verbosity));
+        assert_eq!(flag_at_row(ROW_DRY_RUN), Some(StowFlag::DryRun));
+        assert_eq!(flag_at_row(ROW_NO_FOLDING), Some(StowFlag::NoFolding));
+        assert_eq!(flag_at_row(ROW_ADOPT), Some(StowFlag::Adopt));
+        assert_eq!(flag_at_row(ROW_DOTFILES), Some(StowFlag::Dotfiles));
+    }
+
+    #[test]
+    fn test_flag_at_row_is_none_for_non_flag_rows() {
+        assert_eq!(flag_at_row(ROW_CONFIG_PATH), None);
+        assert_eq!(flag_at_row(ROW_CONFIG_RESOLVE), None);
+        assert_eq!(flag_at_row(ROW_ACTION), None);
+        assert_eq!(flag_at_row(ROW_THEME), None);
+        assert_eq!(flag_at_row(ROW_IGNORE), None);
+        assert_eq!(flag_at_row(ROW_SPACER), None);
+        assert_eq!(flag_at_row(ROW_GROUP_LINE), None);
+        assert_eq!(flag_at_row(ROW_SAVE_BUTTON), None);
     }
 }

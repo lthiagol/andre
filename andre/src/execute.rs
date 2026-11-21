@@ -1,13 +1,11 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tokio::time::Duration;
 
-use andre_core::{Config, LinkEngine, LinkOp};
-
-type CommandEntry = (String, String, PathBuf, PathBuf, Vec<String>);
+use andre_core::{Config, LinkEngine, LinkOp, StowFlags};
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
@@ -17,118 +15,77 @@ pub struct ExecutionResult {
     pub error_message: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionState {
-    #[default]
-    Pending,
     Running,
-    Cancelling,
-    ErrorPrompt,
     Completed,
 }
 
 #[derive(Debug, Clone)]
 pub enum ExecutionUpdate {
-    Progress {
-        current: usize,
-        total: usize,
-        _package: String,
-    },
+    Progress { current: usize },
     Result(ExecutionResult),
     Complete,
 }
 
-pub struct AsyncExecutor {
-    _tx: mpsc::Sender<ExecutionUpdate>,
-    _abort_handle: tokio::task::AbortHandle,
-}
+/// Spawn an async execution that applies each `LinkOp` via the given engine.
+/// Heavy engine work runs on `spawn_blocking` with a per-op 60s timeout so a
+/// hung stow (or fs op) cannot stall the async runtime indefinitely.
+/// The returned receiver closes after `ExecutionUpdate::Complete`.
+pub fn spawn_execution(
+    ops: Vec<LinkOp>,
+    engine: Arc<dyn LinkEngine>,
+) -> mpsc::Receiver<ExecutionUpdate> {
+    let (tx, rx) = mpsc::channel::<ExecutionUpdate>(ops.len().max(1));
 
-impl AsyncExecutor {
-    /// Spawn an async execution that applies each `LinkOp` via the given engine.
-    /// Heavy engine work runs on `spawn_blocking` with a per-op 60s timeout so a
-    /// hung stow (or fs op) cannot stall the async runtime indefinitely.
-    pub fn spawn(
-        ops: Vec<LinkOp>,
-        engine: Arc<dyn LinkEngine>,
-    ) -> (Self, mpsc::Receiver<ExecutionUpdate>) {
-        let (tx, rx) = mpsc::channel::<ExecutionUpdate>(ops.len().max(1));
-        let tx_clone = tx.clone();
-        let total = ops.len();
-
-        let handle = tokio::spawn(async move {
-            for (current, op) in ops.into_iter().enumerate() {
-                let _ = tx_clone
-                    .send(ExecutionUpdate::Progress {
-                        current: current + 1,
-                        total,
-                        _package: format!("{} / {}", op.group, op.package),
-                    })
-                    .await;
-
-                let engine = engine.clone();
-                let op_for_task = op.clone();
-                let outcome = tokio::time::timeout(
-                    Duration::from_secs(60),
-                    tokio::task::spawn_blocking(move || engine.apply(&op_for_task)),
-                )
+    tokio::spawn(async move {
+        for (current, op) in ops.into_iter().enumerate() {
+            let _ = tx
+                .send(ExecutionUpdate::Progress {
+                    current: current + 1,
+                })
                 .await;
 
-                let exec_result = match outcome {
-                    Ok(Ok(Ok(()))) => ExecutionResult {
-                        group: op.group.clone(),
-                        package: op.package.clone(),
-                        success: true,
-                        error_message: None,
-                    },
-                    Ok(Ok(Err(e))) => ExecutionResult {
-                        group: op.group.clone(),
-                        package: op.package.clone(),
-                        success: false,
-                        error_message: Some(e.to_string()),
-                    },
-                    Ok(Err(_join)) => ExecutionResult {
-                        group: op.group.clone(),
-                        package: op.package.clone(),
-                        success: false,
-                        error_message: Some("engine task panicked".to_string()),
-                    },
-                    Err(_elapsed) => ExecutionResult {
-                        group: op.group.clone(),
-                        package: op.package.clone(),
-                        success: false,
-                        error_message: Some("Operation timed out after 60s".to_string()),
-                    },
-                };
+            let engine = engine.clone();
+            let op_for_task = op.clone();
+            let outcome = tokio::time::timeout(
+                Duration::from_secs(60),
+                tokio::task::spawn_blocking(move || engine.apply(&op_for_task)),
+            )
+            .await;
 
-                let _ = tx_clone.send(ExecutionUpdate::Result(exec_result)).await;
-            }
+            let error_message = match outcome {
+                Ok(Ok(Ok(()))) => None,
+                Ok(Ok(Err(e))) => Some(e.to_string()),
+                Ok(Err(_join)) => Some("engine task panicked".to_string()),
+                Err(_elapsed) => Some("Operation timed out after 60s".to_string()),
+            };
+            let exec_result = ExecutionResult {
+                group: op.group.clone(),
+                package: op.package.clone(),
+                success: error_message.is_none(),
+                error_message,
+            };
 
-            let _ = tx_clone.send(ExecutionUpdate::Complete).await;
-        });
+            let _ = tx.send(ExecutionUpdate::Result(exec_result)).await;
+        }
 
-        (
-            Self {
-                _tx: tx,
-                _abort_handle: handle.abort_handle(),
-            },
-            rx,
-        )
-    }
+        let _ = tx.send(ExecutionUpdate::Complete).await;
+    });
 
-    #[allow(dead_code)]
-    pub fn abort(&self) {
-        self._abort_handle.abort();
-    }
+    rx
 }
 
+/// One `LinkOp` per selected package whose group resolves on disk, plus a skipped
+/// `ExecutionResult` for each package whose source or target directory is missing.
 pub fn build_execution_results(
     selected_packages: &HashMap<String, Vec<String>>,
     config: &Config,
     config_dir: &Path,
     home_dir: &Path,
-) -> (Vec<CommandEntry>, Vec<ExecutionResult>) {
-    let mut commands = Vec::new();
+    flags: &StowFlags,
+) -> (Vec<LinkOp>, Vec<ExecutionResult>) {
+    let mut ops = Vec::new();
     let mut skipped = Vec::new();
 
     for (group, packages) in selected_packages {
@@ -138,13 +95,14 @@ pub fn build_execution_results(
 
         if let (Some(src), Some(tgt)) = (source, target) {
             for pkg in packages {
-                commands.push((
-                    group.clone(),
-                    pkg.clone(),
-                    src.clone(),
-                    tgt.clone(),
-                    ignores.clone(),
-                ));
+                ops.push(LinkOp {
+                    group: group.clone(),
+                    package: pkg.clone(),
+                    source: src.clone(),
+                    target: tgt.clone(),
+                    flags: *flags,
+                    ignores: ignores.clone(),
+                });
             }
         } else {
             for pkg in packages {
@@ -166,7 +124,7 @@ pub fn build_execution_results(
         }
     }
 
-    (commands, skipped)
+    (ops, skipped)
 }
 
 #[cfg(test)]
@@ -197,13 +155,18 @@ groups:
         let mut selected = HashMap::new();
         selected.insert("test-group".to_string(), vec!["test-pkg".to_string()]);
 
-        let (commands, skipped) =
-            build_execution_results(&selected, &config, tmp.path(), tmp.path());
+        let (ops, skipped) = build_execution_results(
+            &selected,
+            &config,
+            tmp.path(),
+            tmp.path(),
+            &StowFlags::default(),
+        );
 
         assert!(
-            commands.is_empty(),
-            "expected no commands when target dir is missing, got {}",
-            commands.len()
+            ops.is_empty(),
+            "expected no ops when target dir is missing, got {}",
+            ops.len()
         );
         assert_eq!(skipped.len(), 1, "expected one skipped result");
         assert!(!skipped[0].success);
@@ -233,13 +196,18 @@ groups:
         let mut selected = HashMap::new();
         selected.insert("test-group".to_string(), vec!["test-pkg".to_string()]);
 
-        let (commands, skipped) =
-            build_execution_results(&selected, &config, tmp.path(), tmp.path());
+        let (ops, skipped) = build_execution_results(
+            &selected,
+            &config,
+            tmp.path(),
+            tmp.path(),
+            &StowFlags::default(),
+        );
 
         assert!(
-            commands.is_empty(),
-            "expected no commands when source dir is missing, got {}",
-            commands.len()
+            ops.is_empty(),
+            "expected no ops when source dir is missing, got {}",
+            ops.len()
         );
         assert_eq!(skipped.len(), 1, "expected one skipped result");
         assert!(!skipped[0].success);

@@ -7,6 +7,8 @@ use andre_core::StowStatus;
 /// `Component::update()`; reads in `render()` should never block on I/O.
 pub struct StatusCache {
     inner: HashMap<(String, String), StowStatus>,
+    /// Bumped on every change, so readers can tell whether anything they built from the cache is stale.
+    generation: u64,
 }
 
 impl Default for StatusCache {
@@ -19,7 +21,13 @@ impl StatusCache {
     pub fn new() -> Self {
         Self {
             inner: HashMap::new(),
+            generation: 0,
         }
+    }
+
+    /// Changes whenever a status is added or the cache is cleared.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Read cached status. Returns `None` if not yet prefetched.
@@ -43,7 +51,7 @@ impl StatusCache {
         }
         let st =
             andre_core::check_stowed_status(source, target, pkg).unwrap_or(StowStatus::Missing);
-        self.inner.insert(key, st);
+        self.insert(key, st);
         st
     }
 
@@ -62,10 +70,7 @@ impl StatusCache {
 
     pub fn invalidate_all(&mut self) {
         self.inner.clear();
-    }
-
-    pub fn invalidate_group(&mut self, group: &str) {
-        self.inner.retain(|(g, _), _| g != group);
+        self.generation += 1;
     }
 
     // -- test helpers / legacy compat --
@@ -75,5 +80,6 @@ impl StatusCache {
 
     pub fn insert(&mut self, key: (String, String), value: StowStatus) {
         self.inner.insert(key, value);
+        self.generation += 1;
     }
 }

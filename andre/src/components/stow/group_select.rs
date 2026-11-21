@@ -32,8 +32,7 @@ impl Component for GroupSelectComponent {
     }
 
     fn handle_key(&mut self, key: KeyEvent, ctx: &mut AppContext) -> Transition {
-        let mut groups: Vec<String> = ctx.core.config.groups.keys().cloned().collect();
-        groups.sort();
+        let groups: Vec<String> = ctx.core.config.groups.keys().cloned().collect();
         let len = groups.len();
 
         if len > 0

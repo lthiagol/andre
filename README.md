@@ -149,7 +149,7 @@ Select your group, pick packages, and stow them.
 | `v` | Cycle verbosity (0-5) |
 | `d` | Toggle dry-run |
 | `t` | Cycle theme |
-| `q` / `Ctrl+C` | Quit / Cancel execution |
+| `q` / `Ctrl+C` | Quit |
 
 Global shortcuts work from list screens. They are blocked during text input (e.g., typing a package name in the adoption prompt) and modal popups (e.g., settings picker).
 

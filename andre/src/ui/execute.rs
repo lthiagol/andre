@@ -66,20 +66,9 @@ fn result_row_items(results: &[ExecutionResult], colors: &ThemeColors) -> Vec<Li
 /// Visible list line count for a given execute state (excludes the gauge row).
 pub fn execute_list_len(state: ExecutionState, results: &[ExecutionResult]) -> usize {
     match state {
-        ExecutionState::Pending => 1,
         // spinner line only (no dead Ctrl+C cancel hint)
         ExecutionState::Running => results.len() + 1,
-        ExecutionState::ErrorPrompt => {
-            let err_line = usize::from(
-                results
-                    .last()
-                    .and_then(|r| r.error_message.as_ref())
-                    .is_some(),
-            );
-            results.len() + err_line + 1
-        }
         ExecutionState::Completed => results.len() + 4,
-        ExecutionState::Cancelling => results.len() + 1,
     }
 }
 
@@ -114,9 +103,6 @@ pub fn render_execute(
 
     let list_area = chunks[1];
     let items: Vec<ListItem> = match state {
-        ExecutionState::Pending => {
-            vec![ListItem::new("Preparing...".to_string()).style(Style::default().fg(colors.muted))]
-        }
         ExecutionState::Running => {
             let spinner = SPINNER_CHARS[spinner_frame % SPINNER_CHARS.len()];
             let mut items = result_row_items(results, colors);
@@ -127,20 +113,6 @@ pub fn render_execute(
                 format!(" [{spinner}] Executing...")
             };
             items.push(ListItem::new(progress).style(Style::default().fg(colors.primary)));
-            items
-        }
-        ExecutionState::ErrorPrompt => {
-            let mut items = result_row_items(results, colors);
-            if let Some(last_err) = results.last().and_then(|r| r.error_message.as_ref()) {
-                items.push(
-                    ListItem::new(format!("ERROR: {last_err}"))
-                        .style(Style::default().fg(colors.error)),
-                );
-            }
-            items.push(
-                ListItem::new("Continue with remaining packages? (y/n)".to_string())
-                    .style(Style::default().fg(colors.warning)),
-            );
             items
         }
         ExecutionState::Completed => {
@@ -165,7 +137,7 @@ pub fn render_execute(
                 );
             }
 
-            items.push(ListItem::new("".to_string()).style(Style::default().fg(colors.primary)));
+            items.push(ListItem::new(String::new()).style(Style::default().fg(colors.primary)));
             items.push(
                 ListItem::new(summary).style(Style::default().fg(if has_problems {
                     colors.warning
@@ -176,14 +148,6 @@ pub fn render_execute(
             items.push(
                 ListItem::new("Press Enter to continue".to_string())
                     .style(Style::default().fg(colors.muted)),
-            );
-            items
-        }
-        ExecutionState::Cancelling => {
-            let mut items = result_row_items(results, colors);
-            items.push(
-                ListItem::new("Cancelling...".to_string())
-                    .style(Style::default().fg(colors.warning)),
             );
             items
         }

@@ -8,13 +8,14 @@ use ratatui::{
     Frame,
 };
 
+use crate::components::browser::Browser;
 use crate::components::settings::rows::{build_flat_items, SettingsRow};
 use crate::components::settings::ConfigMessage;
 use crate::components::settings::{GroupDialog, PickerState};
 use crate::theme::ThemeColors;
 use crate::ui::widgets::file_browser::FileBrowserWidget;
 use crate::ui::widgets::scrollbar::render_scrollbar;
-use andre_core::config::Config;
+use andre_core::{config::Config, StowFlags};
 
 fn val_str(on: bool) -> &'static str {
     if on {
@@ -30,12 +31,7 @@ fn render_row(
     cursor: usize,
     row: &SettingsRow,
     colors: &ThemeColors,
-    verbosity: usize,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
-    action: &str,
+    flags: &StowFlags,
     theme_name: &str,
     config_path: &Path,
     config_dir: &Path,
@@ -43,6 +39,14 @@ fn render_row(
     config_message: ConfigMessage,
     filename: &str,
 ) -> ListItem<'static> {
+    let StowFlags {
+        action,
+        verbosity,
+        dry_run,
+        no_folding,
+        adopt,
+        dotfiles,
+    } = *flags;
     let is_cursor = index == cursor;
     let is_interactive = !matches!(
         row,
@@ -151,7 +155,7 @@ fn render_row(
             Line::from(parts)
         }
         SettingsRow::Action => Line::from(Span::styled(
-            format!("{}action:           {}", marker, action),
+            format!("{}action:           {}", marker, action.as_str()),
             Style::default().fg(if is_cursor {
                 colors.primary
             } else {
@@ -211,7 +215,7 @@ fn render_row(
                     colors.warning,
                 ),
                 ConfigMessage::Saved => ("    Saved.".to_string(), colors.success),
-                ConfigMessage::Hidden => ("".to_string(), colors.muted),
+                ConfigMessage::Hidden => (String::new(), colors.muted),
             };
             Line::from(Span::styled(text, Style::default().fg(fg_color)))
         }
@@ -229,12 +233,7 @@ pub fn render_settings(
     config: &Config,
     config_path: &Path,
     config_dir: &Path,
-    verbosity: usize,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
-    action: &str,
+    flags: &StowFlags,
     theme_name: &str,
     cursor: usize,
     config_message: ConfigMessage,
@@ -260,12 +259,7 @@ pub fn render_settings(
                 cursor,
                 row,
                 colors,
-                verbosity,
-                dry_run,
-                no_folding,
-                adopt,
-                dotfiles,
-                action,
+                flags,
                 theme_name,
                 config_path,
                 config_dir,
@@ -307,7 +301,7 @@ pub fn render_settings(
 }
 
 fn render_picker_popup(frame: &mut Frame, area: Rect, colors: &ThemeColors, picker: &PickerState) {
-    let popup_width = (picker.options.iter().map(|o| o.len()).max().unwrap_or(10) + 8)
+    let popup_width = (picker.options.iter().map(String::len).max().unwrap_or(10) + 8)
         .min(area.width.saturating_sub(4) as usize) as u16;
     let popup_height =
         (picker.options.len() + 2).min(area.height.saturating_sub(4) as usize) as u16;
@@ -389,42 +383,40 @@ fn render_group_dialog(
         GroupDialog::AddBrowse {
             name: _,
             source: _,
-            path,
-            cursor,
+            browser,
         } => {
-            render_dir_browser_popup(frame, area, colors, path, *cursor, "Select Directory");
+            render_dir_browser_popup(frame, area, colors, browser, "Select Directory");
         }
         GroupDialog::RemoveSelect { cursor } => {
-            let names: Vec<&str> = config.groups.keys().map(|s| s.as_str()).collect();
+            let names: Vec<&str> = config.groups.keys().map(String::as_str).collect();
             render_list_picker_popup(frame, area, colors, names, *cursor, "Remove Group");
         }
         GroupDialog::RemoveConfirm { name } => {
             render_confirm_popup(frame, area, colors, name, "Remove group");
         }
         GroupDialog::EditSelect { cursor } => {
-            let names: Vec<&str> = config.groups.keys().map(|s| s.as_str()).collect();
+            let names: Vec<&str> = config.groups.keys().map(String::as_str).collect();
             render_list_picker_popup(frame, area, colors, names, *cursor, "Edit Group");
         }
         GroupDialog::EditField { group, cursor } => {
             let fields = vec!["Name", "Source", "Target", "Ignore"];
             render_edit_field_popup(frame, area, colors, group, fields, *cursor);
         }
-        GroupDialog::EditName { group } => {
-            render_name_input_popup(frame, area, colors, group, "Edit Group Name");
+        GroupDialog::EditName { name, .. } => {
+            render_name_input_popup(frame, area, colors, name, "Edit Group Name");
         }
         GroupDialog::EditBrowse {
             group: _,
             field: _,
-            path,
-            cursor,
+            browser,
         } => {
-            render_dir_browser_popup(frame, area, colors, path, *cursor, "Select Directory");
+            render_dir_browser_popup(frame, area, colors, browser, "Select Directory");
         }
         GroupDialog::IgnoreManage { group, cursor } => {
             let patterns: Vec<String> = match group {
                 Some(g) => config
                     .get_group_ignore(g)
-                    .map(|v| v.to_vec())
+                    .map(<[String]>::to_vec)
                     .unwrap_or_default(),
                 None => config.global_ignore(),
             };
@@ -700,8 +692,7 @@ fn render_dir_browser_popup(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
-    browse_path: &Path,
-    cursor: usize,
+    browser: &Browser,
     title: &str,
 ) {
     let popup_width = area.width.saturating_sub(6).max(30);
@@ -709,7 +700,8 @@ fn render_dir_browser_popup(
     let popup_area = centered_rect(popup_width, popup_height, area);
 
     let mut list_state = ListState::default();
-    let widget = FileBrowserWidget::new(colors, browse_path, cursor, title).dirs_only();
+    let widget = FileBrowserWidget::new(colors, &browser.path, browser.cursor, title)
+        .with_entries(browser.entries(), &[]);
 
     frame.render_widget(ratatui::widgets::Clear, popup_area);
     frame.render_stateful_widget(widget, popup_area, &mut list_state);

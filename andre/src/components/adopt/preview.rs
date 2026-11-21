@@ -57,13 +57,12 @@ impl Component for AdoptPreviewComponent {
                 .ok()
             });
             if self.cached_plan.is_some() {
-                ctx.log(
-                    LogLevel::Exec,
+                ctx.log(LogLevel::Exec, || {
                     format!(
                         "Adoption plan ready for {} / {}",
                         self.group_name, self.package_name
-                    ),
-                );
+                    )
+                });
             }
         }
         Transition::None
@@ -74,11 +73,7 @@ impl Component for AdoptPreviewComponent {
             if let Some(ref plan) = self.cached_plan {
                 let result = andre_core::execute_adoption(
                     plan,
-                    ctx.core.verbosity,
-                    ctx.core.dry_run,
-                    ctx.core.no_folding,
-                    ctx.core.adopt,
-                    ctx.core.dotfiles,
+                    &ctx.core.flags,
                     &ctx.core.config.effective_ignores(&self.group_name),
                 );
                 self.execution_result = Some(match &result {

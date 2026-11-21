@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use crate::state::StowAction;
+use crate::state::{StowAction, StowFlags};
 use crate::stow::{collect_package_files, execute_stow};
 
 /// A single package link operation. All fields the engines need to plan/apply.
@@ -20,13 +20,30 @@ pub struct LinkOp {
     pub package: String,
     pub source: PathBuf,
     pub target: PathBuf,
-    pub action: StowAction,
-    pub dry_run: bool,
-    pub no_folding: bool,
-    pub adopt: bool,
-    pub dotfiles: bool,
-    pub verbosity: u8,
+    pub flags: StowFlags,
     pub ignores: Vec<String>,
+}
+
+/// Which link engine the config selects. Unknown config values resolve to `Native`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EngineKind {
+    #[default]
+    Native,
+    Stow,
+}
+
+impl EngineKind {
+    /// Case-insensitive lookup of `native` / `stow`. `None` for anything else.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Option<Self> {
+        if s.eq_ignore_ascii_case("native") {
+            return Some(EngineKind::Native);
+        }
+        if s.eq_ignore_ascii_case("stow") {
+            return Some(EngineKind::Stow);
+        }
+        None
+    }
 }
 
 /// A planned file-level operation (dry-run preview). Producing this must not
@@ -49,13 +66,11 @@ pub trait LinkEngine: Send + Sync {
     fn plan(&self, op: &LinkOp) -> Result<Vec<LinkAction>>;
 }
 
-/// Select an engine by config string. Unrecognized values fall back to native
-/// (`Config::validate` emits a warning for unknown engines).
-pub fn engine_for(engine: &str) -> Arc<dyn LinkEngine> {
-    if engine.eq_ignore_ascii_case("stow") {
-        Arc::new(StowEngine)
-    } else {
-        Arc::new(NativeEngine)
+/// Build the engine for a selected kind.
+pub fn engine_for(kind: EngineKind) -> Arc<dyn LinkEngine> {
+    match kind {
+        EngineKind::Native => Arc::new(NativeEngine),
+        EngineKind::Stow => Arc::new(StowEngine),
     }
 }
 
@@ -71,23 +86,14 @@ impl LinkEngine for StowEngine {
     }
 
     fn apply(&self, op: &LinkOp) -> Result<()> {
-        if op.dry_run {
+        if op.flags.dry_run {
             // Preserve the product contract: dry-run never touches the filesystem
             // (historically the TUI simulated success without invoking stow -n).
             return Ok(());
         }
-        execute_stow(
-            &op.source,
-            &op.target,
-            &op.package,
-            op.action.as_str(),
-            op.verbosity,
-            op.dry_run,
-            op.no_folding,
-            op.adopt,
-            op.dotfiles,
-            &op.ignores,
-        )?;
+        // Dry-run returned early above, so `op.flags.dry_run` is false here and
+        // stow is never run with `-n`.
+        execute_stow(&op.source, &op.target, &op.package, &op.flags, &op.ignores)?;
         Ok(())
     }
 
@@ -158,10 +164,10 @@ impl LinkEngine for NativeEngine {
         // Native v1 is file-level only; adopt and dotfiles would change behavior
         // we do not implement. Folding is inherent (native never folds), so
         // no_folding does not require an error.
-        if op.adopt {
+        if op.flags.adopt {
             return Err(Error::NativeUnsupported("adopt".into()));
         }
-        if op.dotfiles {
+        if op.flags.dotfiles {
             return Err(Error::NativeUnsupported("dotfiles".into()));
         }
 
@@ -175,7 +181,7 @@ impl LinkEngine for NativeEngine {
         for f in files {
             let rel = f.strip_prefix(&pkg_src).unwrap_or(&f).to_path_buf();
             let link = op.target.join(&rel);
-            match op.action {
+            match op.flags.action {
                 StowAction::Stow => actions.push(LinkAction::CreateSymlink {
                     link,
                     source_file: f,
@@ -204,7 +210,7 @@ impl LinkEngine for NativeEngine {
     fn apply(&self, op: &LinkOp) -> Result<()> {
         let pkg_src = op.source.join(&op.package);
         let actions = self.plan(op)?;
-        if op.dry_run {
+        if op.flags.dry_run {
             return Ok(());
         }
         for action in actions {
@@ -286,12 +292,14 @@ mod tests {
             package: "bash-env".into(),
             source,
             target,
-            action,
-            dry_run: false,
-            no_folding: false,
-            adopt: false,
-            dotfiles: false,
-            verbosity: 0,
+            flags: StowFlags {
+                action,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+                verbosity: 0,
+            },
             ignores: vec![],
         }
     }
@@ -319,7 +327,7 @@ mod tests {
         let (source, target, _pkg_src) = pkg(&tmp);
         let engine = NativeEngine;
         engine
-            .apply(&op(source.clone(), target.clone(), StowAction::Stow))
+            .apply(&op(source, target.clone(), StowAction::Stow))
             .unwrap();
         let link = target.join(".bashrc");
         assert!(link.is_symlink(), "native stow must create a symlink");
@@ -336,7 +344,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let (source, target, _pkg_src) = pkg(&tmp);
         let mut o = op(source, target, StowAction::Stow);
-        o.dry_run = true;
+        o.flags.dry_run = true;
         let engine = NativeEngine;
         let actions = engine.plan(&o).unwrap();
         assert_eq!(actions.len(), 1, "dry-run plan still lists the action");
@@ -397,7 +405,7 @@ mod tests {
         let (source, target, _pkg_src) = pkg(&tmp);
         let engine = NativeEngine;
         let mut adopt_op = op(source.clone(), target.clone(), StowAction::Stow);
-        adopt_op.adopt = true;
+        adopt_op.flags.adopt = true;
         let err = engine.plan(&adopt_op).unwrap_err();
         assert!(
             err.to_string().contains("global.engine: stow"),
@@ -406,7 +414,7 @@ mod tests {
         );
 
         let mut dot_op = op(source, target, StowAction::Stow);
-        dot_op.dotfiles = true;
+        dot_op.flags.dotfiles = true;
         let err = engine.plan(&dot_op).unwrap_err();
         assert!(err.to_string().contains("dotfiles"));
     }
@@ -430,12 +438,19 @@ mod tests {
     }
 
     #[test]
-    fn engine_for_factory_selects_by_name() {
-        assert_eq!(engine_for("native").name(), "native");
-        assert_eq!(engine_for("NATIVE").name(), "native");
-        assert_eq!(engine_for("stow").name(), "stow");
-        // unknown falls back to native
-        assert_eq!(engine_for("bogus").name(), "native");
+    fn engine_for_factory_selects_by_kind() {
+        assert_eq!(engine_for(EngineKind::Native).name(), "native");
+        assert_eq!(engine_for(EngineKind::Stow).name(), "stow");
+    }
+
+    #[test]
+    fn engine_kind_parses_case_insensitively_and_rejects_unknown() {
+        assert_eq!(EngineKind::from_str("native"), Some(EngineKind::Native));
+        assert_eq!(EngineKind::from_str("NATIVE"), Some(EngineKind::Native));
+        assert_eq!(EngineKind::from_str("stow"), Some(EngineKind::Stow));
+        assert_eq!(EngineKind::from_str("Stow"), Some(EngineKind::Stow));
+        assert_eq!(EngineKind::from_str("bogus"), None);
+        assert_eq!(EngineKind::default(), EngineKind::Native);
     }
 
     #[test]
@@ -459,12 +474,14 @@ mod tests {
                 package: "pkg-a".into(),
                 source: source.clone(),
                 target: target.clone(),
-                action: StowAction::Stow,
-                dry_run: false,
-                no_folding: false,
-                adopt: false,
-                dotfiles: false,
-                verbosity: 0,
+                flags: StowFlags {
+                    action: StowAction::Stow,
+                    dry_run: false,
+                    no_folding: false,
+                    adopt: false,
+                    dotfiles: false,
+                    verbosity: 0,
+                },
                 ignores: vec![],
             })
             .unwrap();
@@ -479,12 +496,14 @@ mod tests {
                 package: "pkg-b".into(),
                 source: source.clone(),
                 target: target.clone(),
-                action: StowAction::Unstow,
-                dry_run: false,
-                no_folding: false,
-                adopt: false,
-                dotfiles: false,
-                verbosity: 0,
+                flags: StowFlags {
+                    action: StowAction::Unstow,
+                    dry_run: false,
+                    no_folding: false,
+                    adopt: false,
+                    dotfiles: false,
+                    verbosity: 0,
+                },
                 ignores: vec![],
             })
             .unwrap();
@@ -501,12 +520,14 @@ mod tests {
                 package: "pkg-b".into(),
                 source,
                 target,
-                action: StowAction::Stow,
-                dry_run: false,
-                no_folding: false,
-                adopt: false,
-                dotfiles: false,
-                verbosity: 0,
+                flags: StowFlags {
+                    action: StowAction::Stow,
+                    dry_run: false,
+                    no_folding: false,
+                    adopt: false,
+                    dotfiles: false,
+                    verbosity: 0,
+                },
                 ignores: vec![],
             })
             .unwrap_err();
@@ -554,12 +575,14 @@ mod tests {
             package: "bash-env".into(),
             source,
             target,
-            action: StowAction::Stow,
-            dry_run: false,
-            no_folding: false,
-            adopt: false,
-            dotfiles: false,
-            verbosity: 0,
+            flags: StowFlags {
+                action: StowAction::Stow,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+                verbosity: 0,
+            },
             ignores: vec![],
         }
     }
@@ -621,7 +644,7 @@ mod tests {
         fs::create_dir_all(&target).unwrap();
 
         let mut op = stow_op(source, target.clone());
-        op.dry_run = true;
+        op.flags.dry_run = true;
 
         let engine = StowEngine;
         // Dry-run must succeed even if stow is unresolvable: the engine's
@@ -633,7 +656,7 @@ mod tests {
         // Target must be untouched: no symlinks, no files, no nested dirs.
         let entries: Vec<_> = fs::read_dir(&target)
             .unwrap()
-            .filter_map(|e| e.ok())
+            .flatten()
             .map(|e| e.file_name())
             .collect();
         assert!(

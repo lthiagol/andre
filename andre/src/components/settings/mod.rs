@@ -1,4 +1,6 @@
 use crate::components::{AppContext, Component, InputMode, Transition};
+use crate::input::flag_for_key;
+use andre_core::StowFlag;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{layout::Rect, Frame};
 pub mod dialogs;
@@ -28,6 +30,15 @@ pub struct SettingsComponent {
     pub config_message: ConfigMessage,
     pub dialog: Option<GroupDialog>,
     pending: Option<PendingSettings>,
+}
+
+impl SettingsComponent {
+    fn toggle_flag(&mut self, flag: StowFlag) {
+        if let Some(pending) = self.pending.as_mut() {
+            pending.flags.toggle(flag);
+            self.config_dirty = true;
+        }
+    }
 }
 
 impl Component for SettingsComponent {
@@ -95,28 +106,17 @@ impl Component for SettingsComponent {
 
         match key.code {
             KeyCode::Enter => {
-                if cursor == ROW_VERBOSITY {
-                    let p = self.pending.as_mut().unwrap();
-                    p.verbosity = (p.verbosity + 1) % 6;
-                    self.config_dirty = true;
-                } else if cursor == ROW_DRY_RUN {
-                    let p = self.pending.as_mut().unwrap();
-                    p.dry_run = !p.dry_run;
-                    self.config_dirty = true;
-                } else if cursor == ROW_NO_FOLDING {
-                    let p = self.pending.as_mut().unwrap();
-                    p.no_folding = !p.no_folding;
-                    self.config_dirty = true;
-                } else if cursor == ROW_ADOPT {
-                    let p = self.pending.as_mut().unwrap();
-                    p.adopt = !p.adopt;
-                    self.config_dirty = true;
-                } else if cursor == ROW_DOTFILES {
-                    let p = self.pending.as_mut().unwrap();
-                    p.dotfiles = !p.dotfiles;
-                    self.config_dirty = true;
+                if let Some(flag) = flag_at_row(cursor) {
+                    self.toggle_flag(flag);
                 } else if cursor == ROW_ACTION {
-                    let val = self.pending.as_ref().unwrap().action.as_str().to_string();
+                    let val = self
+                        .pending
+                        .as_ref()
+                        .unwrap()
+                        .flags
+                        .action
+                        .as_str()
+                        .to_string();
                     picker::open_picker(self, "Action", PickerField::Action, &val);
                 } else if cursor == ROW_THEME {
                     let val = self.pending.as_ref().unwrap().theme.name().to_string();
@@ -133,15 +133,9 @@ impl Component for SettingsComponent {
                 }
             }
             KeyCode::Char(' ') if (ROW_DRY_RUN..=ROW_DOTFILES).contains(&cursor) => {
-                let p = self.pending.as_mut().unwrap();
-                match cursor {
-                    ROW_DRY_RUN => p.dry_run = !p.dry_run,
-                    ROW_NO_FOLDING => p.no_folding = !p.no_folding,
-                    ROW_ADOPT => p.adopt = !p.adopt,
-                    ROW_DOTFILES => p.dotfiles = !p.dotfiles,
-                    _ => {}
+                if let Some(flag) = flag_at_row(cursor) {
+                    self.toggle_flag(flag);
                 }
-                self.config_dirty = true;
             }
             KeyCode::Esc => {
                 if self.config_dirty {
@@ -176,9 +170,8 @@ impl Component for SettingsComponent {
                     self.config_dirty = false;
                     self.config_message = ConfigMessage::Hidden;
                     return Transition::Pop;
-                } else if let Some(ref mut pending) = self.pending {
-                    pending.no_folding = !pending.no_folding;
-                    self.config_dirty = true;
+                } else {
+                    self.toggle_flag(StowFlag::NoFolding);
                     return Transition::Handled;
                 }
             }
@@ -189,35 +182,12 @@ impl Component for SettingsComponent {
                 }
                 return Transition::Handled;
             }
-            KeyCode::Char('v') => {
-                if let Some(ref mut pending) = self.pending {
-                    pending.verbosity = (pending.verbosity + 1) % 6;
-                    self.config_dirty = true;
+            _ => {
+                if let Some(flag) = flag_for_key(key.code) {
+                    self.toggle_flag(flag);
+                    return Transition::Handled;
                 }
-                return Transition::Handled;
             }
-            KeyCode::Char('d') => {
-                if let Some(ref mut pending) = self.pending {
-                    pending.dry_run = !pending.dry_run;
-                    self.config_dirty = true;
-                }
-                return Transition::Handled;
-            }
-            KeyCode::Char('a') => {
-                if let Some(ref mut pending) = self.pending {
-                    pending.adopt = !pending.adopt;
-                    self.config_dirty = true;
-                }
-                return Transition::Handled;
-            }
-            KeyCode::Char('o') => {
-                if let Some(ref mut pending) = self.pending {
-                    pending.dotfiles = !pending.dotfiles;
-                    self.config_dirty = true;
-                }
-                return Transition::Handled;
-            }
-            _ => {}
         }
 
         Transition::None
@@ -245,12 +215,7 @@ impl Component for SettingsComponent {
             &pending.config,
             &ctx.config_path,
             &ctx.config_dir,
-            pending.verbosity as usize,
-            pending.dry_run,
-            pending.no_folding,
-            pending.adopt,
-            pending.dotfiles,
-            pending.action.as_str(),
+            &pending.flags,
             pending.theme.name(),
             cursor,
             config_message,

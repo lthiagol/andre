@@ -52,7 +52,7 @@ groups:
 
     let config_path = tmp.path().join("andre.yml");
     std::fs::write(&config_path, &yaml).unwrap();
-    let app = App::new(config_path, false).unwrap();
+    let app = App::new(config_path).unwrap();
     (app, tmp)
 }
 
@@ -113,13 +113,6 @@ fn test_tui_full_stow_creates_symlink() {
         app.component_dispatch(key(KeyCode::Char('y')));
         assert_eq!(app.component_stack.last().unwrap().id(), "Execute");
 
-        // M05 AC-02: App owns the AsyncExecutor for Execute's lifetime;
-        // Confirm must not have dropped the only handle.
-        assert!(
-            app.executor.is_some(),
-            "App must own the AsyncExecutor while Execute is on the stack"
-        );
-
         pump_until_complete(app, 10);
 
         assert!(symlink.exists(), ".bashrc should exist in target");
@@ -140,12 +133,8 @@ fn test_tui_full_stow_creates_symlink() {
         // Finished UI summary (N succeeded, M failed) is asserted via render buffer
         // in test_execute_completion_summary_on_finished (L1: not recomputed here).
 
-        // Leaving Execute (PopAll) releases the executor handle.
+        // Enter on completed Execute leaves the screen.
         app.component_dispatch(key(KeyCode::Enter));
-        assert!(
-            app.executor.is_none(),
-            "executor must be released once Execute leaves the stack"
-        );
         assert_ne!(
             app.component_stack.last().unwrap().id(),
             "Execute",
@@ -160,7 +149,7 @@ fn test_tui_dry_run_does_not_create_symlink() {
         let symlink = tmp.path().join("target/.bashrc");
 
         app.component_dispatch(key(KeyCode::Char('d')));
-        assert!(app.ctx.core.dry_run);
+        assert!(app.ctx.core.flags.dry_run);
 
         navigate_to_confirm(app);
         app.component_dispatch(key(KeyCode::Char('y')));
@@ -196,7 +185,7 @@ groups:
 
     let config_path = tmp.path().join("andre.yml");
     std::fs::write(&config_path, &yaml).unwrap();
-    let mut app = App::new(config_path, false).unwrap();
+    let mut app = App::new(config_path).unwrap();
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let _guard = rt.enter();

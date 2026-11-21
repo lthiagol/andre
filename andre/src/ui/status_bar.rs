@@ -6,6 +6,8 @@ use ratatui::{
     Frame,
 };
 
+use andre_core::StowFlags;
+
 use crate::theme::ThemeColors;
 use crate::ui::elide;
 
@@ -41,17 +43,11 @@ pub fn format_breadcrumb(stack_ids: &[&str]) -> String {
         .join(" > ")
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn render_status_bar(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
-    verbosity: usize,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
-    action: &str,
+    flags: &StowFlags,
     theme_name: &str,
     debug: bool,
 ) {
@@ -59,7 +55,15 @@ pub fn render_status_bar(
         return;
     }
 
-    let action_str = action.to_uppercase();
+    let StowFlags {
+        action,
+        verbosity,
+        dry_run,
+        no_folding,
+        adopt,
+        dotfiles,
+    } = *flags;
+    let action_str = action.as_str().to_uppercase();
 
     let on_off = |on: bool| -> &'static str {
         if on {
@@ -110,7 +114,7 @@ pub fn render_status_bar(
             Span::raw("  Dotfiles:"),
             Span::styled(on_off(dotfiles), toggle_style(dotfiles)),
             Span::raw("  Action:"),
-            Span::styled(action_str.to_string(), Style::default().fg(colors.primary)),
+            Span::styled(action_str, Style::default().fg(colors.primary)),
             Span::raw("  Theme:"),
             Span::styled(
                 theme_name.to_string(),

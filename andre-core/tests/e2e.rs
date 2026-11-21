@@ -5,7 +5,7 @@ use helpers::TestEnv;
 #[test]
 fn test_scenario_01_basic_stow() {
     let env = TestEnv::from_scenario("01-basic-stow");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0, "andre failed: {}", result.stderr);
 
     env.assert_symlinks(&[(".bashrc", "../packages/bash-env/.bashrc")]);
@@ -14,7 +14,7 @@ fn test_scenario_01_basic_stow() {
 #[test]
 fn test_scenario_02_multi_package_one_group() {
     let env = TestEnv::from_scenario("02-multi-package-one-group");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[
@@ -27,7 +27,7 @@ fn test_scenario_02_multi_package_one_group() {
 #[test]
 fn test_scenario_03_multi_group_config() {
     let env = TestEnv::from_scenario("03-multi-group-config");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[
@@ -40,7 +40,7 @@ fn test_scenario_03_multi_group_config() {
 #[test]
 fn test_scenario_04_nested_directories() {
     let env = TestEnv::from_scenario("04-nested-directories");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[("nested", "../packages/config/nested")]);
@@ -49,7 +49,7 @@ fn test_scenario_04_nested_directories() {
 #[test]
 fn test_scenario_05_hidden_dotfiles() {
     let env = TestEnv::from_scenario("05-hidden-dotfiles");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[
@@ -62,7 +62,7 @@ fn test_scenario_05_hidden_dotfiles() {
 #[test]
 fn test_scenario_06_executables() {
     let env = TestEnv::from_scenario("06-executables");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[
@@ -74,7 +74,7 @@ fn test_scenario_06_executables() {
 #[test]
 fn test_scenario_07_ignore_patterns() {
     let env = TestEnv::from_scenario("07-ignore-patterns");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[
@@ -89,7 +89,7 @@ fn test_scenario_07_ignore_patterns() {
 #[test]
 fn test_scenario_08_defer_existing_target() {
     let env = TestEnv::from_scenario("08-defer-existing-target");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     // Conflict exists, should report failure
     assert!(result.stderr.contains("FAILED") || result.stdout.contains("FAILED"));
 }
@@ -97,7 +97,7 @@ fn test_scenario_08_defer_existing_target() {
 #[test]
 fn test_scenario_09_override_existing_target() {
     let env = TestEnv::from_scenario("09-override-existing-target");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert!(result.stderr.contains("FAILED") || result.stdout.contains("FAILED"));
 }
 
@@ -106,7 +106,7 @@ fn test_scenario_10_adopt_existing_files() {
     let env = TestEnv::from_scenario("10-adopt-existing-files");
     // Pre-existing .vimrc with different content
     // stow.yml has adopt: true
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[(".vimrc", "../packages/vim-env/.vimrc")]);
@@ -115,7 +115,7 @@ fn test_scenario_10_adopt_existing_files() {
 #[test]
 fn test_scenario_11_no_folding() {
     let env = TestEnv::from_scenario("11-no-folding");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[(
@@ -128,7 +128,7 @@ fn test_scenario_11_no_folding() {
 fn test_scenario_12_restow() {
     let env = TestEnv::from_scenario("12-restow");
     // action: restow in stow.yml
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[(".bashrc", "../packages/bash-env/.bashrc")]);
@@ -137,7 +137,7 @@ fn test_scenario_12_restow() {
 #[test]
 fn test_scenario_13_dotfiles() {
     let env = TestEnv::from_scenario("13-dotfiles");
-    let result = env.run_awesome_stow(&["--yolo"]).unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 
     env.assert_symlinks(&[(".bashrc", "../packages/dot-bashrc/.bashrc")]);
@@ -154,7 +154,7 @@ fn test_scenario_14_config_relative_paths() {
 
     // Paths in andre.yml are relative to the config file's directory, not CWD.
     // Run from /tmp so a CWD-relative resolution would fail.
-    let binary = TestEnv::awesome_stow_binary();
+    let binary = TestEnv::andre_binary();
     let mut cmd = std::process::Command::new(&binary);
     cmd.args(["--yolo", "--config"])
         .arg(env.temp_dir.path().join("andre.yml"))

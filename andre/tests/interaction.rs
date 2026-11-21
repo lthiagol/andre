@@ -1,5 +1,9 @@
+use std::collections::HashMap;
+
 use andre::app::App;
+use andre::components::confirm::ConfirmComponent;
 use andre::components::stow::GroupSelectComponent;
+use ratatui::{backend::TestBackend, Terminal};
 
 mod helpers;
 use helpers::*;
@@ -256,52 +260,52 @@ fn test_esc_config_to_main_menu() {
 #[test]
 fn test_v_cycles_verbosity() {
     let (mut app, _) = make_test_app();
-    app.ctx.core.verbosity = 0;
+    app.ctx.core.flags.verbosity = 0;
     app.component_dispatch(key_char('v'));
-    assert_eq!(app.ctx.core.verbosity, 1);
+    assert_eq!(app.ctx.core.flags.verbosity, 1);
     app.component_dispatch(key_char('v'));
-    assert_eq!(app.ctx.core.verbosity, 2);
+    assert_eq!(app.ctx.core.flags.verbosity, 2);
     for _ in 0..4 {
         app.component_dispatch(key_char('v'));
     }
-    assert_eq!(app.ctx.core.verbosity, 0);
+    assert_eq!(app.ctx.core.flags.verbosity, 0);
 }
 
 #[test]
 fn test_d_toggles_dry_run() {
     let (mut app, _) = make_test_app();
-    app.ctx.core.dry_run = false;
+    app.ctx.core.flags.dry_run = false;
     app.component_dispatch(key_char('d'));
-    assert!(app.ctx.core.dry_run);
+    assert!(app.ctx.core.flags.dry_run);
     app.component_dispatch(key_char('d'));
-    assert!(!app.ctx.core.dry_run);
+    assert!(!app.ctx.core.flags.dry_run);
 }
 
 #[test]
 fn test_n_toggles_no_folding() {
     let (mut app, _) = make_test_app();
     app.component_dispatch(key_char('n'));
-    assert!(app.ctx.core.no_folding);
+    assert!(app.ctx.core.flags.no_folding);
     app.component_dispatch(key_char('n'));
-    assert!(!app.ctx.core.no_folding);
+    assert!(!app.ctx.core.flags.no_folding);
 }
 
 #[test]
 fn test_a_toggles_adopt() {
     let (mut app, _) = make_test_app();
     app.component_dispatch(key_char('a'));
-    assert!(app.ctx.core.adopt);
+    assert!(app.ctx.core.flags.adopt);
     app.component_dispatch(key_char('a'));
-    assert!(!app.ctx.core.adopt);
+    assert!(!app.ctx.core.flags.adopt);
 }
 
 #[test]
 fn test_o_toggles_dotfiles() {
     let (mut app, _) = make_test_app();
     app.component_dispatch(key_char('o'));
-    assert!(app.ctx.core.dotfiles);
+    assert!(app.ctx.core.flags.dotfiles);
     app.component_dispatch(key_char('o'));
-    assert!(!app.ctx.core.dotfiles);
+    assert!(!app.ctx.core.flags.dotfiles);
 }
 
 #[test]
@@ -532,24 +536,24 @@ fn test_global_keys_blocked_during_adopt_name_prompt() {
             vec![],
         )));
     let initial_theme = app.ctx.core.theme;
-    let initial_verbosity = app.ctx.core.verbosity;
-    let initial_dry_run = app.ctx.core.dry_run;
-    let initial_no_folding = app.ctx.core.no_folding;
-    let initial_adopt = app.ctx.core.adopt;
-    let initial_dotfiles = app.ctx.core.dotfiles;
+    let initial_verbosity = app.ctx.core.flags.verbosity;
+    let initial_dry_run = app.ctx.core.flags.dry_run;
+    let initial_no_folding = app.ctx.core.flags.no_folding;
+    let initial_adopt = app.ctx.core.flags.adopt;
+    let initial_dotfiles = app.ctx.core.flags.dotfiles;
     // All global shortcuts should be absorbed — nothing changes
     app.component_dispatch(key_char('t'));
     assert_eq!(app.ctx.core.theme, initial_theme);
     app.component_dispatch(key_char('v'));
-    assert_eq!(app.ctx.core.verbosity, initial_verbosity);
+    assert_eq!(app.ctx.core.flags.verbosity, initial_verbosity);
     app.component_dispatch(key_char('d'));
-    assert_eq!(app.ctx.core.dry_run, initial_dry_run);
+    assert_eq!(app.ctx.core.flags.dry_run, initial_dry_run);
     app.component_dispatch(key_char('n'));
-    assert_eq!(app.ctx.core.no_folding, initial_no_folding);
+    assert_eq!(app.ctx.core.flags.no_folding, initial_no_folding);
     app.component_dispatch(key_char('a'));
-    assert_eq!(app.ctx.core.adopt, initial_adopt);
+    assert_eq!(app.ctx.core.flags.adopt, initial_adopt);
     app.component_dispatch(key_char('o'));
-    assert_eq!(app.ctx.core.dotfiles, initial_dotfiles);
+    assert_eq!(app.ctx.core.flags.dotfiles, initial_dotfiles);
 }
 
 #[test]
@@ -665,11 +669,11 @@ fn test_package_select_still_allows_global_v() {
     // Navigate into packages
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "PackageSelect");
-    let initial_verbosity = app.ctx.core.verbosity;
+    let initial_verbosity = app.ctx.core.flags.verbosity;
     // Global v should still work on PackageSelect (Normal mode)
     app.component_dispatch(key_char('v'));
     assert_ne!(
-        app.ctx.core.verbosity, initial_verbosity,
+        app.ctx.core.flags.verbosity, initial_verbosity,
         "global v should toggle verbosity on PackageSelect"
     );
 }
@@ -699,10 +703,10 @@ fn test_toast_shows_and_auto_dismisses() {
 fn test_toast_does_not_capture_input() {
     let (mut app, _) = make_test_app();
     app.ctx.show_toast("visible");
-    let before = app.ctx.core.verbosity;
+    let before = app.ctx.core.flags.verbosity;
     app.component_dispatch(key_char('v'));
     assert_ne!(
-        app.ctx.core.verbosity, before,
+        app.ctx.core.flags.verbosity, before,
         "global keys must still work while toast is visible"
     );
     assert!(app.ctx.toast.is_some(), "toast remains until deadline");
@@ -760,7 +764,7 @@ fn test_config_save_failure_error_toast_keeps_dirty() {
             .unwrap();
         s.cursor = 12;
     }
-    let verbosity_before = app.ctx.core.verbosity;
+    let verbosity_before = app.ctx.core.flags.verbosity;
     app.component_dispatch(enter_key());
 
     let settings = app
@@ -784,7 +788,7 @@ fn test_config_save_failure_error_toast_keeps_dirty() {
     );
     assert_eq!(toast.kind, ToastKind::Error);
     assert_eq!(
-        app.ctx.core.verbosity, verbosity_before,
+        app.ctx.core.flags.verbosity, verbosity_before,
         "core must not commit pending changes when disk write fails"
     );
 }
@@ -872,16 +876,15 @@ fn test_app_update_drains_execution_update_into_execute() {
         .push(Box::new(ExecuteComponent::new(rx, 2, Vec::new())));
 
     // Toast is visible; its tick also runs inside update_components.
-    app.ctx
-        .show_toast_for("working", std::time::Duration::from_secs(0));
+    app.ctx.show_toast_kind(
+        "working",
+        andre::components::ToastKind::Success,
+        std::time::Duration::from_secs(0),
+    );
     assert!(app.ctx.toast.is_some());
 
-    tx.try_send(ExecutionUpdate::Progress {
-        current: 1,
-        total: 2,
-        _package: "home / bash".into(),
-    })
-    .unwrap();
+    tx.try_send(ExecutionUpdate::Progress { current: 1 })
+        .unwrap();
 
     // App::update_components is the driver that drains ExecutionUpdate into
     // the active Execute component.
@@ -901,5 +904,230 @@ fn test_app_update_drains_execution_update_into_execute() {
     assert!(
         app.ctx.toast.is_none(),
         "toast tick must still run alongside the execute drain in update_components"
+    );
+}
+
+// --- Target selection with several groups (groups are listed by name) ---
+
+fn top_component<T: 'static>(app: &App) -> &T {
+    app.component_stack
+        .last()
+        .unwrap()
+        .as_any()
+        .downcast_ref()
+        .unwrap()
+}
+
+#[test]
+fn test_unstow_target_enter_opens_highlighted_group() {
+    let (mut app, tmp) = make_two_group_app();
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "UnstowTargetSelect");
+
+    // "config" sorts before "home", so it is the first row the user sees.
+    app.component_dispatch(enter_key());
+    let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
+    assert_eq!(browse.group_name, "config");
+    assert_eq!(
+        browse.browser.path,
+        andre_core::path::resolve_path("~/.config", tmp.path(), tmp.path())
+    );
+}
+
+#[test]
+fn test_unstow_target_second_row_opens_second_group() {
+    let (mut app, tmp) = make_two_group_app();
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
+    assert_eq!(browse.group_name, "home");
+    assert_eq!(
+        browse.browser.path,
+        andre_core::path::resolve_path("~", tmp.path(), tmp.path())
+    );
+}
+
+#[test]
+fn test_adopt_target_enter_opens_highlighted_group() {
+    let (mut app, tmp) = make_two_group_app();
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "AdoptTargetSelect");
+
+    app.component_dispatch(enter_key());
+    let select: &andre::components::adopt::AdoptFileSelectComponent = top_component(&app);
+    assert_eq!(select.group_name, "config");
+    assert_eq!(
+        select.browser.path,
+        andre_core::path::resolve_path("~/.config", tmp.path(), tmp.path())
+    );
+}
+
+#[test]
+fn test_adopt_target_second_row_opens_second_group() {
+    let (mut app, tmp) = make_two_group_app();
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    let select: &andre::components::adopt::AdoptFileSelectComponent = top_component(&app);
+    assert_eq!(select.group_name, "home");
+    assert_eq!(
+        select.browser.path,
+        andre_core::path::resolve_path("~", tmp.path(), tmp.path())
+    );
+}
+
+/// Save the open Settings screen (Save row) and reload the config file from disk.
+fn save_and_reload(app: &mut App) -> andre_core::Config {
+    settings_mut(app).cursor = 12;
+    app.component_dispatch(enter_key());
+    andre_core::Config::load(&app.ctx.config_path).unwrap()
+}
+
+#[test]
+fn test_group_ignore_add_then_remove_persists_on_save() {
+    use andre::components::settings::GroupDialog;
+
+    let (mut app, _tmp) = make_test_app();
+    push_component(&mut app, "Settings");
+    settings_mut(&mut app).dialog = Some(GroupDialog::IgnoreManage {
+        group: Some("home".into()),
+        cursor: 0,
+    });
+
+    // Add "*.log" (add row is 0 while the list is empty), then "tmp" (add row is 1).
+    app.component_dispatch(enter_key());
+    for c in "*.log".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    app.component_dispatch(enter_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    for c in "tmp".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    app.component_dispatch(enter_key());
+
+    // Remove the first pattern with 'r' on row 0.
+    app.component_dispatch(key_char('r'));
+    settings_mut(&mut app).dialog = None;
+
+    let saved = save_and_reload(&mut app);
+    assert_eq!(
+        saved.groups["home"].ignore.as_deref(),
+        Some(&["tmp".to_string()][..])
+    );
+}
+
+#[test]
+fn test_removing_last_group_ignore_clears_it_on_save() {
+    use andre::components::settings::GroupDialog;
+
+    let (mut app, _tmp) = make_test_app();
+    push_component(&mut app, "Settings");
+    settings_mut(&mut app).dialog = Some(GroupDialog::IgnoreManage {
+        group: Some("home".into()),
+        cursor: 0,
+    });
+    app.component_dispatch(enter_key());
+    for c in "*.log".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    app.component_dispatch(enter_key());
+    app.component_dispatch(key_char('r'));
+    settings_mut(&mut app).dialog = None;
+
+    let saved = save_and_reload(&mut app);
+    assert_eq!(saved.groups["home"].ignore, None);
+}
+
+#[test]
+fn test_global_ignore_add_persists_on_save() {
+    use andre::components::settings::GroupDialog;
+
+    let (mut app, _tmp) = make_test_app();
+    push_component(&mut app, "Settings");
+    settings_mut(&mut app).dialog = Some(GroupDialog::IgnoreManage {
+        group: None,
+        cursor: 0,
+    });
+    app.component_dispatch(enter_key());
+    for c in "node_modules".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    app.component_dispatch(enter_key());
+    settings_mut(&mut app).dialog = None;
+
+    let saved = save_and_reload(&mut app);
+    assert_eq!(saved.global_ignore(), vec!["node_modules".to_string()]);
+}
+
+#[test]
+fn test_edit_group_target_from_browser_persists_on_save() {
+    use andre::components::settings::{GroupDialog, GroupEditField};
+
+    let (mut app, tmp) = make_test_app();
+    push_component(&mut app, "Settings");
+    let browse = tmp.path().join("browse");
+    std::fs::create_dir_all(browse.join("only")).unwrap();
+    settings_mut(&mut app).dialog = Some(GroupDialog::EditBrowse {
+        group: "home".into(),
+        field: GroupEditField::Target,
+        browser: andre::components::browser::Browser::open(
+            browse.clone(),
+            andre::components::browser::dir_entries,
+        ),
+    });
+    app.component_dispatch(enter_key());
+
+    let saved = save_and_reload(&mut app);
+    assert_eq!(
+        saved.groups["home"].target,
+        browse.join("only").to_string_lossy()
+    );
+}
+
+/// The whole screen as text, one line per buffer row.
+fn screen_text(app: &mut App) -> String {
+    app.set_terminal_size(120, 24);
+    let mut terminal = Terminal::new(TestBackend::new(120, 24)).unwrap();
+    terminal.draw(|f| andre::ui::render(app, f)).unwrap();
+    let buf = terminal.backend().buffer();
+    (0..buf.area().height)
+        .map(|y| {
+            (0..buf.area().width)
+                .map(|x| buf.get(x, y).symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn test_review_stow_preview_follows_dry_run_toggle() {
+    // The review list is built once, so a global flag toggled while it is open
+    // must rebuild the stow command preview before the next paint.
+    let (mut app, _tmp) = make_test_app();
+    app.ctx.core.config.global.engine = Some("stow".into());
+    let selected = HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+    app.component_stack
+        .push(Box::new(ConfirmComponent::new(selected, &app.ctx)));
+    app.update_components();
+    assert!(
+        !screen_text(&mut app).contains(" -n "),
+        "dry-run is off, so the preview has no -n"
+    );
+
+    app.component_dispatch(key_char('d'));
+    app.update_components();
+    assert!(
+        screen_text(&mut app).contains(" -n "),
+        "dry-run toggled on the review screen must show in the stow preview"
     );
 }

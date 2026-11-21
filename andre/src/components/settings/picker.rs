@@ -10,24 +10,11 @@ pub fn open_picker(
     current_value: &str,
 ) {
     let options: Vec<String> = match field {
-        PickerField::Action => vec!["stow", "restow", "unstow"]
-            .into_iter()
-            .map(String::from)
+        PickerField::Action => StowAction::ALL
+            .iter()
+            .map(|a| a.as_str().to_string())
             .collect(),
-        PickerField::Theme => vec![
-            "default",
-            "dracula",
-            "catppuccin mocha",
-            "catppuccin latte",
-            "catppuccin frappe",
-            "catppuccin macchiato",
-            "nord",
-            "gruvbox",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect(),
-        _ => vec!["ON".to_string(), "OFF".to_string()],
+        PickerField::Theme => Theme::ALL.iter().map(|t| t.name().to_string()).collect(),
     };
 
     let selected_index = options
@@ -61,7 +48,7 @@ pub fn handle_picker_key(component: &mut SettingsComponent, key: &KeyEvent) -> b
             match field {
                 PickerField::Action => {
                     if let Some(a) = StowAction::from_str(&selected) {
-                        pending.action = a;
+                        pending.flags.action = a;
                     }
                 }
                 PickerField::Theme => {
@@ -69,13 +56,97 @@ pub fn handle_picker_key(component: &mut SettingsComponent, key: &KeyEvent) -> b
                         pending.theme = t;
                     }
                 }
-                PickerField::DryRun => pending.dry_run = selected == "ON",
-                PickerField::NoFolding => pending.no_folding = selected == "ON",
-                PickerField::Adopt => pending.adopt = selected == "ON",
-                PickerField::Dotfiles => pending.dotfiles = selected == "ON",
             }
         }
         return true;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use andre_core::{Config, StowAction, StowFlags, Theme};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use super::*;
+    use crate::components::settings::pending::PendingSettings;
+
+    fn component_with_pending() -> SettingsComponent {
+        SettingsComponent {
+            pending: Some(PendingSettings {
+                config: Config::default_empty(),
+                flags: StowFlags::default(),
+                theme: Theme::Default,
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn enter() -> KeyEvent {
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn test_theme_picker_lists_every_theme_by_name() {
+        let mut component = component_with_pending();
+        open_picker(&mut component, "Theme", PickerField::Theme, "default");
+        let picker = component.picker.as_ref().unwrap();
+        let expected: Vec<&str> = Theme::ALL.iter().map(|t| t.name()).collect();
+        let options: Vec<&str> = picker.options.iter().map(String::as_str).collect();
+        assert_eq!(options, expected);
+    }
+
+    #[test]
+    fn test_theme_picker_preselects_current_theme() {
+        for theme in Theme::ALL {
+            let mut component = component_with_pending();
+            open_picker(&mut component, "Theme", PickerField::Theme, theme.name());
+            let picker = component.picker.as_ref().unwrap();
+            assert_eq!(
+                picker.options[picker.selected_index],
+                theme.name(),
+                "picker did not preselect {}",
+                theme.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_theme_picker_enter_applies_every_theme() {
+        for theme in Theme::ALL {
+            let mut component = component_with_pending();
+            open_picker(&mut component, "Theme", PickerField::Theme, "default");
+            let picker = component.picker.as_mut().unwrap();
+            picker.selected_index = Theme::ALL.iter().position(|t| *t == theme).unwrap();
+
+            assert!(handle_picker_key(&mut component, &enter()));
+
+            let pending = component.pending.as_ref().unwrap();
+            assert_eq!(
+                pending.theme,
+                theme,
+                "selecting {} was ignored",
+                theme.name()
+            );
+            assert!(component.config_dirty);
+        }
+    }
+
+    #[test]
+    fn test_action_picker_round_trips_every_action() {
+        for action in StowAction::ALL {
+            let mut component = component_with_pending();
+            open_picker(
+                &mut component,
+                "Action",
+                PickerField::Action,
+                action.as_str(),
+            );
+            let picker = component.picker.as_ref().unwrap();
+            assert_eq!(picker.options[picker.selected_index], action.as_str());
+
+            assert!(handle_picker_key(&mut component, &enter()));
+            assert_eq!(component.pending.as_ref().unwrap().flags.action, action);
+        }
+    }
 }

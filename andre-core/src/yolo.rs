@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{
-    discover_packages, engine::LinkEngine, path::resolve_path, Config, LinkOp, StowAction,
-};
+use crate::{discover_packages, engine::LinkEngine, path::resolve_path, Config, LinkOp, StowFlags};
 
 /// A single group-level stow job: run stow for all packages in one group.
 #[derive(Debug, Clone)]
@@ -12,14 +10,6 @@ pub struct StowJob {
     pub target: PathBuf,
     pub packages: Vec<String>,
     pub ignores: Vec<String>,
-}
-
-/// Aggregate result from running a set of jobs.
-#[derive(Debug, Clone, Default)]
-pub struct YoloResult {
-    pub total: usize,
-    pub succeeded: usize,
-    pub failed: usize,
 }
 
 /// Build a list of stow jobs from config, skipping groups with missing sources.
@@ -52,17 +42,7 @@ pub fn build_plan(config: &Config, config_dir: &Path, home_dir: &Path) -> Vec<St
 
 /// Execute a single group-level job via the given engine, one package per op.
 /// Returns `(succeeded, failed)` counts.
-#[allow(clippy::too_many_arguments)]
-pub fn run_job(
-    job: &StowJob,
-    engine: &dyn LinkEngine,
-    action: StowAction,
-    verbosity: u8,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
-) -> (usize, usize) {
+pub fn run_job(job: &StowJob, engine: &dyn LinkEngine, flags: &StowFlags) -> (usize, usize) {
     let mut ok = 0;
     let mut fail = 0;
     for pkg in &job.packages {
@@ -71,12 +51,7 @@ pub fn run_job(
             package: pkg.clone(),
             source: job.source.clone(),
             target: job.target.clone(),
-            action,
-            dry_run,
-            no_folding,
-            adopt,
-            dotfiles,
-            verbosity,
+            flags: *flags,
             ignores: job.ignores.clone(),
         };
         match engine.apply(&op) {
@@ -87,34 +62,9 @@ pub fn run_job(
     (ok, fail)
 }
 
-/// Execute all jobs via the engine, collecting aggregate results.
-#[allow(clippy::too_many_arguments)]
-pub fn run_all(
-    jobs: &[StowJob],
-    engine: &dyn LinkEngine,
-    action: StowAction,
-    verbosity: u8,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
-) -> YoloResult {
-    let mut result = YoloResult::default();
-    for job in jobs {
-        result.total += job.packages.len();
-        let (ok, fail) = run_job(
-            job, engine, action, verbosity, dry_run, no_folding, adopt, dotfiles,
-        );
-        result.succeeded += ok;
-        result.failed += fail;
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::StowAction;
     use std::fs;
 
     #[test]
@@ -176,12 +126,10 @@ mod tests {
         let (ok, fail) = run_job(
             &job,
             &engine,
-            StowAction::Stow,
-            0,
-            true,
-            false,
-            false,
-            false,
+            &StowFlags {
+                dry_run: true,
+                ..StowFlags::default()
+            },
         );
         assert_eq!(ok, 1);
         assert_eq!(fail, 0);
@@ -211,12 +159,10 @@ mod tests {
         let (ok, fail) = run_job(
             &job,
             &engine,
-            StowAction::Stow,
-            0,
-            false,
-            false,
-            false,
-            false,
+            &StowFlags {
+                dry_run: false,
+                ..StowFlags::default()
+            },
         );
         assert_eq!((ok, fail), (1, 0));
         assert!(

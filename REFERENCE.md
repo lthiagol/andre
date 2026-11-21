@@ -301,7 +301,7 @@ groups:
 
 | Key | Action |
 |:---|:---|
-| `q` or `Ctrl+C` | Quit / Cancel execution (first press = graceful, second = force) |
+| `q` or `Ctrl+C` | Quit |
 
 All global shortcuts (`v`/`d`/`n`/`a`/`t`/`o`/`Ctrl+C`) work from **any screen**.
 
@@ -329,7 +329,7 @@ andre/
 │   └── tests/
 │       ├── e2e.rs               # E2E: --yolo binary with fixtures
 │       ├── integration.rs       # Integration: real stow + temp dirs
-│       └── helpers.rs           # TestEnv helper for E2E
+│       └── helpers/mod.rs       # TestEnv helper for E2E
 │
 ├── andre/                    # TUI binary tests
 │   ├── src/                     # Unit tests (e.g., execute.rs)
@@ -340,7 +340,7 @@ andre/
 │       ├── config_persistence.rs# Save/load/edit round-trips
 │       ├── status_cache.rs      # Cache behavior after stow operations
 │       ├── tui_e2e.rs           # Full TUI flow with tokio runtime
-│       └── helpers.rs           # Shared test utilities
+│       └── helpers/mod.rs       # Shared test utilities
 │
 └── tests/                       # Non-code test assets
     ├── e2e/                     # 14 fixture scenarios

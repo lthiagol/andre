@@ -1,13 +1,9 @@
-use std::path::PathBuf;
+use crate::components::browser::Browser;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickerField {
     Action,
     Theme,
-    DryRun,
-    NoFolding,
-    Adopt,
-    Dotfiles,
 }
 
 #[derive(Debug, Clone)]
@@ -22,7 +18,6 @@ pub struct PickerState {
 pub enum GroupEditField {
     Source,
     Target,
-    Ignore,
 }
 
 #[derive(Debug, Clone)]
@@ -36,8 +31,7 @@ pub enum GroupDialog {
     AddBrowse {
         name: String,
         source: Option<String>,
-        path: PathBuf,
-        cursor: usize,
+        browser: Browser,
     },
     RemoveSelect {
         cursor: usize,
@@ -53,13 +47,15 @@ pub enum GroupDialog {
         cursor: usize,
     },
     EditName {
-        group: String,
+        /// The group's current name, kept so Esc can return to it and Enter can rename it.
+        original: String,
+        /// The name being typed.
+        name: String,
     },
     EditBrowse {
         group: String,
         field: GroupEditField,
-        path: PathBuf,
-        cursor: usize,
+        browser: Browser,
     },
     IgnoreManage {
         group: Option<String>,

@@ -1,4 +1,3 @@
-mod adopt_browse;
 mod adopt_confirm;
 mod adopt_name;
 mod adopt_preview;
@@ -13,28 +12,24 @@ mod settings;
 mod status;
 mod status_bar;
 mod toast;
-mod unstow_browse;
 mod unstow_confirm;
 pub mod widgets;
 
-pub use adopt_browse::render_adopt_browse;
 pub use adopt_confirm::render_adopt_confirm;
 pub use adopt_name::render_adopt_name;
 pub use adopt_preview::render_adopt_preview;
 pub use banner::render_banner;
 pub use block::themed_panel;
-pub use confirm::render_confirm;
+pub use confirm::{render_confirm, ConfirmRow};
 pub use execute::{execute_list_len, render_execute, GAUGE_ROWS};
 pub use footer::render_footer;
 pub use help::render_help;
-pub use packages::build_flat_items;
 pub use packages::render_package_select;
 pub use settings::render_settings;
-pub use status::render_status;
+pub use status::{render_status, StatusRow};
 pub use status_bar::{breadcrumb_label, format_breadcrumb, render_status_bar};
 pub use toast::render_toast;
-pub use unstow_browse::render_unstow_browse;
-pub use unstow_confirm::render_unstow_confirm;
+pub use unstow_confirm::{render_unstow_confirm, UnstowLink};
 
 use crate::app::App;
 use crate::theme::ThemeColors;
@@ -96,12 +91,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         frame,
         v[2],
         &colors,
-        app.ctx.core.verbosity as usize,
-        app.ctx.core.dry_run,
-        app.ctx.core.no_folding,
-        app.ctx.core.adopt,
-        app.ctx.core.dotfiles,
-        app.ctx.core.effective_action().as_str(),
+        &app.ctx.core.flags,
         app.ctx.core.theme.name(),
         app.ctx.debug,
     );

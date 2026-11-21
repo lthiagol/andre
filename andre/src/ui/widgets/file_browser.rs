@@ -17,7 +17,6 @@ pub struct FileBrowserWidget<'a> {
     pub title: &'a str,
     pub selected_files: Option<&'a [std::path::PathBuf]>,
     pub is_unstow: bool,
-    pub dirs_only: bool,
     pub entries: &'a [andre_core::TargetEntry],
     pub symlink_targets: &'a [(String, String)],
 }
@@ -36,7 +35,6 @@ impl<'a> FileBrowserWidget<'a> {
             title,
             selected_files: None,
             is_unstow: false,
-            dirs_only: false,
             entries: &[],
             symlink_targets: &[],
         }
@@ -49,11 +47,6 @@ impl<'a> FileBrowserWidget<'a> {
 
     pub fn unstow_mode(mut self) -> Self {
         self.is_unstow = true;
-        self
-    }
-
-    pub fn dirs_only(mut self) -> Self {
-        self.dirs_only = true;
         self
     }
 
@@ -72,13 +65,8 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
     type State = ListState;
 
     fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer, state: &mut Self::State) {
-        let entries: &[andre_core::TargetEntry] = if self.dirs_only && self.entries.is_empty() {
-            // Legacy fallback for callers that haven't been migrated to cache entries.
-            // New code should always pass entries via with_entries().
-            &andre_core::adopt::list_target_dirs(self.path).unwrap_or_default()
-        } else {
-            self.entries
-        };
+        // Entries come from the caller's cache (`with_entries`); painting never reads the disk.
+        let entries = self.entries;
 
         let legend_height: u16 = if area.height > 10 { 6 } else { 0 };
 

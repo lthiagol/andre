@@ -56,9 +56,9 @@ cargo test -p andre --test interaction
 
 | Target | Runner | When to use |
 |--------|--------|-------------|
-| `make test-unit` | nextest (filter `kind(lib) | kind(bin)`) or `cargo test --lib --bins --all-features` | Fast feedback loop during development. Lib + bin unit tests only (131 tests). No filesystem or process side effects beyond temp dirs. |
+| `make test-unit` | nextest (filter `kind(lib) | kind(bin)`) or `cargo test --lib --bins --all-features` | Fast feedback loop during development. Lib + bin unit tests only. No filesystem or process side effects beyond temp dirs. |
 | `make test-tui` | nextest (filter `binary(/^(interaction|render|status_cache|config_discovery|config_persistence|smoke)/)`) or `cargo test --test ...` | Component-level TUI behavior (keyboard dispatch, render snapshots, config persistence) plus process-level smoke tests (spawn the `andre` binary). No real stow required. |
-| `make test-e2e` | nextest (filter `binary(/^(tui_e2e|e2e|integration|helpers)/)`) or `cargo test --test ...` | Real stow binary + real TUI runtime + andre-core test infrastructure (e.g. `helpers` test that needs stow on PATH). Requires GNU `stow` on `PATH`. |
+| `make test-e2e` | nextest (filter `binary(/^(tui_e2e|e2e|integration)/)`) or `cargo test --test ...` | Real stow binary + real TUI runtime + andre-core test infrastructure (e.g. `integration` tests that need stow on PATH). Requires GNU `stow` on `PATH`. |
 | `make test` | All three above + lint | Pre-commit / pre-push gate. |
 | `make ci` | Same as `make test` plus `--locked` and `--profile ci` | What CI runs. |
 
@@ -120,7 +120,7 @@ Borrow seams from mature TUIs (e.g. herdr / ratatui event-driven templates), not
 | `andre-core` | andre | business logic (workspace path) |
 | `ratatui` | andre | TUI framework (widgets, layout, render) |
 | `crossterm` | andre | terminal raw mode + key/resize event input |
-| `tokio` (`process`,`rt-multi-thread`,`time`,`sync`) | andre | async stow executor (`AsyncExecutor`) |
+| `tokio` (`process`,`rt-multi-thread`,`time`,`sync`) | andre | async stow execution (`execute::spawn_execution`) |
 | `unicode-width` | andre | East-Asian/wide-char display width for elision + layout |
 | `tempfile` *(dev)* | both | hermetic temp dirs in tests |
 
@@ -194,7 +194,7 @@ Always via `resolve_path(path, config_dir, home_dir)` from `andre-core/src/path.
 | E2E | `andre-core/tests/e2e.rs` | `andre --yolo` binary with fixture scenarios |
 | Smoke | `andre/tests/smoke.rs` | Process-level binary checks (`andre --help`, `check_dependencies.sh`) |
 
-Test pattern: `make_test_app()` or `App::new(config_path, false)` + `push_component()` + `component_dispatch(key)`. Inspect state via `as_any().downcast_ref()`. Smoke tests use `env!("CARGO_BIN_EXE_andre")` to spawn the built binary and assert stdout/exit.
+Test pattern: `make_test_app()` or `App::new(config_path)` + `push_component()` + `component_dispatch(key)`. Inspect state via `as_any().downcast_ref()`. Smoke tests use `env!("CARGO_BIN_EXE_andre")` to spawn the built binary and assert stdout/exit.
 
 ### Hermetic test rules
 
@@ -239,7 +239,7 @@ the build on regression, so any new untested code needs a test before it can
 ship.
 
 Because the gate collects coverage by running the whole test suite, it has two
-preconditions: GNU `stow` must be on `PATH` (the `e2e` / `helpers` binaries
+preconditions: GNU `stow` must be on `PATH` (the `e2e` / `integration` binaries
 shell out to it), and the whole suite must pass.
 
 ---
@@ -271,6 +271,6 @@ PYEOF
 | Stow command building | `andre-core/src/stow.rs` |
 | Async executor | `andre/src/execute.rs` |
 | File browser widget | `andre/src/ui/widgets/file_browser.rs` |
-| Test helpers (key events, app setup) | `andre/tests/helpers.rs` |
+| Test helpers (key events, app setup) | `andre/tests/helpers/mod.rs` |
 | Open work items | `todo.txt` |
 | Historical record of shipped changes | `CHANGELOG.md` |

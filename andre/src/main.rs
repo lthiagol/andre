@@ -71,12 +71,7 @@ fn take_value(
     iter: &mut std::vec::IntoIter<String>,
     flag: &str,
 ) -> std::result::Result<PathBuf, ParseError> {
-    match iter.next() {
-        Some(v) if !v.is_empty() => Ok(PathBuf::from(v)),
-        _ => Err(ParseError::Usage(format!(
-            "a value is required for '{flag}' but none was supplied"
-        ))),
-    }
+    path_value(flag, &iter.next().unwrap_or_default())
 }
 
 fn path_value(flag: &str, raw: &str) -> std::result::Result<PathBuf, ParseError> {
@@ -167,13 +162,8 @@ fn run_yolo(app: &App) -> Result<()> {
         );
     }
 
-    let engine = engine_for(&app.ctx.core.config.effective_engine());
-    let action = app.ctx.core.action;
-    let verbosity = app.ctx.core.verbosity;
-    let dry_run = app.ctx.core.dry_run;
-    let no_folding = app.ctx.core.no_folding;
-    let adopt = app.ctx.core.adopt;
-    let dotfiles = app.ctx.core.dotfiles;
+    let engine = engine_for(app.ctx.core.config.effective_engine());
+    let flags = app.ctx.core.flags;
 
     let mut total = 0usize;
     let mut succeeded = 0usize;
@@ -182,16 +172,7 @@ fn run_yolo(app: &App) -> Result<()> {
     for job in &jobs {
         let count = job.packages.len();
         total += count;
-        let (ok, fail) = yolo::run_job(
-            job,
-            engine.as_ref(),
-            action,
-            verbosity,
-            dry_run,
-            no_folding,
-            adopt,
-            dotfiles,
-        );
+        let (ok, fail) = yolo::run_job(job, engine.as_ref(), &flags);
         if fail == 0 {
             println!("[{}] {} package(s): OK", job.group, ok);
         } else {
@@ -273,7 +254,7 @@ fn try_main() -> Result<()> {
             None
         }
     });
-    let app = match App::with_debug(config_path.clone(), args.yolo, args.debug, log_file, None) {
+    let app = match App::with_debug(config_path.clone(), args.debug, log_file, None) {
         Ok(app) => app,
         Err(e) => {
             eprintln!("Error loading config {}: {}", config_path.display(), e);
@@ -375,7 +356,7 @@ mod cli_tests {
     use super::*;
 
     fn s(args: &[&str]) -> Vec<String> {
-        args.iter().map(|a| a.to_string()).collect()
+        args.iter().map(ToString::to_string).collect()
     }
 
     #[test]

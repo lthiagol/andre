@@ -3,40 +3,54 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{layout::Rect, widgets::ListState, Frame};
 
+use crate::components::browser::{all_entries, Browser};
 use crate::components::{AppContext, Component, Transition};
+use crate::input::{step_cursor, Input};
 use crate::theme::ThemeColors;
 use crate::ui::widgets::file_browser::FileBrowserWidget;
 
 pub struct AdoptFileSelectComponent {
     pub group_name: String,
-    pub browse_path: PathBuf,
-    pub cursor: usize,
+    pub browser: Browser,
     pub selected_files: Vec<PathBuf>,
-    cached_entries: Option<Vec<andre_core::TargetEntry>>,
-    cached_path: PathBuf,
 }
 
 impl AdoptFileSelectComponent {
     pub fn new(group_name: String) -> Self {
-        Self {
-            group_name,
-            browse_path: PathBuf::from("."),
-            cursor: 0,
-            selected_files: Vec::new(),
-            cached_entries: None,
-            cached_path: PathBuf::new(),
-        }
+        Self::with_path(group_name, PathBuf::from("."))
     }
 
     pub fn with_path(group_name: String, browse_path: PathBuf) -> Self {
         Self {
             group_name,
-            browse_path,
-            cursor: 0,
+            browser: Browser::new(browse_path, all_entries),
             selected_files: Vec::new(),
-            cached_entries: None,
-            cached_path: PathBuf::new(),
         }
+    }
+
+    /// Up/Down move the cursor, skipping entries that cannot be adopted (symlinks, artifacts).
+    fn move_cursor(&mut self, key: &KeyEvent) -> bool {
+        let len = self.browser.entries().len();
+        let mut cursor = self.browser.cursor;
+        if !Input::handle_list_navigation(key, &mut cursor, len) {
+            return false;
+        }
+
+        // Keep stepping in the same direction past rows that cannot be adopted.
+        let down = Input::is_down(key);
+        for _ in 0..len {
+            if self
+                .browser
+                .entries()
+                .get(cursor)
+                .is_some_and(andre_core::TargetEntry::is_selectable)
+            {
+                break;
+            }
+            cursor = step_cursor(cursor, len, down);
+        }
+        self.browser.cursor = cursor;
+        true
     }
 }
 
@@ -54,55 +68,28 @@ impl Component for AdoptFileSelectComponent {
     }
 
     fn update(&mut self, _ctx: &mut AppContext) -> Transition {
-        if self.cached_path != self.browse_path || self.cached_entries.is_none() {
-            self.cached_entries =
-                Some(andre_core::adopt::list_target_entries(&self.browse_path).unwrap_or_default());
-            self.cached_path = self.browse_path.clone();
-        }
+        self.browser.refresh();
         Transition::None
     }
 
     fn handle_key(&mut self, key: KeyEvent, _ctx: &mut AppContext) -> Transition {
-        let entries = self.cached_entries.as_deref().unwrap_or_default();
-        let len = entries.len();
-        let mut cursor = self.cursor;
-
-        if crate::input::Input::handle_list_navigation(&key, &mut cursor, len) {
-            // Skip non-selectable entries (symlinks, artifacts)
-            for _ in 0..len {
-                if let Some(entry) = entries.get(cursor) {
-                    if entry.is_selectable() {
-                        break;
-                    }
-                }
-                if crate::input::Input::is_up(&key) || key.code == KeyCode::Char('k') {
-                    cursor = (cursor + len - 1) % len;
-                } else {
-                    cursor = (cursor + 1) % len;
-                }
-            }
-            self.cursor = cursor;
+        if self.move_cursor(&key) {
             return Transition::None;
         }
 
-        if key.code == KeyCode::Right {
-            if let Some(entry) = entries.get(cursor) {
-                if entry.is_dir {
-                    self.browse_path.push(&entry.name);
-                    cursor = 0;
+        match key.code {
+            KeyCode::Right => self.browser.enter_dir(),
+            KeyCode::Enter | KeyCode::Tab => {
+                if !self.selected_files.is_empty() {
+                    return Transition::Push(Box::new(super::AdoptConfirmComponent {
+                        group_name: self.group_name.clone(),
+                        selected_files: self.selected_files.clone(),
+                    }));
                 }
             }
-        } else if key.code == KeyCode::Enter || key.code == KeyCode::Tab {
-            if !self.selected_files.is_empty() {
-                return Transition::Push(Box::new(super::AdoptConfirmComponent {
-                    group_name: self.group_name.clone(),
-                    selected_files: self.selected_files.clone(),
-                }));
-            }
-        } else if key.code == KeyCode::Char(' ') {
-            if let Some(entry) = entries.get(cursor) {
-                if entry.is_selectable() {
-                    let path = self.browse_path.join(&entry.name);
+            KeyCode::Char(' ') => {
+                if let Some(entry) = self.browser.current().filter(|e| e.is_selectable()) {
+                    let path = self.browser.path.join(&entry.name);
                     if self.selected_files.contains(&path) {
                         self.selected_files.retain(|p| p != &path);
                     } else {
@@ -110,16 +97,10 @@ impl Component for AdoptFileSelectComponent {
                     }
                 }
             }
-        } else if key.code == KeyCode::Left || key.code == KeyCode::Backspace {
-            if self.browse_path.parent().is_some() {
-                self.browse_path.pop();
-                cursor = 0;
-            }
-        } else if key.code == KeyCode::Esc {
-            return Transition::Pop;
+            KeyCode::Left | KeyCode::Backspace => self.browser.go_up(),
+            KeyCode::Esc => return Transition::Pop,
+            _ => {}
         }
-
-        self.cursor = cursor;
         Transition::None
     }
 
@@ -128,12 +109,12 @@ impl Component for AdoptFileSelectComponent {
         let mut state = ListState::default();
         let widget = FileBrowserWidget::new(
             &colors,
-            &self.browse_path,
-            self.cursor,
+            &self.browser.path,
+            self.browser.cursor,
             "Select Files to Adopt",
         )
         .with_selected(&self.selected_files)
-        .with_entries(self.cached_entries.as_deref().unwrap_or_default(), &[]);
+        .with_entries(self.browser.entries(), &[]);
         frame.render_stateful_widget(widget, area, &mut state);
     }
 }
@@ -152,7 +133,7 @@ mod tests {
 
         let mut component =
             AdoptFileSelectComponent::with_path("test".to_string(), tmp.path().join("subdir"));
-        component.cursor = 1;
+        component.browser.cursor = 1;
         (component, tmp)
     }
 
@@ -164,10 +145,7 @@ mod tests {
     fn test_cursor_resets_on_navigate_up() {
         let (mut component, _tmp) = make_test_component();
         let mut ctx = crate::components::AppContext {
-            core: andre_core::AppState::from_config(
-                andre_core::config::Config::default_empty(),
-                false,
-            ),
+            core: andre_core::AppState::from_config(andre_core::config::Config::default_empty()),
             config_dir: std::path::PathBuf::from("."),
             config_path: std::path::PathBuf::from("."),
             home_dir: std::path::PathBuf::from("."),
@@ -182,11 +160,11 @@ mod tests {
         };
 
         component.update(&mut ctx);
-        assert_eq!(component.cursor, 1);
+        assert_eq!(component.browser.cursor, 1);
 
         let result = component.handle_key(left_key(), &mut ctx);
         assert!(matches!(result, Transition::None));
-        assert_eq!(component.cursor, 0);
-        assert_eq!(component.browse_path, _tmp.path());
+        assert_eq!(component.browser.cursor, 0);
+        assert_eq!(component.browser.path, _tmp.path());
     }
 }

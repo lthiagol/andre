@@ -1,17 +1,18 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::engine::EngineKind;
 use crate::error::{Error, Result};
 use crate::path::resolve_path;
-use crate::{StowAction, Theme};
+use crate::state::{StowAction, StowFlags, Theme, MAX_VERBOSITY};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub global: GlobalSettings,
-    pub groups: HashMap<String, Group>,
+    pub groups: BTreeMap<String, Group>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -63,7 +64,7 @@ impl fmt::Display for ConfigWarning {
                 write!(f, "unknown engine '{}', using native", e)
             }
             ConfigWarning::VerbosityOutOfRange(v) => {
-                write!(f, "verbosity {} is out of range (0-5)", v)
+                write!(f, "verbosity {} is out of range (0-{})", v, MAX_VERBOSITY)
             }
             ConfigWarning::NoGroups => write!(f, "no groups defined in config"),
         }
@@ -79,7 +80,7 @@ impl Config {
                 ignore: None,
                 stow: None,
             },
-            groups: HashMap::new(),
+            groups: BTreeMap::new(),
         }
     }
 
@@ -97,7 +98,7 @@ impl Config {
         }
 
         if let Some(ref engine) = self.global.engine {
-            if !engine.eq_ignore_ascii_case("native") && !engine.eq_ignore_ascii_case("stow") {
+            if EngineKind::from_str(engine).is_none() {
                 warnings.push(ConfigWarning::UnknownEngine(engine.clone()));
             }
         }
@@ -109,7 +110,7 @@ impl Config {
                 }
             }
             if let Some(v) = stow.verbosity {
-                if v > 5 {
+                if v > MAX_VERBOSITY {
                     warnings.push(ConfigWarning::VerbosityOutOfRange(v));
                 }
             }
@@ -146,8 +147,7 @@ impl Config {
         config_dir: &Path,
         home_dir: &Path,
     ) -> Option<PathBuf> {
-        let group = self.groups.get(name)?;
-        Some(resolve_path(&group.source, config_dir, home_dir))
+        self.resolve_group_path(name, config_dir, home_dir, |group| &group.source)
     }
 
     /// Returns the source path only if the group exists AND the resolved path exists on disk.
@@ -157,12 +157,8 @@ impl Config {
         config_dir: &Path,
         home_dir: &Path,
     ) -> Option<PathBuf> {
-        let path = self.resolve_group_source(name, config_dir, home_dir)?;
-        if path.exists() {
-            Some(path)
-        } else {
-            None
-        }
+        self.resolve_group_source(name, config_dir, home_dir)
+            .filter(|path| path.exists())
     }
 
     /// Returns the resolved target path for a group, or `None` if the group doesn't exist.
@@ -173,8 +169,7 @@ impl Config {
         config_dir: &Path,
         home_dir: &Path,
     ) -> Option<PathBuf> {
-        let group = self.groups.get(name)?;
-        Some(resolve_path(&group.target, config_dir, home_dir))
+        self.resolve_group_path(name, config_dir, home_dir, |group| &group.target)
     }
 
     /// Returns the target path only if the group exists AND the resolved path exists on disk.
@@ -184,69 +179,47 @@ impl Config {
         config_dir: &Path,
         home_dir: &Path,
     ) -> Option<PathBuf> {
-        let path = self.resolve_group_target(name, config_dir, home_dir)?;
-        if path.exists() {
-            Some(path)
-        } else {
-            None
+        self.resolve_group_target(name, config_dir, home_dir)
+            .filter(|path| path.exists())
+    }
+
+    fn resolve_group_path(
+        &self,
+        name: &str,
+        config_dir: &Path,
+        home_dir: &Path,
+        field: fn(&Group) -> &str,
+    ) -> Option<PathBuf> {
+        let group = self.groups.get(name)?;
+        Some(resolve_path(field(group), config_dir, home_dir))
+    }
+
+    /// The stow options from `global.stow`. Missing or unrecognised values fall back to
+    /// the defaults (`StowFlags::default()`), which is also how `validate` warns about them.
+    pub fn stow_flags(&self) -> StowFlags {
+        let stow = self.global.stow.clone().unwrap_or_default();
+        StowFlags {
+            action: stow
+                .action
+                .as_deref()
+                .and_then(StowAction::from_str)
+                .unwrap_or_default(),
+            verbosity: stow.verbosity.unwrap_or_default(),
+            dry_run: stow.dry_run.unwrap_or_default(),
+            no_folding: stow.no_folding.unwrap_or_default(),
+            adopt: stow.adopt.unwrap_or_default(),
+            dotfiles: stow.dotfiles.unwrap_or_default(),
         }
     }
 
-    pub fn effective_verbosity(&self) -> u8 {
+    /// Resolved link engine. An unrecognised value falls back to `Native`
+    /// (a warning is emitted by `validate`).
+    pub fn effective_engine(&self) -> EngineKind {
         self.global
-            .stow
-            .as_ref()
-            .and_then(|s| s.verbosity)
-            .unwrap_or(0)
-    }
-
-    pub fn effective_dry_run(&self) -> bool {
-        self.global
-            .stow
-            .as_ref()
-            .and_then(|s| s.dry_run)
-            .unwrap_or(false)
-    }
-
-    pub fn effective_no_folding(&self) -> bool {
-        self.global
-            .stow
-            .as_ref()
-            .and_then(|s| s.no_folding)
-            .unwrap_or(false)
-    }
-
-    pub fn effective_adopt(&self) -> bool {
-        self.global
-            .stow
-            .as_ref()
-            .and_then(|s| s.adopt)
-            .unwrap_or(false)
-    }
-
-    pub fn effective_dotfiles(&self) -> bool {
-        self.global
-            .stow
-            .as_ref()
-            .and_then(|s| s.dotfiles)
-            .unwrap_or(false)
-    }
-
-    pub fn effective_action(&self) -> String {
-        self.global
-            .stow
-            .as_ref()
-            .and_then(|s| s.action.clone())
-            .unwrap_or_else(|| String::from("stow"))
-    }
-
-    /// Resolved link engine: "native" (default) or "stow". Case-insensitive;
-    /// an unrecognized value falls back to "native" (a warning is emitted by `validate`).
-    pub fn effective_engine(&self) -> String {
-        match self.global.engine.as_deref() {
-            Some(e) if e.eq_ignore_ascii_case("stow") => String::from("stow"),
-            _ => String::from("native"),
-        }
+            .engine
+            .as_deref()
+            .and_then(EngineKind::from_str)
+            .unwrap_or_default()
     }
 
     pub fn global_ignore(&self) -> Vec<String> {
@@ -279,28 +252,15 @@ impl Config {
         self.global.stow.get_or_insert_with(StowConfig::default)
     }
 
-    pub fn set_verbosity(&mut self, v: u8) {
-        self.ensure_stow().verbosity = Some(v);
-    }
-
-    pub fn set_dry_run(&mut self, b: bool) {
-        self.ensure_stow().dry_run = Some(b);
-    }
-
-    pub fn set_no_folding(&mut self, b: bool) {
-        self.ensure_stow().no_folding = Some(b);
-    }
-
-    pub fn set_adopt(&mut self, b: bool) {
-        self.ensure_stow().adopt = Some(b);
-    }
-
-    pub fn set_dotfiles(&mut self, b: bool) {
-        self.ensure_stow().dotfiles = Some(b);
-    }
-
-    pub fn set_action(&mut self, a: &str) {
-        self.ensure_stow().action = Some(a.to_string());
+    /// Writes every stow option to `global.stow`.
+    pub fn set_stow_flags(&mut self, flags: StowFlags) {
+        let stow = self.ensure_stow();
+        stow.verbosity = Some(flags.verbosity);
+        stow.dry_run = Some(flags.dry_run);
+        stow.no_folding = Some(flags.no_folding);
+        stow.adopt = Some(flags.adopt);
+        stow.dotfiles = Some(flags.dotfiles);
+        stow.action = Some(flags.action.as_str().to_string());
     }
 
     pub fn set_theme(&mut self, t: Option<String>) {
@@ -326,6 +286,24 @@ impl Config {
         self.groups.remove(name).is_some()
     }
 
+    /// Renames a group, keeping its source, target and ignores. Returns `false` when
+    /// `old` does not exist or `new` is already taken by a different group (nothing changes).
+    pub fn rename_group(&mut self, old: &str, new: &str) -> bool {
+        if old == new {
+            return self.groups.contains_key(old);
+        }
+        if self.groups.contains_key(new) {
+            return false;
+        }
+        match self.groups.remove(old) {
+            Some(group) => {
+                self.groups.insert(new.to_string(), group);
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn add_global_ignore(&mut self, pattern: String) {
         self.global
             .ignore
@@ -339,7 +317,7 @@ impl Config {
         }
     }
 
-    /// Sets per-group ignores. Returns `true` if the group existed.
+    /// Sets per-group ignores; an empty list clears them. Returns `true` if the group existed.
     pub fn set_group_ignore(&mut self, group_name: &str, ignores: Vec<String>) -> bool {
         if let Some(group) = self.groups.get_mut(group_name) {
             group.ignore = if ignores.is_empty() {
@@ -353,15 +331,25 @@ impl Config {
         }
     }
 
-    pub fn update_group_source(&mut self, group_name: &str, source: String) {
-        if let Some(group) = self.groups.get_mut(group_name) {
-            group.source = source;
+    /// Returns `true` if the group existed.
+    pub fn update_group_source(&mut self, group_name: &str, source: String) -> bool {
+        match self.groups.get_mut(group_name) {
+            Some(group) => {
+                group.source = source;
+                true
+            }
+            None => false,
         }
     }
 
-    pub fn update_group_target(&mut self, group_name: &str, target: String) {
-        if let Some(group) = self.groups.get_mut(group_name) {
-            group.target = target;
+    /// Returns `true` if the group existed.
+    pub fn update_group_target(&mut self, group_name: &str, target: String) -> bool {
+        match self.groups.get_mut(group_name) {
+            Some(group) => {
+                group.target = target;
+                true
+            }
+            None => false,
         }
     }
 }
@@ -394,8 +382,8 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        assert_eq!(config.effective_verbosity(), 2);
-        assert!(config.effective_dry_run());
+        assert_eq!(config.stow_flags().verbosity, 2);
+        assert!(config.stow_flags().dry_run);
         assert_eq!(config.groups.len(), 1);
     }
 
@@ -420,7 +408,7 @@ groups:
     }
 
     #[test]
-    fn test_effective_verbosity_default() {
+    fn test_stow_flags_verbosity_default() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
 
@@ -439,11 +427,11 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        assert_eq!(config.effective_verbosity(), 0);
+        assert_eq!(config.stow_flags().verbosity, 0);
     }
 
     #[test]
-    fn test_effective_dry_run_default() {
+    fn test_stow_flags_dry_run_default() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
 
@@ -462,7 +450,7 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        assert!(!config.effective_dry_run());
+        assert!(!config.stow_flags().dry_run);
     }
 
     #[test]
@@ -493,7 +481,7 @@ groups:
     }
 
     #[test]
-    fn test_effective_action_default() {
+    fn test_stow_flags_action_default() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
 
@@ -512,11 +500,11 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        assert_eq!(config.effective_action(), "stow");
+        assert_eq!(config.stow_flags().action, StowAction::Stow);
     }
 
     #[test]
-    fn test_effective_dotfiles_default() {
+    fn test_stow_flags_dotfiles_default() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
 
@@ -535,11 +523,11 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        assert!(!config.effective_dotfiles());
+        assert!(!config.stow_flags().dotfiles);
     }
 
     #[test]
-    fn test_effective_dotfiles_true() {
+    fn test_stow_flags_dotfiles_true() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
 
@@ -558,7 +546,7 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        assert!(config.effective_dotfiles());
+        assert!(config.stow_flags().dotfiles);
     }
 
     #[test]
@@ -594,9 +582,9 @@ groups:
         config.save(&save_path).unwrap();
 
         let reloaded = Config::load(&save_path).unwrap();
-        assert_eq!(reloaded.effective_verbosity(), 2);
-        assert!(reloaded.effective_dry_run());
-        assert_eq!(reloaded.effective_action(), "restow");
+        assert_eq!(reloaded.stow_flags().verbosity, 2);
+        assert!(reloaded.stow_flags().dry_run);
+        assert_eq!(reloaded.stow_flags().action, StowAction::Restow);
         assert_eq!(reloaded.global.theme.as_deref(), Some("dracula"));
         assert_eq!(reloaded.groups.len(), 2);
         assert_eq!(reloaded.groups.get("home").unwrap().source, "dotfiles/home");
@@ -623,11 +611,14 @@ groups:
         .unwrap();
 
         let mut config = Config::load(&config_path).unwrap();
-        config.set_verbosity(3);
-        config.set_dry_run(true);
-        config.set_adopt(true);
-        config.set_dotfiles(true);
-        config.set_action("unstow");
+        config.set_stow_flags(StowFlags {
+            verbosity: 3,
+            dry_run: true,
+            no_folding: false,
+            adopt: true,
+            dotfiles: false,
+            action: StowAction::Unstow,
+        });
         config.set_theme(Some("dracula".to_string()));
         config.add_global_ignore(".git".to_string());
 
@@ -635,13 +626,45 @@ groups:
         config.save(&save_path).unwrap();
 
         let reloaded = Config::load(&save_path).unwrap();
-        assert_eq!(reloaded.effective_verbosity(), 3);
-        assert!(reloaded.effective_dry_run());
-        assert!(reloaded.effective_adopt());
-        assert!(reloaded.effective_dotfiles());
-        assert_eq!(reloaded.effective_action(), "unstow");
+        assert_eq!(reloaded.stow_flags().verbosity, 3);
+        assert!(reloaded.stow_flags().dry_run);
+        assert!(!reloaded.stow_flags().no_folding);
+        assert!(reloaded.stow_flags().adopt);
+        assert!(!reloaded.stow_flags().dotfiles);
+        assert_eq!(reloaded.stow_flags().action, StowAction::Unstow);
         assert_eq!(reloaded.global.theme.as_deref(), Some("dracula"));
-        assert_eq!(reloaded.global_ignore(), vec!["".to_string() + ".git"]);
+        assert_eq!(reloaded.global_ignore(), vec![".git".to_string()]);
+    }
+
+    #[test]
+    fn test_set_stow_flags_round_trips_each_bool_alone() {
+        let tmp = TempDir::new().unwrap();
+        let save_path = tmp.path().join("saved.yml");
+        // One bool true at a time: a swap between any two bools changes the reloaded value.
+        let cases = [
+            StowFlags {
+                dry_run: true,
+                ..StowFlags::default()
+            },
+            StowFlags {
+                no_folding: true,
+                ..StowFlags::default()
+            },
+            StowFlags {
+                adopt: true,
+                ..StowFlags::default()
+            },
+            StowFlags {
+                dotfiles: true,
+                ..StowFlags::default()
+            },
+        ];
+        for flags in cases {
+            let mut config = Config::default_empty();
+            config.set_stow_flags(flags);
+            config.save(&save_path).unwrap();
+            assert_eq!(Config::load(&save_path).unwrap().stow_flags(), flags);
+        }
     }
 
     #[test]
@@ -686,6 +709,67 @@ groups:
     }
 
     #[test]
+    fn test_rename_group_keeps_source_target_and_ignore() {
+        let mut config = Config::default_empty();
+        config.add_group("home".into(), "dotfiles/home".into(), "~".into());
+        config.set_group_ignore("home", vec![".git".into()]);
+
+        assert!(config.rename_group("home", "work"));
+        assert!(!config.groups.contains_key("home"));
+        let renamed = &config.groups["work"];
+        assert_eq!(renamed.source, "dotfiles/home");
+        assert_eq!(renamed.target, "~");
+        assert_eq!(renamed.ignore, Some(vec![".git".to_string()]));
+    }
+
+    #[test]
+    fn test_rename_group_refuses_missing_or_taken_names() {
+        let mut config = Config::default_empty();
+        config.add_group("home".into(), "dotfiles/home".into(), "~".into());
+        config.add_group(
+            "config".into(),
+            "dotfiles/config".into(),
+            "~/.config".into(),
+        );
+
+        assert!(!config.rename_group("missing", "work"));
+        assert!(!config.rename_group("home", "config"));
+        assert_eq!(config.groups["home"].source, "dotfiles/home");
+        assert_eq!(config.groups["config"].source, "dotfiles/config");
+        assert_eq!(config.groups.len(), 2);
+    }
+
+    #[test]
+    fn test_rename_group_to_same_name_is_noop() {
+        let mut config = Config::default_empty();
+        config.add_group("home".into(), "dotfiles/home".into(), "~".into());
+
+        assert!(config.rename_group("home", "home"));
+        assert_eq!(config.groups["home"].source, "dotfiles/home");
+        assert!(!config.rename_group("missing", "missing"));
+    }
+
+    #[test]
+    fn test_groups_serialize_in_sorted_order() {
+        let tmp = TempDir::new().unwrap();
+        let mut config = Config::default_empty();
+        for name in ["zeta", "alpha", "mid"] {
+            config.add_group(name.into(), format!("dotfiles/{name}"), "~".into());
+        }
+
+        let names: Vec<&str> = config.groups.keys().map(String::as_str).collect();
+        assert_eq!(names, ["alpha", "mid", "zeta"]);
+
+        let save_path = tmp.path().join("andre.yml");
+        config.save(&save_path).unwrap();
+        let yaml = fs::read_to_string(&save_path).unwrap();
+        let alpha = yaml.find("alpha:").unwrap();
+        let mid = yaml.find("mid:").unwrap();
+        let zeta = yaml.find("zeta:").unwrap();
+        assert!(alpha < mid && mid < zeta, "groups not sorted:\n{yaml}");
+    }
+
+    #[test]
     fn test_add_remove_global_ignore() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
@@ -709,11 +793,11 @@ groups:
         config.add_global_ignore(".DS_Store".to_string());
         assert_eq!(
             config.global_ignore(),
-            vec!["".to_string() + ".git", "".to_string() + ".DS_Store"]
+            vec![".git".to_string(), ".DS_Store".to_string()]
         );
 
         config.remove_global_ignore(".git");
-        assert_eq!(config.global_ignore(), vec!["".to_string() + ".DS_Store"]);
+        assert_eq!(config.global_ignore(), vec![".DS_Store".to_string()]);
 
         config.remove_global_ignore(".DS_Store");
         assert!(config.global_ignore().is_empty());
@@ -770,9 +854,34 @@ groups:
         let mut config = Config::load(&config_path).unwrap();
         assert!(config.global.stow.is_none());
 
-        config.set_verbosity(2);
+        config.set_stow_flags(StowFlags {
+            verbosity: 2,
+            ..StowFlags::default()
+        });
         assert!(config.global.stow.is_some());
         assert_eq!(config.global.stow.as_ref().unwrap().verbosity, Some(2));
+    }
+
+    #[test]
+    fn test_set_group_ignore_empty_clears_and_reports_missing_group() {
+        let mut config = Config::default_empty();
+        config.add_group("main".into(), "src".into(), "dst".into());
+        assert!(config.set_group_ignore("main", vec![".git".into()]));
+        assert!(config.set_group_ignore("main", vec![]));
+        assert_eq!(config.groups["main"].ignore, None);
+        assert!(!config.set_group_ignore("missing", vec![".git".into()]));
+    }
+
+    #[test]
+    fn test_update_group_paths_report_missing_group() {
+        let mut config = Config::default_empty();
+        config.add_group("main".into(), "src".into(), "dst".into());
+        assert!(config.update_group_source("main", "new/src".into()));
+        assert!(config.update_group_target("main", "/new/dst".into()));
+        assert!(!config.update_group_source("missing", "x".into()));
+        assert!(!config.update_group_target("missing", "x".into()));
+        assert_eq!(config.groups["main"].source, "new/src");
+        assert_eq!(config.groups["main"].target, "/new/dst");
     }
 
     #[test]
@@ -868,7 +977,7 @@ groups:
                 }),
             },
             groups: {
-                let mut g = HashMap::new();
+                let mut g = BTreeMap::new();
                 g.insert(
                     "test".to_string(),
                     Group {
@@ -898,7 +1007,7 @@ groups:
                 stow: None,
             },
             groups: {
-                let mut g = HashMap::new();
+                let mut g = BTreeMap::new();
                 g.insert(
                     "test".to_string(),
                     Group {
@@ -932,7 +1041,7 @@ groups:
                 }),
             },
             groups: {
-                let mut g = HashMap::new();
+                let mut g = BTreeMap::new();
                 g.insert(
                     "test".to_string(),
                     Group {
@@ -966,7 +1075,7 @@ groups:
                 }),
             },
             groups: {
-                let mut g = HashMap::new();
+                let mut g = BTreeMap::new();
                 g.insert(
                     "test".to_string(),
                     Group {
@@ -992,7 +1101,7 @@ groups:
                 ignore: None,
                 stow: None,
             },
-            groups: HashMap::new(),
+            groups: BTreeMap::new(),
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1031,7 +1140,7 @@ groups: {}
     #[test]
     fn test_engine_defaults_to_native_when_absent() {
         let config = Config::default_empty();
-        assert_eq!(config.effective_engine(), "native");
+        assert_eq!(config.effective_engine(), EngineKind::Native);
         assert!(config
             .validate()
             .iter()
@@ -1048,14 +1157,14 @@ groups: {}
         )
         .unwrap();
         let config = Config::load(&path).unwrap();
-        assert_eq!(config.effective_engine(), "stow");
+        assert_eq!(config.effective_engine(), EngineKind::Stow);
 
         // save/load round-trip preserves the field.
         let path2 = tmp.path().join("andre2.yml");
         config.save(&path2).unwrap();
         let reloaded = Config::load(&path2).unwrap();
         assert_eq!(reloaded.global.engine.as_deref(), Some("STOW"));
-        assert_eq!(reloaded.effective_engine(), "stow");
+        assert_eq!(reloaded.effective_engine(), EngineKind::Stow);
     }
 
     #[test]
@@ -1067,12 +1176,12 @@ groups: {}
                 ignore: None,
                 stow: None,
             },
-            groups: HashMap::new(),
+            groups: BTreeMap::new(),
         };
         let warnings = config.validate();
         assert!(
             matches!(&warnings[..], [ConfigWarning::NoGroups, ConfigWarning::UnknownEngine(e)] if e == "ruby")
         );
-        assert_eq!(config.effective_engine(), "native");
+        assert_eq!(config.effective_engine(), EngineKind::Native);
     }
 }

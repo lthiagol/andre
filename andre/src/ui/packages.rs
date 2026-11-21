@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::path::Path;
-
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
@@ -9,10 +6,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::status_cache::StatusCache;
+use andre_core::StowStatus;
+
 use crate::theme::ThemeColors;
 use crate::ui::elide;
-use andre_core::{discover_packages, get_package_preview, path::resolve_path, Config, StowStatus};
 
 const SCANNING_DURATION_MS: u128 = 1000;
 const SCANNER_SPINNER: &[char] = &[
@@ -241,72 +238,4 @@ fn render_legend(frame: &mut Frame, area: Rect, colors: &ThemeColors) {
     let list = List::new(items).block(crate::ui::themed_panel(colors));
 
     frame.render_widget(list, area);
-}
-
-pub fn build_flat_items(
-    selected_groups: &[String],
-    selected_packages: &HashMap<String, Vec<String>>,
-    config: &Config,
-    config_dir: &Path,
-    home_dir: &Path,
-    status_cache: &std::cell::RefCell<StatusCache>,
-) -> Vec<FlatItem> {
-    let mut items = Vec::new();
-
-    for group_name in selected_groups {
-        let group = config.groups.get(group_name);
-        let source_str = group.map(|g| g.source.clone());
-        let source = source_str.as_ref().and_then(|s| {
-            let r = resolve_path(s, config_dir, home_dir);
-            if r.exists() {
-                Some(r)
-            } else {
-                None
-            }
-        });
-        let packages = source
-            .as_ref()
-            .map(|s| discover_packages(s))
-            .unwrap_or_default();
-        let group_selected = selected_packages.get(group_name);
-
-        for pkg_name in packages {
-            let pkg_selected = group_selected
-                .map(|v| v.contains(&pkg_name))
-                .unwrap_or(false);
-
-            let status = match &source {
-                Some(_s) => {
-                    let _target = group.and_then(|g| {
-                        let t = resolve_path(&g.target, config_dir, home_dir);
-                        if t.exists() {
-                            Some(t)
-                        } else {
-                            None
-                        }
-                    });
-                    status_cache
-                        .borrow()
-                        .get(group_name, &pkg_name)
-                        .unwrap_or(StowStatus::Missing)
-                }
-                None => StowStatus::Missing,
-            };
-
-            let preview = source
-                .as_ref()
-                .map(|s| get_package_preview(s, &pkg_name, 3))
-                .unwrap_or_default();
-
-            items.push(FlatItem {
-                group_name: group_name.clone(),
-                package_name: pkg_name,
-                selected: pkg_selected,
-                status,
-                preview,
-            });
-        }
-    }
-
-    items
 }

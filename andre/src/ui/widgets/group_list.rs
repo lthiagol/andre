@@ -58,8 +58,7 @@ impl<'a> StatefulWidget for GroupListWidget<'a> {
     type State = ListState;
 
     fn render(self, area: Rect, buf: &mut ratatui::buffer::Buffer, state: &mut Self::State) {
-        let mut groups: Vec<_> = self.config.groups.keys().collect();
-        groups.sort();
+        let groups: Vec<_> = self.config.groups.keys().collect();
 
         state.select(Some(self.cursor.min(groups.len().saturating_sub(1))));
 

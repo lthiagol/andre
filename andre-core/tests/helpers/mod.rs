@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,14 +8,11 @@ use tempfile::TempDir;
 #[derive(Debug)]
 pub struct CommandResult {
     pub exit_code: i32,
-    #[allow(dead_code)]
     pub stdout: String,
-    #[allow(dead_code)]
     pub stderr: String,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct TargetSnapshotEntry {
     pub is_symlink: bool,
     pub target: Option<String>,
@@ -22,7 +21,6 @@ pub struct TargetSnapshotEntry {
     pub permissions: String,
 }
 
-#[allow(dead_code)]
 pub struct TestEnv {
     pub temp_dir: TempDir,
     pub config_path: PathBuf,
@@ -31,7 +29,6 @@ pub struct TestEnv {
     pub scenario_name: String,
 }
 
-#[allow(dead_code)]
 impl TestEnv {
     #[allow(clippy::expect_fun_call)]
     pub fn from_scenario(scenario_name: &str) -> Self {
@@ -83,7 +80,7 @@ impl TestEnv {
         which("stow").expect("stow binary not found in PATH")
     }
 
-    pub fn awesome_stow_binary() -> PathBuf {
+    pub fn andre_binary() -> PathBuf {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let root = manifest_dir.parent().unwrap();
         let candidates = [
@@ -100,32 +97,8 @@ impl TestEnv {
         candidates[1].join("andre")
     }
 
-    pub fn run_stow(&self, args: &[&str]) -> std::io::Result<CommandResult> {
-        let stow_bin = Self::stow_binary();
-        let mut cmd = std::process::Command::new(&stow_bin);
-        cmd.args(args)
-            .current_dir(self.temp_dir.path())
-            .env("HOME", self.temp_dir.path());
-        let output = cmd.output()?;
-        Ok(CommandResult {
-            exit_code: output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        })
-    }
-
-    pub fn run_awesome_stow(&self, args: &[&str]) -> std::io::Result<CommandResult> {
-        let binary = Self::awesome_stow_binary();
-        let mut cmd = std::process::Command::new(&binary);
-        cmd.args(args)
-            .current_dir(self.temp_dir.path())
-            .env("HOME", self.temp_dir.path());
-        let output = cmd.output()?;
-        Ok(CommandResult {
-            exit_code: output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        })
+    pub fn run_andre(&self, args: &[&str]) -> std::io::Result<CommandResult> {
+        run(&Self::andre_binary(), self.temp_dir.path(), args)
     }
 
     pub fn target_snapshot(&self) -> HashMap<String, TargetSnapshotEntry> {
@@ -166,45 +139,19 @@ impl TestEnv {
             );
         }
     }
+}
 
-    pub fn assert_no_symlinks(&self) {
-        let snapshot = self.target_snapshot();
-        for (path, entry) in &snapshot {
-            assert!(
-                !entry.is_symlink,
-                "Expected no symlinks but found one at: {}",
-                path
-            );
-        }
-    }
-
-    pub fn assert_target_exists(&self, relative_path: &str) -> bool {
-        self.target_dir.join(relative_path).exists()
-    }
-
-    pub fn count_symlinks(&self) -> usize {
-        self.target_snapshot()
-            .values()
-            .filter(|e| e.is_symlink)
-            .count()
-    }
-
-    pub fn cleanup_symlinks(&self) -> std::io::Result<()> {
-        if !self.target_dir.exists() {
-            return Ok(());
-        }
-        for entry in fs::read_dir(self.target_dir.as_path())? {
-            let entry = entry?;
-            let path = entry.path();
-            let metadata = entry.metadata()?;
-            if metadata.file_type().is_symlink() {
-                fs::remove_file(&path)?;
-            } else if metadata.is_dir() {
-                fs::remove_dir_all(&path)?;
-            }
-        }
-        Ok(())
-    }
+fn run(bin: &Path, cwd: &Path, args: &[&str]) -> std::io::Result<CommandResult> {
+    let output = std::process::Command::new(bin)
+        .args(args)
+        .current_dir(cwd)
+        .env("HOME", cwd)
+        .output()?;
+    Ok(CommandResult {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
 }
 
 fn recurse_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -289,54 +236,4 @@ fn which(bin: &str) -> Option<PathBuf> {
             })
             .next()
     })
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_fun_call, clippy::needless_borrows_for_generic_args)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_temp_dir_created() {
-        let env = TestEnv::from_scenario("01-basic-stow");
-        assert!(env.temp_dir.path().exists());
-        assert!(env.config_path.exists());
-    }
-
-    #[test]
-    fn test_target_snapshot_empty() {
-        let env = TestEnv::from_scenario("01-basic-stow");
-        let snapshot = env.target_snapshot();
-        assert!(snapshot.is_empty());
-    }
-
-    #[test]
-    fn test_stow_binary_exists() {
-        let stow_path = TestEnv::stow_binary();
-        assert!(stow_path.exists(), "stow binary should be in PATH");
-    }
-
-    #[test]
-    fn test_from_scenario_panics_on_missing_fixture() {
-        // Regression for the inverted-condition bug fixed in 1ea831a:
-        // `from_scenario` used to gate on the destination tempdir and
-        // panic with "Fixture scenario ... not found" — the message and
-        // the condition it claimed to guard did not match. Guard against
-        // an actually-missing fixture directory producing a silent copy
-        // of nothing.
-        let bogus = "this-fixture-does-not-exist-zzz-9999";
-        let result = std::panic::catch_unwind(|| {
-            let _ = TestEnv::from_scenario(bogus);
-        });
-        let payload = result.expect_err("from_scenario should panic when fixture is missing");
-        let msg = payload
-            .downcast_ref::<String>()
-            .map(|s| s.as_str())
-            .or_else(|| payload.downcast_ref::<&'static str>().copied())
-            .unwrap_or("");
-        assert!(
-            msg.contains(bogus) && msg.contains("not found"),
-            "panic message should mention the scenario name and 'not found'; got: {msg:?}"
-        );
-    }
 }

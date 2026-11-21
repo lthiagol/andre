@@ -30,7 +30,6 @@ pub struct Toast {
 
 #[derive(Debug, Clone)]
 pub enum LogLevel {
-    Info,
     Key,
     Transition,
     Exec,
@@ -43,6 +42,7 @@ pub struct LogEntry {
 }
 
 pub mod adopt;
+pub mod browser;
 pub mod confirm;
 pub mod execute;
 pub mod help;
@@ -50,6 +50,7 @@ pub mod menu;
 pub mod settings;
 pub mod status;
 pub mod stow;
+pub mod target_select;
 pub mod unstow;
 
 pub use menu::MainMenuComponent;
@@ -90,15 +91,38 @@ pub enum InputMode {
     TextInput,
 }
 
+#[cfg(test)]
 impl AppContext {
-    /// Record a log entry. No-op when debug is disabled (zero overhead on hot path).
-    pub fn log(&self, level: LogLevel, message: String) {
+    /// A context over `config` with `dir` as both config and home directory.
+    pub(crate) fn for_tests(config: andre_core::config::Config, dir: &std::path::Path) -> Self {
+        Self {
+            core: CoreState::from_config(config),
+            config_dir: dir.to_path_buf(),
+            config_path: dir.join("andre.yml"),
+            home_dir: dir.to_path_buf(),
+            status_cache: RefCell::new(StatusCache::new()),
+            terminal_size: (80, 24),
+            debug: false,
+            log_file: None,
+            event_log: RefCell::new(Vec::new()),
+            toast: None,
+            breadcrumb: String::from("Main"),
+            breadcrumb_cache: Vec::new(),
+        }
+    }
+}
+
+impl AppContext {
+    /// Record a log entry. Nothing runs when debug is disabled: `message` is only
+    /// evaluated (and allocated) once a debug session is recording.
+    pub fn log(&self, level: LogLevel, message: impl FnOnce() -> String) {
         if !self.debug {
             return;
         }
-        self.event_log
-            .borrow_mut()
-            .push(LogEntry { level, message });
+        self.event_log.borrow_mut().push(LogEntry {
+            level,
+            message: message(),
+        });
     }
 
     /// Show a short-lived success toast (replaces any existing toast).
@@ -125,11 +149,6 @@ impl AppContext {
         });
     }
 
-    /// Show a toast with an explicit TTL (tests may use a short duration).
-    pub fn show_toast_for(&mut self, message: impl Into<String>, ttl: Duration) {
-        self.show_toast_kind(message, ToastKind::Success, ttl);
-    }
-
     /// Clear toast when its deadline has passed.
     pub fn tick_toast(&mut self) {
         if self
@@ -143,15 +162,15 @@ impl AppContext {
 }
 
 impl Transition {
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &'static str {
         match self {
-            Transition::None => "None".into(),
-            Transition::Handled => "Handled".into(),
-            Transition::Push(_) => "Push".into(),
-            Transition::Pop => "Pop".into(),
-            Transition::Replace(_, _) => "Replace".into(),
-            Transition::Quit => "Quit".into(),
-            Transition::PopAll => "PopAll".into(),
+            Transition::None => "None",
+            Transition::Handled => "Handled",
+            Transition::Push(_) => "Push",
+            Transition::Pop => "Pop",
+            Transition::Replace(_) => "Replace",
+            Transition::Quit => "Quit",
+            Transition::PopAll => "PopAll",
         }
     }
 }
@@ -167,10 +186,8 @@ pub enum Transition {
     /// Pop the current component from the stack.
     Pop,
     /// Replace the current component with a new one.
-    /// Optional `AsyncExecutor` is taken by `App` when the replacement is Execute
-    /// (abort-handle ownership for the execute lifetime). Use `None` otherwise.
-    Replace(Box<dyn Component>, Option<crate::execute::AsyncExecutor>),
-    /// Pop all components and exit the application.
+    Replace(Box<dyn Component>),
+    /// Mark the application as quitting; the main loop exits after this frame.
     Quit,
     /// Pop all components except the root (MainMenu).
     PopAll,

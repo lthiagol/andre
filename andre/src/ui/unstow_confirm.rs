@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use ratatui::{
     layout::{Alignment, Rect},
     style::Style,
@@ -8,12 +10,20 @@ use ratatui::{
 
 use crate::theme::ThemeColors;
 
+/// The symlink an unstow confirm asks about, with the path it points at. The
+/// component reads the target once, so paint never touches the disk.
+pub struct UnstowLink {
+    pub path: PathBuf,
+    /// What the link points at, or `(unresolvable)`.
+    pub target: String,
+}
+
 pub fn render_unstow_confirm(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
     title: &str,
-    selected_path: Option<&std::path::PathBuf>,
+    link: Option<&UnstowLink>,
     unlink_error: Option<&str>,
     unlink_success: bool,
 ) {
@@ -59,18 +69,13 @@ pub fn render_unstow_confirm(
     )));
     lines.push(Line::from(""));
 
-    if let Some(ref path) = selected_path {
-        let path_display = path.display().to_string();
-        let target_str = std::fs::read_link(path)
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "(unresolvable)".to_string());
-
+    if let Some(link) = link {
         lines.push(Line::from(Span::styled(
-            format!("  path: {}", path_display),
+            format!("  path: {}", link.path.display()),
             Style::default().fg(colors.secondary),
         )));
         lines.push(Line::from(Span::styled(
-            format!("  →    {}", target_str),
+            format!("  →    {}", link.target),
             Style::default().fg(colors.highlight),
         )));
     }

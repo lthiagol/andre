@@ -1,5 +1,8 @@
 use crate::config::Config;
 
+/// Highest verbosity level; `v` and the Settings verbosity row wrap back to 0 after it.
+pub const MAX_VERBOSITY: u8 = 5;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Theme {
     #[default]
@@ -14,17 +17,21 @@ pub enum Theme {
 }
 
 impl Theme {
+    /// Every theme, in the order the Settings picker and `t` key cycle through them.
+    pub const ALL: [Theme; 8] = [
+        Theme::Default,
+        Theme::Dracula,
+        Theme::CatppuccinMocha,
+        Theme::CatppuccinLatte,
+        Theme::CatppuccinFrappe,
+        Theme::CatppuccinMacchiato,
+        Theme::Nord,
+        Theme::Gruvbox,
+    ];
+
     pub fn next(self) -> Self {
-        match self {
-            Theme::Default => Theme::Dracula,
-            Theme::Dracula => Theme::CatppuccinMocha,
-            Theme::CatppuccinMocha => Theme::CatppuccinLatte,
-            Theme::CatppuccinLatte => Theme::CatppuccinFrappe,
-            Theme::CatppuccinFrappe => Theme::CatppuccinMacchiato,
-            Theme::CatppuccinMacchiato => Theme::Nord,
-            Theme::Nord => Theme::Gruvbox,
-            Theme::Gruvbox => Theme::Default,
-        }
+        let index = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
     }
 
     pub fn name(&self) -> &'static str {
@@ -40,50 +47,28 @@ impl Theme {
         }
     }
 
+    /// Case-insensitive lookup by `name()`. `_` is accepted in place of `-`.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
-        if s.eq_ignore_ascii_case("default") {
-            return Some(Theme::Default);
-        }
-        if s.eq_ignore_ascii_case("dracula") {
-            return Some(Theme::Dracula);
-        }
-        if s.eq_ignore_ascii_case("catppuccin-mocha") || s.eq_ignore_ascii_case("catppuccin_mocha")
-        {
-            return Some(Theme::CatppuccinMocha);
-        }
-        if s.eq_ignore_ascii_case("catppuccin-latte") || s.eq_ignore_ascii_case("catppuccin_latte")
-        {
-            return Some(Theme::CatppuccinLatte);
-        }
-        if s.eq_ignore_ascii_case("catppuccin-frappe")
-            || s.eq_ignore_ascii_case("catppuccin_frappe")
-        {
-            return Some(Theme::CatppuccinFrappe);
-        }
-        if s.eq_ignore_ascii_case("catppuccin-macchiato")
-            || s.eq_ignore_ascii_case("catppuccin_macchiato")
-        {
-            return Some(Theme::CatppuccinMacchiato);
-        }
-        if s.eq_ignore_ascii_case("nord") {
-            return Some(Theme::Nord);
-        }
-        if s.eq_ignore_ascii_case("gruvbox") {
-            return Some(Theme::Gruvbox);
-        }
-        None
+        let normalised = s.replace('_', "-");
+        Self::ALL
+            .into_iter()
+            .find(|theme| theme.name().eq_ignore_ascii_case(&normalised))
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StowAction {
+    #[default]
     Stow,
     Unstow,
     Restow,
 }
 
 impl StowAction {
+    /// Every action, in the order the Settings picker lists them.
+    pub const ALL: [StowAction; 3] = [StowAction::Stow, StowAction::Restow, StowAction::Unstow];
+
     pub fn as_str(&self) -> &'static str {
         match self {
             StowAction::Stow => "stow",
@@ -107,29 +92,51 @@ impl StowAction {
     }
 }
 
-#[derive(Clone)]
-pub struct AppState {
-    pub config: Config,
+/// Every stow option the TUI and the yolo path hand to an engine. One value travels
+/// from config to settings to `LinkOp`, so the option set is never re-declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StowFlags {
+    pub action: StowAction,
     pub verbosity: u8,
     pub dry_run: bool,
     pub no_folding: bool,
     pub adopt: bool,
     pub dotfiles: bool,
-    pub action: StowAction,
+}
+
+/// One toggleable option. Each maps to a key shortcut or a Settings row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StowFlag {
+    Verbosity,
+    DryRun,
+    NoFolding,
+    Adopt,
+    Dotfiles,
+}
+
+impl StowFlags {
+    /// Advance a flag: verbosity steps up and wraps past `MAX_VERBOSITY`; the rest flip.
+    pub fn toggle(&mut self, flag: StowFlag) {
+        match flag {
+            StowFlag::Verbosity => self.verbosity = (self.verbosity + 1) % (MAX_VERBOSITY + 1),
+            StowFlag::DryRun => self.dry_run = !self.dry_run,
+            StowFlag::NoFolding => self.no_folding = !self.no_folding,
+            StowFlag::Adopt => self.adopt = !self.adopt,
+            StowFlag::Dotfiles => self.dotfiles = !self.dotfiles,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    pub config: Config,
+    pub flags: StowFlags,
     pub theme: Theme,
-    pub yolo_mode: bool,
 }
 
 impl AppState {
-    pub fn from_config(config: Config, yolo_mode: bool) -> Self {
-        let verbosity = config.effective_verbosity();
-        let dry_run = config.effective_dry_run();
-        let no_folding = config.effective_no_folding();
-        let adopt = config.effective_adopt();
-        let dotfiles = config.effective_dotfiles();
-
-        let action_str = config.effective_action();
-        let action = StowAction::from_str(&action_str).unwrap_or(StowAction::Stow);
+    pub fn from_config(config: Config) -> Self {
+        let flags = config.stow_flags();
 
         let theme_name = config
             .global
@@ -140,19 +147,9 @@ impl AppState {
 
         Self {
             config,
-            verbosity,
-            dry_run,
-            no_folding,
-            adopt,
-            dotfiles,
-            action,
+            flags,
             theme: theme_name,
-            yolo_mode,
         }
-    }
-
-    pub fn effective_action(&self) -> String {
-        self.action.as_str().to_string()
     }
 }
 
@@ -197,6 +194,40 @@ mod tests {
     }
 
     #[test]
+    fn test_theme_all_round_trips_through_name() {
+        for theme in Theme::ALL {
+            assert_eq!(Theme::from_str(theme.name()), Some(theme));
+        }
+        assert_eq!(
+            Theme::from_str("catppuccin_latte"),
+            Some(Theme::CatppuccinLatte)
+        );
+        assert_eq!(
+            Theme::from_str("CATPPUCCIN-FRAPPE"),
+            Some(Theme::CatppuccinFrappe)
+        );
+    }
+
+    #[test]
+    fn test_theme_next_visits_every_theme_once() {
+        let mut theme = Theme::default();
+        let mut seen = Vec::new();
+        for _ in 0..Theme::ALL.len() {
+            seen.push(theme);
+            theme = theme.next();
+        }
+        assert_eq!(theme, Theme::Default);
+        assert_eq!(seen, Theme::ALL);
+    }
+
+    #[test]
+    fn test_stow_action_all_round_trips_through_as_str() {
+        for action in StowAction::ALL {
+            assert_eq!(StowAction::from_str(action.as_str()), Some(action));
+        }
+    }
+
+    #[test]
     fn test_app_state_from_config() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
@@ -221,16 +252,15 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        let state = AppState::from_config(config, false);
+        let state = AppState::from_config(config);
 
-        assert_eq!(state.verbosity, 2);
-        assert!(state.dry_run);
-        assert!(state.no_folding);
-        assert!(!state.adopt);
-        assert!(!state.dotfiles);
-        assert_eq!(state.action, StowAction::Restow);
+        assert_eq!(state.flags.verbosity, 2);
+        assert!(state.flags.dry_run);
+        assert!(state.flags.no_folding);
+        assert!(!state.flags.adopt);
+        assert!(!state.flags.dotfiles);
+        assert_eq!(state.flags.action, StowAction::Restow);
         assert_eq!(state.theme, Theme::Dracula);
-        assert!(!state.yolo_mode);
     }
 
     #[test]
@@ -253,14 +283,9 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        let state = AppState::from_config(config, false);
+        let state = AppState::from_config(config);
 
-        assert_eq!(state.verbosity, 0);
-        assert!(!state.dry_run);
-        assert!(!state.no_folding);
-        assert!(!state.adopt);
-        assert!(!state.dotfiles);
-        assert_eq!(state.action, StowAction::Stow);
+        assert_eq!(state.flags, StowFlags::default());
         assert_eq!(state.theme, Theme::Default);
     }
 
@@ -308,7 +333,7 @@ groups:
     }
 
     #[test]
-    fn test_app_state_effective_action() {
+    fn test_app_state_stow_action() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
 
@@ -327,7 +352,44 @@ groups:
         .unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        let state = AppState::from_config(config, false);
-        assert_eq!(state.effective_action(), "unstow");
+        let state = AppState::from_config(config);
+        assert_eq!(state.flags.action, StowAction::Unstow);
+    }
+
+    #[test]
+    fn test_stow_flag_toggle_flips_booleans_and_wraps_verbosity() {
+        let mut flags = StowFlags::default();
+        flags.toggle(StowFlag::DryRun);
+        flags.toggle(StowFlag::NoFolding);
+        flags.toggle(StowFlag::Adopt);
+        flags.toggle(StowFlag::Dotfiles);
+        assert!(flags.dry_run && flags.no_folding && flags.adopt && flags.dotfiles);
+        flags.toggle(StowFlag::DryRun);
+        assert!(!flags.dry_run);
+
+        for expected in 1..=MAX_VERBOSITY {
+            flags.toggle(StowFlag::Verbosity);
+            assert_eq!(flags.verbosity, expected);
+        }
+        flags.toggle(StowFlag::Verbosity);
+        assert_eq!(
+            flags.verbosity, 0,
+            "verbosity wraps to 0 after MAX_VERBOSITY"
+        );
+    }
+
+    #[test]
+    fn test_stow_flags_default_is_stow_with_everything_off() {
+        assert_eq!(
+            StowFlags::default(),
+            StowFlags {
+                action: StowAction::Stow,
+                verbosity: 0,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+            }
+        );
     }
 }

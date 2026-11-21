@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{Error, Result};
+use crate::state::{StowAction, StowFlags};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StowStatus {
@@ -156,17 +157,11 @@ pub fn collect_package_files(package_dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn build_stow_args(
     source: &Path,
     target: &Path,
     package: &str,
-    action: &str,
-    verbosity: u8,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
+    flags: &StowFlags,
     ignores: &[String],
 ) -> Command {
     let mut cmd = Command::new("stow");
@@ -176,35 +171,33 @@ pub fn build_stow_args(
     cmd.arg("-t");
     cmd.arg(target.display().to_string());
 
-    match action {
-        "unstow" => {
+    match flags.action {
+        StowAction::Unstow => {
             cmd.arg("-D");
         }
-        "restow" => {
+        StowAction::Restow => {
             cmd.arg("-R");
         }
-        _ => {}
+        StowAction::Stow => {}
     }
 
-    if verbosity > 0 {
-        for _ in 0..verbosity {
-            cmd.arg("-v");
-        }
+    for _ in 0..flags.verbosity {
+        cmd.arg("-v");
     }
 
-    if dry_run {
+    if flags.dry_run {
         cmd.arg("-n");
     }
 
-    if no_folding {
+    if flags.no_folding {
         cmd.arg("--no-folding");
     }
 
-    if adopt {
+    if flags.adopt {
         cmd.arg("--adopt");
     }
 
-    if dotfiles {
+    if flags.dotfiles {
         cmd.arg("--dotfiles");
     }
 
@@ -217,85 +210,14 @@ pub fn build_stow_args(
     cmd
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn build_stow_args_multi(
-    source: &Path,
-    target: &Path,
-    packages: &[String],
-    action: &str,
-    verbosity: u8,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
-    ignores: &[String],
-) -> Command {
-    let mut cmd = Command::new("stow");
-
-    cmd.arg("-d");
-    cmd.arg(source.display().to_string());
-    cmd.arg("-t");
-    cmd.arg(target.display().to_string());
-
-    match action {
-        "unstow" => {
-            cmd.arg("-D");
-        }
-        "restow" => {
-            cmd.arg("-R");
-        }
-        _ => {}
-    }
-
-    if verbosity > 0 {
-        for _ in 0..verbosity {
-            cmd.arg("-v");
-        }
-    }
-
-    if dry_run {
-        cmd.arg("-n");
-    }
-
-    if no_folding {
-        cmd.arg("--no-folding");
-    }
-
-    if adopt {
-        cmd.arg("--adopt");
-    }
-
-    if dotfiles {
-        cmd.arg("--dotfiles");
-    }
-
-    for ignore in ignores {
-        cmd.arg(format!("--ignore={}", ignore));
-    }
-
-    for pkg in packages {
-        cmd.arg(pkg);
-    }
-
-    cmd
-}
-
-#[allow(clippy::too_many_arguments)]
 pub fn execute_stow(
     source: &Path,
     target: &Path,
     package: &str,
-    action: &str,
-    verbosity: u8,
-    dry_run: bool,
-    no_folding: bool,
-    adopt: bool,
-    dotfiles: bool,
+    flags: &StowFlags,
     ignores: &[String],
 ) -> Result<i32> {
-    let mut cmd = build_stow_args(
-        source, target, package, action, verbosity, dry_run, no_folding, adopt, dotfiles, ignores,
-    );
+    let mut cmd = build_stow_args(source, target, package, flags, ignores);
     let output = cmd.output().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             Error::StowNotFound
@@ -441,12 +363,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "stow",
-            0,
-            false,
-            false,
-            false,
-            false,
+            &StowFlags {
+                action: StowAction::Stow,
+                verbosity: 0,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+            },
             &[],
         );
 
@@ -467,12 +391,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "unstow",
-            0,
-            false,
-            false,
-            false,
-            false,
+            &StowFlags {
+                action: StowAction::Unstow,
+                verbosity: 0,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+            },
             &[],
         );
 
@@ -489,12 +415,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "stow",
-            2,
-            false,
-            false,
-            false,
-            false,
+            &StowFlags {
+                action: StowAction::Stow,
+                verbosity: 2,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+            },
             &[],
         );
 
@@ -512,12 +440,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "stow",
-            0,
-            true,
-            false,
-            false,
-            false,
+            &StowFlags {
+                action: StowAction::Stow,
+                verbosity: 0,
+                dry_run: true,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+            },
             &[],
         );
 
@@ -534,12 +464,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "stow",
-            0,
-            false,
-            false,
-            false,
-            false,
+            &StowFlags {
+                action: StowAction::Stow,
+                verbosity: 0,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+            },
             &[String::from(".git"), String::from(".DS_Store")],
         );
 
@@ -572,12 +504,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "restow",
-            0,
-            false,
-            false,
-            false,
-            false,
+            &StowFlags {
+                action: StowAction::Restow,
+                verbosity: 0,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: false,
+            },
             &[],
         );
 
@@ -594,12 +528,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "stow",
-            0,
-            false,
-            true,
-            false,
-            false,
+            &StowFlags {
+                action: StowAction::Stow,
+                verbosity: 0,
+                dry_run: false,
+                no_folding: true,
+                adopt: false,
+                dotfiles: false,
+            },
             &[],
         );
 
@@ -616,12 +552,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "stow",
-            0,
-            false,
-            false,
-            true,
-            false,
+            &StowFlags {
+                action: StowAction::Stow,
+                verbosity: 0,
+                dry_run: false,
+                no_folding: false,
+                adopt: true,
+                dotfiles: false,
+            },
             &[],
         );
 
@@ -638,12 +576,14 @@ mod tests {
             &source,
             &target,
             "bash-env",
-            "stow",
-            0,
-            false,
-            false,
-            false,
-            true,
+            &StowFlags {
+                action: StowAction::Stow,
+                verbosity: 0,
+                dry_run: false,
+                no_folding: false,
+                adopt: false,
+                dotfiles: true,
+            },
             &[],
         );
 

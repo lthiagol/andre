@@ -65,29 +65,26 @@ impl Component for ExecuteComponent {
         if let Some(ref mut rx) = self.rx {
             while let Ok(update) = rx.try_recv() {
                 match update {
-                    // Progress.total is commands-only; keep the full total
-                    // (commands + skipped) established at construction.
-                    ExecutionUpdate::Progress { current, .. } => {
+                    // The total (commands + skipped) is fixed at construction.
+                    ExecutionUpdate::Progress { current } => {
                         self.current = current;
-                        ctx.log(
-                            LogLevel::Exec,
-                            format!("Progress: {}/{}", current, self.total),
-                        );
+                        ctx.log(LogLevel::Exec, || {
+                            format!("Progress: {}/{}", current, self.total)
+                        });
                     }
                     ExecutionUpdate::Result(result) => {
-                        ctx.log(
-                            LogLevel::Exec,
+                        ctx.log(LogLevel::Exec, || {
                             format!(
                                 "Result: {} {} success={}",
                                 result.group, result.package, result.success
-                            ),
-                        );
+                            )
+                        });
                         self.results.push(result);
                     }
                     ExecutionUpdate::Complete => {
                         self.rx = None;
                         self.state = ExecutionState::Completed;
-                        ctx.log(LogLevel::Exec, "Execution complete".into());
+                        ctx.log(LogLevel::Exec, || "Execution complete".into());
                         break;
                     }
                 }
@@ -132,7 +129,7 @@ mod tests {
 
     fn make_ctx() -> AppContext {
         AppContext {
-            core: CoreState::from_config(Config::default_empty(), false),
+            core: CoreState::from_config(Config::default_empty()),
             config_dir: std::path::PathBuf::from("."),
             config_path: std::path::PathBuf::from("."),
             home_dir: std::path::PathBuf::from("."),
