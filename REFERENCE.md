@@ -71,8 +71,9 @@ andre
 6. **Status** — View results after execution
 
 Global shortcuts (`v`/`d`/`t`/`n`/`a`/`o`/`Ctrl+C`) work from any screen. The
-top bar shows their state (a green mark when on, a red one when off) and the
-bar is centred; the bottom bar shows the current screen's keys, the active theme
+top bar shows their state (a green mark when on, a red one when off; verbosity
+has no mark and shows as a meter of 5 segments, `verbose ▰▰▱▱▱`) and the bar is
+centred; the bottom bar shows the current screen's keys, the active theme
 (`theme <name>`, changed with `t`) and `q quit`.
 
 <a name="features"></a>

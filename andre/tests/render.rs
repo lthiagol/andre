@@ -186,7 +186,10 @@ fn test_status_bar_shows_verbosity() {
     let (mut app, _) = make_test_app();
     app.ctx.core.flags.verbosity = 3;
     let buf = render_app(&mut app, 80, 24);
-    assert!(top_bar_contains(&buf, "verbose 3"), "verbosity not shown");
+    assert!(
+        top_bar_contains(&buf, "verbose ▰▰▰▱▱"),
+        "verbosity meter not shown"
+    );
 }
 
 #[test]
@@ -264,7 +267,6 @@ fn test_top_bar_marks_sit_beside_their_labels_by_column() {
     assert_eq!(buf[(pill, y)].bg, colors.primary, "pill must be filled");
 
     let cases = [
-        ("verbose", NERD.flag_off, colors.error),
         ("dry-run", NERD.flag_on, colors.success),
         ("no-fold", NERD.flag_off, colors.error),
         ("adopt", NERD.flag_off, colors.error),
@@ -815,7 +817,7 @@ fn test_status_toggles_still_live_with_breadcrumb() {
         "list panel title missing on the main menu"
     );
     assert!(
-        top_bar_contains(&buf, "verbose 2"),
+        top_bar_contains(&buf, "verbose ▰▰▱▱▱"),
         "verbosity toggle not live"
     );
     assert!(
@@ -862,7 +864,10 @@ fn test_top_bar_and_footer_fit_80_columns_on_one_row_each() {
     let top = row_text(&buf, top_bar_row(&buf));
     assert!(top.contains("debug"), "debug chip must still fit: {top:?}");
     assert!(top.contains("unstow"), "action pill missing: {top:?}");
-    assert!(top.contains("verbose 5"), "full labels expected: {top:?}");
+    assert!(
+        top.contains("verbose ▰▰▰▰▰"),
+        "full labels expected: {top:?}"
+    );
     assert!(
         !top.contains("theme"),
         "top bar must not carry the theme: {top:?}"
@@ -895,7 +900,7 @@ fn test_top_bar_has_full_labels_and_no_theme_for_every_theme_at_80_columns() {
         let top = row_text(&buf, top_bar_row(&buf));
         for label in [
             "restow",
-            "verbose 3",
+            "verbose ▰▰▰▱▱",
             "dry-run",
             "no-fold",
             "adopt",
@@ -910,6 +915,50 @@ fn test_top_bar_has_full_labels_and_no_theme_for_every_theme_at_80_columns() {
         }
         assert!(!top.contains("theme"), "{}: {top:?}", theme.name());
         assert!(!top.contains(theme.name()), "{}: {top:?}", theme.name());
+    }
+}
+
+/// Worst case at 80 columns: unstow, every flag on, debug. Each verbosity level
+/// keeps full labels, one meter of `MAX_VERBOSITY` segments, and the divider.
+#[test]
+fn test_top_bar_verbose_meter_fits_80_columns_at_low_mid_and_max_level() {
+    let max = andre_core::MAX_VERBOSITY;
+    let colors = ThemeColors::from_theme(Theme::Default);
+    for level in [0, 2, max] {
+        let (mut app, _tmp) = make_test_app();
+        app.ctx.core.flags.action = StowAction::Unstow;
+        app.ctx.core.flags.verbosity = level;
+        app.ctx.core.flags.dry_run = true;
+        app.ctx.core.flags.no_folding = true;
+        app.ctx.core.flags.adopt = true;
+        app.ctx.core.flags.dotfiles = true;
+        app.ctx.debug = true;
+        let buf = render_app(&mut app, 80, 24);
+        let top = row_text(&buf, top_bar_row(&buf));
+        let meter = format!(
+            "{}{}",
+            NERD.meter_full.repeat(level as usize),
+            NERD.meter_empty.repeat((max - level) as usize)
+        );
+        for label in [
+            "unstow", "verbose", "dry-run", "no-fold", "adopt", "dotfiles", "debug",
+        ] {
+            assert!(
+                top.contains(label),
+                "level {level}: {label:?} missing: {top:?}"
+            );
+        }
+        assert!(
+            top.contains(&format!("verbose {meter}  │")),
+            "level {level}: meter then divider expected: {top:?}"
+        );
+        // The first `│` after the label is the divider; column 0 is the frame.
+        let y = top_bar_row(&buf);
+        let from = column_of(&buf, y, "verbose").expect("verbose label missing");
+        let x = (from..buf.area().width)
+            .find(|&x| buf[(x, y)].symbol() == "│")
+            .expect("divider missing");
+        assert_eq!(buf[(x, y)].fg, colors.muted, "divider colour");
     }
 }
 

@@ -7,7 +7,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use andre_core::{IconSet, StowFlags};
+use andre_core::{IconSet, StowFlags, MAX_VERBOSITY};
 
 use crate::theme::ThemeColors;
 use crate::ui::icons::Icons;
@@ -15,13 +15,18 @@ use crate::ui::icons::Icons;
 /// Columns between chips.
 const GAP: usize = 2;
 
+/// Separates the verbosity meter from the boolean flags.
+const DIVIDER: &str = "│";
+
 /// How much of each chip's label the top bar draws.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Labels {
-    /// `✓ dry-run`: mark plus the whole label, hotkey letter coloured inside it.
+    /// `verbose ▰▱▱▱▱`, `✓ dry-run`: whole labels, hotkey letter coloured inside them.
     Full,
-    /// `✓ d`: mark plus hotkey letter only. Used when the full labels do not fit.
+    /// `v ▰▱▱▱▱`, `✓ d`: hotkey letters only. The verbosity meter is kept.
     HotkeyOnly,
+    /// `v2`, `✓ d`: as `HotkeyOnly`, but the verbosity meter shrinks to its level.
+    LevelOnly,
 }
 
 /// Short display label for a component stack id in the breadcrumb.
@@ -77,11 +82,13 @@ pub fn render_status_bar(
     frame.render_widget(Paragraph::new(line), area);
 }
 
-/// The top bar as one line: the action pill, then a chip per toggle. The chips
-/// show full labels when they fit, and hotkey letters only when they do not.
-/// The full chips need up to 70 columns (`unstow`, every toggle on, debug), so
+/// The top bar as one line: the action pill, the verbosity meter, a divider, then
+/// a chip per boolean flag. The chips show the fullest labels that fit: whole
+/// labels, then hotkey letters, then hotkey letters with the level as a digit.
+/// The full chips need up to 75 columns (`unstow`, every flag on, debug), so
 /// they fit the 76-column inner width at 80 columns. The hotkey-only chips need
-/// up to 41 columns. Below that the line is simply clipped by the caller.
+/// up to 46 columns and the level-only chips up to 41. Below that the line is
+/// simply clipped by the caller.
 ///
 /// The chosen group (pill and chips together) is centred in `width`, with the
 /// odd column, if any, on the right.
@@ -92,12 +99,11 @@ pub fn top_bar_line(
     debug: bool,
     width: usize,
 ) -> Line<'static> {
-    let full = left_chips(colors, flags, icons, debug, Labels::Full);
-    let group = if spans_width(&full) <= width {
-        full
-    } else {
-        left_chips(colors, flags, icons, debug, Labels::HotkeyOnly)
-    };
+    let group = [Labels::Full, Labels::HotkeyOnly]
+        .into_iter()
+        .map(|labels| left_chips(colors, flags, icons, debug, labels))
+        .find(|group| spans_width(group) <= width)
+        .unwrap_or_else(|| left_chips(colors, flags, icons, debug, Labels::LevelOnly));
     centred(group, width)
 }
 
@@ -121,7 +127,6 @@ fn left_chips(
     labels: Labels,
 ) -> Vec<Span<'static>> {
     let mut chips = vec![
-        verbose_chip(colors, icons, flags.verbosity, labels),
         toggle_chip(colors, icons, "dry-run", 0, flags.dry_run, labels),
         toggle_chip(colors, icons, "no-fold", 0, flags.no_folding, labels),
         toggle_chip(colors, icons, "adopt", 0, flags.adopt, labels),
@@ -137,10 +142,11 @@ fn left_chips(
     }
 
     let mut spans = vec![action_pill(colors, flags.action.as_str()), Span::raw(" ")];
-    for (i, chip) in chips.into_iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::raw(" ".repeat(GAP)));
-        }
+    spans.extend(verbose_chip(colors, icons, flags.verbosity, labels));
+    spans.push(Span::raw(" ".repeat(GAP)));
+    spans.push(Span::styled(DIVIDER, Style::default().fg(colors.muted)));
+    for chip in chips {
+        spans.push(Span::raw(" ".repeat(GAP)));
         spans.extend(chip);
     }
     spans
@@ -154,6 +160,8 @@ fn action_pill(colors: &ThemeColors, action: &str) -> Span<'static> {
     )
 }
 
+/// Verbosity is a level, not a flag, so the chip has no mark. Its meter has one
+/// segment per level up to `MAX_VERBOSITY`: the first `verbosity` are filled.
 fn verbose_chip(
     colors: &ThemeColors,
     icons: &Icons,
@@ -161,13 +169,28 @@ fn verbose_chip(
     labels: Labels,
 ) -> Vec<Span<'static>> {
     let on = verbosity > 0;
-    let mut spans = icon_span(colors, icons, on);
-    spans.extend(label_spans(colors, "verbose", 0, on, labels));
+    let level = verbosity.min(MAX_VERBOSITY) as usize;
+    let segments = MAX_VERBOSITY as usize;
+    let mut spans = label_spans(colors, "verbose", 0, on, labels);
+    if labels == Labels::LevelOnly {
+        spans.push(Span::styled(level.to_string(), word_style(colors, on)));
+        return spans;
+    }
     spans.push(Span::raw(" "));
-    spans.push(Span::styled(
-        verbosity.to_string(),
-        Style::default().fg(colors.primary),
-    ));
+    if level > 0 {
+        spans.push(Span::styled(
+            icons.meter_full.repeat(level),
+            Style::default()
+                .fg(colors.primary)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    if level < segments {
+        spans.push(Span::styled(
+            icons.meter_empty.repeat(segments - level),
+            Style::default().fg(colors.muted),
+        ));
+    }
     spans
 }
 
@@ -212,21 +235,26 @@ fn label_spans(
             .fg(colors.indicator)
             .add_modifier(Modifier::BOLD),
     );
-    if labels == Labels::HotkeyOnly {
+    if labels != Labels::Full {
         return vec![key_span];
     }
-    let word = if on {
-        Style::default()
-            .fg(colors.primary)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(colors.muted)
-    };
+    let word = word_style(colors, on);
     vec![
         Span::styled(before.to_string(), word),
         key_span,
         Span::styled(after.to_string(), word),
     ]
+}
+
+/// Bright and bold when the chip is on, muted when off.
+fn word_style(colors: &ThemeColors, on: bool) -> Style {
+    if on {
+        Style::default()
+            .fg(colors.primary)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(colors.muted)
+    }
 }
 
 fn spans_width(spans: &[Span<'static>]) -> usize {
@@ -238,10 +266,10 @@ fn spans_width(spans: &[Span<'static>]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{breadcrumb_label, format_breadcrumb, top_bar_line};
+    use super::{breadcrumb_label, format_breadcrumb, top_bar_line, DIVIDER};
     use crate::theme::ThemeColors;
     use crate::ui::icons::{Icons, NERD, UNICODE};
-    use andre_core::{StowAction, StowFlags, Theme};
+    use andre_core::{StowAction, StowFlags, Theme, MAX_VERBOSITY};
     use ratatui::{
         style::Modifier,
         text::{Line, Span},
@@ -316,7 +344,7 @@ mod tests {
             t.trim_start().starts_with("stow "),
             "action pill first: {t:?}"
         );
-        for label in ["verbose 0", "dry-run", "no-fold", "adopt", "dotfiles"] {
+        for label in ["verbose ▱▱▱▱▱", "dry-run", "no-fold", "adopt", "dotfiles"] {
             assert!(t.contains(label), "missing {label:?} in {t:?}");
         }
         assert!(
@@ -381,7 +409,8 @@ mod tests {
                         t.trim_start().starts_with(&format!("{} ", action.as_str())),
                         "{context}: action pill missing: {t:?}"
                     );
-                    for label in ["verbose 3", "dry-run", "no-fold", "adopt", "dotfiles"] {
+                    for label in ["verbose ▰▰▰▱▱", "dry-run", "no-fold", "adopt", "dotfiles"]
+                    {
                         assert!(t.contains(label), "{context}: {label:?} missing: {t:?}");
                     }
                     assert_eq!(t.contains("debug"), debug, "{context}: {t:?}");
@@ -468,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verbosity_chip_is_on_styled_above_zero() {
+    fn test_verbose_label_is_bright_above_zero_and_muted_at_zero() {
         let on = bar(
             &StowFlags {
                 verbosity: 2,
@@ -478,12 +507,114 @@ mod tests {
             false,
             76,
         );
-        assert!(text(&on).contains("verbose 2"), "{:?}", text(&on));
-        assert_eq!(span(&on, "\u{f00c} ").style.fg, Some(colors().success));
-        assert_eq!(span(&on, "2").style.fg, Some(colors().primary));
+        assert_eq!(span(&on, "erbose").style.fg, Some(colors().primary));
+        assert!(span(&on, "erbose")
+            .style
+            .add_modifier
+            .contains(Modifier::BOLD));
 
         let off = bar(&all_off(), &NERD, false, 76);
-        assert_eq!(span(&off, "\u{f00d} ").style.fg, Some(colors().error));
+        assert_eq!(span(&off, "erbose").style.fg, Some(colors().muted));
+    }
+
+    /// Glyphs of `glyph` drawn anywhere in `line`.
+    fn count_glyph(line: &Line, glyph: &str) -> usize {
+        line.spans
+            .iter()
+            .map(|s| s.content.matches(glyph).count())
+            .sum()
+    }
+
+    #[test]
+    fn test_verbose_meter_fills_level_segments_and_leaves_the_rest_empty() {
+        let segments = MAX_VERBOSITY as usize;
+        for icons in [&NERD, &UNICODE] {
+            for level in 0..=MAX_VERBOSITY {
+                let flags = StowFlags {
+                    verbosity: level,
+                    ..all_off()
+                };
+                let line = bar(&flags, icons, false, 76);
+                let t = text(&line);
+                let context = format!("level {level}: {t:?}");
+                let filled = icons.meter_full.repeat(level as usize);
+                let empty = icons.meter_empty.repeat(segments - level as usize);
+                assert_eq!(
+                    count_glyph(&line, icons.meter_full),
+                    level as usize,
+                    "{context}"
+                );
+                assert_eq!(
+                    count_glyph(&line, icons.meter_empty),
+                    segments - level as usize,
+                    "{context}"
+                );
+                assert!(
+                    t.contains(&format!("verbose {filled}{empty}")),
+                    "meter follows the label: {context}"
+                );
+                for span in &line.spans {
+                    if span.content.contains(icons.meter_full) {
+                        assert_eq!(span.style.fg, Some(colors().primary), "{context}");
+                        assert!(
+                            span.style.add_modifier.contains(Modifier::BOLD),
+                            "{context}"
+                        );
+                    }
+                    if span.content.contains(icons.meter_empty) {
+                        assert_eq!(span.style.fg, Some(colors().muted), "{context}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_verbose_chip_has_no_check_or_cross() {
+        for level in 0..=MAX_VERBOSITY {
+            for icons in [&NERD, &UNICODE] {
+                let flags = StowFlags {
+                    verbosity: level,
+                    ..all_off()
+                };
+                let t = text(&bar(&flags, icons, false, 76));
+                // Only the action pill and its gap come before the verbose label.
+                let before = t[..t.find("verbose").unwrap()].trim_end();
+                assert!(
+                    before.ends_with("stow"),
+                    "level {level}: a mark sits before verbose: {t:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_muted_divider_sits_between_verbose_and_the_flags() {
+        let line = bar(&all_on(StowAction::Unstow), &NERD, false, 120);
+        let t = text(&line);
+        let divider = t.find(DIVIDER).expect("divider missing");
+        assert!(t.find("verbose").unwrap() < divider, "{t:?}");
+        assert!(divider < t.find("dry-run").unwrap(), "{t:?}");
+        assert_eq!(span(&line, DIVIDER).style.fg, Some(colors().muted));
+    }
+
+    #[test]
+    fn test_level_only_fallback_shows_the_level_digit_and_fits_41_columns() {
+        let line = top_bar_line(&colors(), &all_on(StowAction::Unstow), &NERD, true, 41);
+        let t = text(&line);
+        assert!(t.contains("v3"), "level digit missing: {t:?}");
+        assert_eq!(count_glyph(&line, NERD.meter_full), 0, "{t:?}");
+        assert_eq!(line_width(&line), 41, "{t:?}");
+
+        // One column wider the meter comes back: hotkey letters with the meter.
+        let wider = text(&top_bar_line(
+            &colors(),
+            &all_on(StowAction::Unstow),
+            &NERD,
+            true,
+            46,
+        ));
+        assert!(wider.contains("v ▰▰▰▱▱"), "{wider:?}");
     }
 
     #[test]
@@ -561,7 +692,7 @@ mod tests {
             t.trim_start().starts_with("stow "),
             "action pill kept: {t:?}"
         );
-        assert!(t.contains("v 1"), "hotkey letters kept: {t:?}");
+        assert!(t.contains("v ▰▱▱▱▱"), "hotkey letter and meter kept: {t:?}");
         // The fallback is picked on the unpadded width, then centred.
         assert_eq!(line_width(&line), 50, "{t:?}");
         let left = t.len() - t.trim_start().len() - 1;

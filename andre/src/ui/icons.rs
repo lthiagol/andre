@@ -5,6 +5,10 @@ use andre_core::{IconSet, StowStatus};
 pub struct Icons {
     pub flag_on: &'static str,
     pub flag_off: &'static str,
+    /// One segment of the verbosity meter when it is filled.
+    pub meter_full: &'static str,
+    /// One segment of the verbosity meter when it is empty.
+    pub meter_empty: &'static str,
     pub checkbox_on: &'static str,
     pub checkbox_off: &'static str,
     pub stowed: &'static str,
@@ -26,6 +30,8 @@ pub struct Icons {
 pub static NERD: Icons = Icons {
     flag_on: "\u{f00c}",
     flag_off: "\u{f00d}",
+    meter_full: "▰",
+    meter_empty: "▱",
     checkbox_on: "\u{f14a}",
     checkbox_off: "\u{f096}",
     stowed: "\u{f00c}",
@@ -48,6 +54,8 @@ pub static NERD: Icons = Icons {
 pub static UNICODE: Icons = Icons {
     flag_on: "✓",
     flag_off: "✗",
+    meter_full: "▰",
+    meter_empty: "▱",
     checkbox_on: "■",
     checkbox_off: "□",
     stowed: "✓",
@@ -105,6 +113,8 @@ mod tests {
         vec![
             icons.flag_on,
             icons.flag_off,
+            icons.meter_full,
+            icons.meter_empty,
             icons.checkbox_on,
             icons.checkbox_off,
             icons.stowed,
