@@ -20,9 +20,7 @@ pub struct FileBrowserWidget<'a> {
     pub cursor: usize,
     pub title: &'a str,
     pub selected_files: Option<&'a [std::path::PathBuf]>,
-    pub is_unstow: bool,
     pub entries: &'a [andre_core::TargetEntry],
-    pub symlink_targets: &'a [(String, String)],
 }
 
 impl<'a> FileBrowserWidget<'a> {
@@ -40,9 +38,7 @@ impl<'a> FileBrowserWidget<'a> {
             cursor,
             title,
             selected_files: None,
-            is_unstow: false,
             entries: &[],
-            symlink_targets: &[],
         }
     }
 
@@ -51,18 +47,8 @@ impl<'a> FileBrowserWidget<'a> {
         self
     }
 
-    pub fn unstow_mode(mut self) -> Self {
-        self.is_unstow = true;
-        self
-    }
-
-    pub fn with_entries(
-        mut self,
-        entries: &'a [andre_core::TargetEntry],
-        symlink_targets: &'a [(String, String)],
-    ) -> Self {
+    pub fn with_entries(mut self, entries: &'a [andre_core::TargetEntry]) -> Self {
         self.entries = entries;
-        self.symlink_targets = symlink_targets;
         self
     }
 }
@@ -125,18 +111,7 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                 let mut glyphs: Vec<Span> = Vec::new();
                 let mut spans: Vec<Span> = Vec::new();
 
-                if self.is_unstow && entry.is_symlink {
-                    let target_str = self
-                        .symlink_targets
-                        .iter()
-                        .find(|(path, _)| *path == entry.name)
-                        .map(|(_, target)| target.as_str())
-                        .unwrap_or("?");
-                    spans.push(Span::styled(
-                        format!("{}  {}  →  {}", kind, entry.name, target_str),
-                        Style::default().fg(entry_fg),
-                    ));
-                } else if let Some(selected) = self.selected_files {
+                if let Some(selected) = self.selected_files {
                     let is_selected = selected.contains(&self.path.join(&entry.name));
                     if entry.is_selectable() {
                         let mark_fg = if is_selected {

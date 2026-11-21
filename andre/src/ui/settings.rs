@@ -595,7 +595,7 @@ fn render_dir_browser_popup(
         browser.cursor,
         title,
     )
-    .with_entries(browser.entries(), &[]);
+    .with_entries(browser.entries());
 
     frame.render_widget(Clear, popup_area);
     frame.render_stateful_widget(widget, popup_area, &mut list_state);

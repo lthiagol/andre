@@ -135,6 +135,14 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **Unstow uses the list and detail layout.** `4 unstow` lists the groups with their targets;
+  the detail gives the group's source, target and package count. With one group, unstow
+  opens that group's browse screen directly. The browse screen lists only folders and links.
+  `Space` marks links, and `Enter` reviews every marked link (or the link under the cursor
+  when none is marked); `y` removes them together, and each link's row says whether its
+  removal worked. `Space` on a folder says only links can be marked. The browse detail names
+  the link, where it points and its package. The legend and the `Path:` line are gone; the
+  folder is the list title.
 - **Status uses the list and detail layout.** `5 verify status` lists every group with its
   packages folded under it, each with its status glyph. The chip row reads
   `profile [all ▾]` with the status counts after it, at a fixed column. `f` opens the profile dropdown

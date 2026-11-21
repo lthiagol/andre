@@ -12,8 +12,8 @@ use andre_core::{IconSet, StowAction, StowStatus, Theme};
 
 mod helpers;
 use helpers::{
-    down_key, enter_key, esc_key, key_char, make_bootstrap_app, make_empty_app, make_test_app,
-    space_key, up_key,
+    browse_cursor_to, down_key, enter_key, esc_key, key_char, make_bootstrap_app, make_empty_app,
+    make_test_app, make_unstow_app, push_browse, space_key, up_key,
 };
 
 fn render_app(app: &mut App, width: u16, height: u16) -> Buffer {
@@ -710,11 +710,147 @@ fn test_execute_completed_list_scrolls() {
 }
 
 #[test]
-fn test_unstow_target_select_shows_target_label() {
+fn test_unstow_target_select_lists_each_group_with_its_target_and_facts() {
     let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "UnstowTargetSelect");
-    let buf = render_app(&mut app, 80, 24);
-    assert!(line_contains(&buf, "(target:"), "unstow should show target");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "groups 1"), "list title missing");
+    assert!(line_contains(&buf, "home"), "group name missing");
+    assert!(line_contains(&buf, "packages"), "packages fact missing");
+    assert!(
+        !line_contains(&buf, "(target:"),
+        "the old target label is back"
+    );
+}
+
+/// One group means unstow opens its browse screen: the group list is skipped.
+#[test]
+fn test_unstow_with_one_group_opens_its_browse_screen() {
+    let (mut app, _tmp) = make_test_app();
+    app.component_dispatch(key_char('4'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        !line_contains(&buf, "groups 1"),
+        "the group list should be skipped"
+    );
+    assert!(
+        line_contains(&buf, "folder"),
+        "the cursor folder's detail is missing"
+    );
+}
+
+#[test]
+fn test_unstow_browse_shows_the_link_detail_and_no_path_line() {
+    let (mut app, tmp) = make_unstow_app();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".bashrc");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "points to"), "link target missing");
+    assert!(line_contains(&buf, "home/test"), "owning package missing");
+    assert!(!line_contains(&buf, "Path:"), "the path line is back");
+    assert!(!line_contains(&buf, " legend "), "the legend is back");
+    assert!(
+        !line_contains(&buf, "notes.txt"),
+        "regular files are not listed"
+    );
+}
+
+/// The row index of the first row whose text contains `fragment`.
+fn row_of(buf: &Buffer, fragment: &str) -> u16 {
+    (0..buf.area().height)
+        .find(|&y| row_text(buf, y).contains(fragment))
+        .unwrap_or_else(|| panic!("no row contains {fragment:?}"))
+}
+
+/// The target wraps under its value column: the second row starts where the first row's
+/// value starts.
+#[test]
+fn test_unstow_browse_wraps_points_to_under_its_value_column() {
+    let (mut app, tmp) = make_unstow_app();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".bashrc");
+    let buf = render_updated(&mut app, 80, 24);
+    let y = row_of(&buf, "points to");
+    let value = column_of(&buf, y, "~/dotfiles/home/test/").expect("first row of the target");
+    assert_eq!(
+        column_of(&buf, y + 1, ".bashrc"),
+        Some(value),
+        "{:?}",
+        row_text(&buf, y + 1)
+    );
+}
+
+/// Under the unicode set a marked link draws `■` in `accent`, an unmarked link `□` in
+/// `text_dim`, and a folder no box at all.
+#[test]
+fn test_unstow_browse_marks_links_with_boxes_and_folders_with_none() {
+    let (mut app, tmp) = make_unstow_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".bashrc");
+    app.component_dispatch(space_key());
+    // The cursor moves off the links, so none of the three rows is the selected row.
+    browse_cursor_to(&mut app, "dotfiles");
+    let buf = render_updated(&mut app, 80, 24);
+    let colors = ThemeColors::from_theme(app.ctx.core.theme);
+
+    let marked = row_of(&buf, "~ .bashrc");
+    let x = column_of(&buf, marked, "■").expect("marked link draws a filled box");
+    assert_eq!(buf[(x, marked)].fg, colors.accent);
+
+    let unmarked = row_of(&buf, "~ .profile");
+    let x = column_of(&buf, unmarked, "□").expect("unmarked link draws an empty box");
+    assert_eq!(buf[(x, unmarked)].fg, colors.text_dim);
+
+    let folder = row_of(&buf, "/ dotfiles");
+    let text = row_text(&buf, folder);
+    assert!(
+        !text.contains('■') && !text.contains('□'),
+        "a folder has no box: {text:?}"
+    );
+}
+
+#[test]
+fn test_unstow_review_lists_the_marked_links_with_a_remove_button() {
+    let (mut app, tmp) = make_unstow_app();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".bashrc");
+    app.component_dispatch(space_key());
+    browse_cursor_to(&mut app, ".profile");
+    app.component_dispatch(space_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "2 marked"), "mark count missing");
+    assert!(
+        line_contains(&buf, "review 2"),
+        "review hint should count the marks"
+    );
+
+    app.component_dispatch(enter_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "remove 2 links"), "list title missing");
+    assert!(
+        line_contains(&buf, "[ y remove 2 ]"),
+        "remove button missing"
+    );
+}
+
+/// The browse and review screens render at the two larger sizes without panicking.
+#[test]
+fn test_unstow_browse_and_review_render_at_120x40_and_200x50() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, tmp) = make_unstow_app();
+        push_browse(&mut app, tmp.path());
+        render_updated(&mut app, width, height);
+        browse_cursor_to(&mut app, ".bashrc");
+        app.component_dispatch(space_key());
+        render_updated(&mut app, width, height);
+        app.component_dispatch(enter_key());
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            row_containing(&buf, "q quit").is_some(),
+            "{width}x{height}: footer missing"
+        );
+    }
 }
 
 #[test]
@@ -764,7 +900,7 @@ fn test_footer_context_hints_per_screen_family() {
         ("Help", "back"),                 // help
         ("Confirm", "cancel"),            // review y/n
         ("Execute", "inspect"),           // run screen, not finished
-        ("UnstowTargetSelect", "select"), // unstow target family
+        ("UnstowTargetSelect", "browse"), // unstow group list
     ];
 
     for (name, fragment) in cases {
@@ -1593,11 +1729,7 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
         ("Status", "packages 1", "Stow Status"),
         ("Settings", "settings", ""),
         ("Help", "help", ""),
-        (
-            "UnstowTargetSelect",
-            "select target for unstow",
-            "Select Target for Unstow",
-        ),
+        ("UnstowTargetSelect", "groups 1", "Select Target for Unstow"),
     ];
     for (screen, title, old_title) in cases {
         let (mut app, _tmp) = make_test_app();
@@ -1622,19 +1754,13 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
         );
     }
 
-    // Legends are titled like every other panel and have no header row.
+    // The unstow browse screen has no legend: its detail says what a link is.
     let (mut app, tmp) = make_test_app();
     add_status_fixtures(tmp.path());
     push_screen(&mut app, "UnstowBrowse");
     let text = buffer_text(&render_updated(&mut app, 80, 24));
-    assert!(
-        text.contains(" legend "),
-        "UnstowBrowse: legend title missing"
-    );
-    assert!(
-        !text.contains("Legend:"),
-        "UnstowBrowse: legend header row is back"
-    );
+    assert!(!text.contains(" legend "), "UnstowBrowse: legend is back");
+    assert!(!text.contains("Path:"), "UnstowBrowse: path line is back");
 
     // The status screen has no legend: its counts sit in the chip row instead.
     let (mut app, tmp) = make_test_app();
@@ -4154,7 +4280,9 @@ fn test_unlink_review_removes_then_says_so() {
     let link = tmp.path().join("link.txt");
     std::os::unix::fs::symlink(&source, &link).unwrap();
     app.component_stack
-        .push(Box::new(UnstowConfirmComponent::with_path(link.clone())));
+        .push(Box::new(UnstowConfirmComponent::with_paths(vec![
+            link.clone()
+        ])));
 
     let buf = render_updated(&mut app, 80, 24);
     assert!(line_contains(&buf, "remove 1 link"), "list title missing");
@@ -4215,7 +4343,7 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
 
         let link = tmp.path().join("missing-link");
         app.component_stack
-            .push(Box::new(UnstowConfirmComponent::with_path(link)));
+            .push(Box::new(UnstowConfirmComponent::with_paths(vec![link])));
         render_updated(&mut app, width, height);
     }
 }

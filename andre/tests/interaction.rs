@@ -170,7 +170,7 @@ fn test_digit_key_jumps_and_activates() {
         ('1', "Profiles"),
         ('2', "Packages"),
         ('3', "NewPackage"),
-        ('4', "UnstowTargetSelect"),
+        ('4', "UnstowBrowse"), // one group: unstow goes straight to its browse screen
         ('5', "Status"),
         ('6', "Settings"),
         ('7', "Help"),
@@ -2318,4 +2318,65 @@ fn test_profiles_opened_at_puts_the_cursor_on_the_named_profile() {
         .downcast_ref::<ProfilesComponent>()
         .unwrap();
     assert_eq!(profiles.list.cursor, 1);
+}
+
+#[test]
+fn test_unstow_browse_marks_links_and_enter_reviews_all_of_them() {
+    let (mut app, tmp) = make_unstow_app();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".bashrc");
+    app.component_dispatch(space_key());
+    browse_cursor_to(&mut app, ".profile");
+    app.component_dispatch(space_key());
+    app.component_dispatch(enter_key());
+
+    assert_eq!(component_id(&app), "UnstowConfirm");
+    let review: &andre::components::unstow::UnstowConfirmComponent = top_component(&app);
+    assert_eq!(review.links.len(), 2);
+
+    app.component_dispatch(key_char('y'));
+    assert!(!tmp.path().join(".bashrc").is_symlink());
+    assert!(!tmp.path().join(".profile").is_symlink());
+    assert!(
+        tmp.path().join("dotfiles/home/test/.bashrc").is_file(),
+        "the package keeps its files"
+    );
+}
+
+#[test]
+fn test_unstow_browse_enter_without_marks_reviews_the_cursor_link_only() {
+    let (mut app, tmp) = make_unstow_app();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, ".profile");
+    app.component_dispatch(enter_key());
+
+    assert_eq!(component_id(&app), "UnstowConfirm");
+    let review: &andre::components::unstow::UnstowConfirmComponent = top_component(&app);
+    assert_eq!(review.links.len(), 1);
+    assert!(review.links[0].path.ends_with(".profile"));
+}
+
+#[test]
+fn test_space_on_a_folder_is_refused_with_a_toast_and_marks_nothing() {
+    use andre::components::Component as _;
+
+    let (mut app, tmp) = make_unstow_app();
+    push_browse(&mut app, tmp.path());
+    browse_cursor_to(&mut app, "dotfiles");
+    app.component_dispatch(space_key());
+
+    let toast = app.ctx.toast.as_ref().expect("the refusal is shown");
+    assert!(
+        toast.message.contains("dotfiles is not a link"),
+        "{}",
+        toast.message
+    );
+    let browse: &andre::components::unstow::UnstowBrowseComponent = top_component(&app);
+    assert!(
+        browse
+            .hints(&app.ctx)
+            .iter()
+            .any(|hint| hint.label == "review"),
+        "no link was marked"
+    );
 }

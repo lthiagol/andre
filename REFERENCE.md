@@ -225,7 +225,7 @@ the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 | **profiles** | profiles / `◈` | Named sets of packages; run the current action on one (see Profiles) |
 | **packages** | link / `⇢` | Select groups and packages, then run the current action (stow, restow or unstow) |
 | **new package** | new package / `+` | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
-| **unstow** | unlink / `≠` | Remove symlinks interactively, one link at a time |
+| **unstow** | unlink / `≠` | Pick the group, mark the links to remove in its target, then review and remove them together |
 | **verify status** | check / `✓` | View stow status across all groups |
 | **settings** | gear / `≡` | Edit config, add/remove/edit groups, change global options |
 | **help** | question / `?` | Keyboard reference |
@@ -447,6 +447,15 @@ state, the files in the way first.
 | `←` `→` | Fold or unfold a group. On a package, `←` moves to its group's header |
 | `r` | Read every status again |
 | `Esc` / `Enter` | Back |
+
+### Unstow
+| Key | Action |
+| `↑` `↓` | Move through the groups (group list) or the folder's folders and links (browse) |
+| `Enter` | Group list: browse the group's target. Browse: review the marked links, or the link under the cursor when none is marked |
+| `Space` | Browse: mark or unmark the link under the cursor. A folder cannot be marked |
+| `→` / `←` | Browse: open the folder under the cursor / go to the parent folder |
+| `y` / `n` | Review: remove every link / cancel. Once removed, `Enter` returns to the main menu |
+| `Esc` | Back |
 
 ### Global Settings Toggles
 

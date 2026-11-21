@@ -159,3 +159,46 @@ pub fn make_bootstrap_app() -> (App, TempDir) {
     let app = App::with_home(config_path, home).unwrap();
     (app, tmp)
 }
+
+/// `make_test_app` with two stowed links into the `test` package, `.bashrc` and `.profile`,
+/// and the package's `.profile` file in place.
+pub fn make_unstow_app() -> (App, TempDir) {
+    let (app, tmp) = make_test_app();
+    std::fs::write(tmp.path().join("dotfiles/home/test/.profile"), "export X=1").unwrap();
+    std::os::unix::fs::symlink("dotfiles/home/test/.bashrc", tmp.path().join(".bashrc")).unwrap();
+    std::os::unix::fs::symlink("dotfiles/home/test/.profile", tmp.path().join(".profile")).unwrap();
+    (app, tmp)
+}
+
+/// Pushes the unstow browse screen for the `home` group, opened at `home`, and updates it.
+pub fn push_browse(app: &mut App, home: &std::path::Path) {
+    app.component_stack.push(Box::new(
+        andre::components::unstow::UnstowBrowseComponent::with_path(
+            "home".to_string(),
+            home.to_path_buf(),
+        ),
+    ));
+    app.update_components();
+}
+
+/// Moves the browse cursor onto the entry called `name`, with the down key.
+pub fn browse_cursor_to(app: &mut App, name: &str) {
+    let (at, current, len) = {
+        let browse: &andre::components::unstow::UnstowBrowseComponent = app
+            .component_stack
+            .last()
+            .unwrap()
+            .as_any()
+            .downcast_ref()
+            .unwrap();
+        let entries = browse.browser.entries();
+        let at = entries
+            .iter()
+            .position(|e| e.name == name)
+            .expect("entry listed");
+        (at, browse.list.cursor, entries.len())
+    };
+    for _ in 0..(at + len - current) % len {
+        app.component_dispatch(down_key());
+    }
+}

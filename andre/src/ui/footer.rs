@@ -220,14 +220,8 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
         "Status" => status_hints(),
         "Help" => vec![esc("back")],
         "Settings" => vec![arrows("navigate"), enter("group menu"), esc("back")],
-        "UnstowTargetSelect" => vec![arrows("navigate"), enter("select"), esc("back")],
-        "UnstowBrowse" => vec![
-            arrows("navigate"),
-            Hint::new("\u{2192}", "into", PRIO_VERB),
-            enter("unlink"),
-            Hint::new("\u{2190}", "up", PRIO_VERB),
-            esc("back"),
-        ],
+        "UnstowTargetSelect" => vec![arrows("move"), enter("browse"), esc("back")],
+        "UnstowBrowse" => unstow_browse_hints(0),
         _ => Vec::new(),
     }
 }
@@ -267,6 +261,22 @@ pub fn unstow_review_hints(finished: bool) -> Vec<Hint> {
             Hint::new("n", "cancel", PRIO_BACK),
         ]
     }
+}
+
+/// Hints for the unstow browse screen. Enter reviews the marked links, or the link under
+/// the cursor when none is marked, so it names the count.
+pub fn unstow_browse_hints(marked: usize) -> Vec<Hint> {
+    let review = match marked {
+        0 => "review".to_string(),
+        n => format!("review {n}"),
+    };
+    vec![
+        Hint::new("Space", "mark", PRIO_VERB),
+        Hint::new("\u{2192}", "open", PRIO_VERB),
+        Hint::new("\u{2190}", "up", PRIO_VERB),
+        Hint::new("Enter", review, PRIO_PRIMARY),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
 }
 
 /// Hints for the profiles list. `run` is the live action that Enter runs on the selected
@@ -803,29 +813,29 @@ mod tests {
 
     #[test]
     fn test_narrow_footer_drops_the_lowest_priority_hint_whole() {
-        // At 56 columns the row has 48 columns for hints after `q quit`. The hints need 49 with
-        // `navigate`, so `navigate` (the lowest priority) is dropped whole; the rest keep their
-        // order and wording.
-        let line = footer_line(&colors(), &screen_hints("UnstowBrowse"), "default", 56);
+        // At 50 columns the row has 42 columns for hints after `q quit`. The hints need 48
+        // with `Esc back`, so `Esc back` (the lowest priority) is dropped whole; the rest keep
+        // their order and wording.
+        let line = footer_line(&colors(), &screen_hints("UnstowBrowse"), "default", 50);
         let t = line_text(&line);
         assert!(
-            t.starts_with("\u{2192} into  Enter unlink  \u{2190} up"),
+            t.starts_with("Space mark  \u{2192} open  \u{2190} up  Enter review"),
             "{t:?}"
         );
-        assert!(!t.contains("navigate"), "{t:?}");
-        assert!(!t.contains("navi"), "no partial word: {t:?}");
-        assert_eq!(line_width(&line), 56);
+        assert!(!t.contains("Esc"), "{t:?}");
+        assert!(!t.contains("back"), "no partial word: {t:?}");
+        assert_eq!(line_width(&line), 50);
     }
 
     #[test]
     fn test_fit_drops_lowest_priority_first_and_keeps_order() {
         let hints = screen_hints("UnstowBrowse");
-        // Room for the hints without `navigate` (11 columns and a gap) but not with it.
-        let room = hint_row_width(&hints) - 13;
+        // Room for the hints without `Esc back` (8 columns and a gap) but not with it.
+        let room = hint_row_width(&hints) - 10;
         let kept = fit(hints.clone(), room);
         assert_eq!(
             kept.iter().map(|h| h.label.as_ref()).collect::<Vec<_>>(),
-            ["into", "unlink", "up", "back"]
+            ["mark", "open", "up", "review"]
         );
     }
 
