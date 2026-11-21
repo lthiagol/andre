@@ -113,13 +113,13 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                 let kind = entry.kind_icon();
 
                 let entry_fg = if entry.is_dir {
-                    self.colors.value
+                    self.colors.accent
                 } else if entry.is_symlink {
                     self.colors.ok
                 } else if entry.is_artifact {
                     self.colors.text_dim
                 } else {
-                    self.colors.accent
+                    self.colors.text
                 };
 
                 let mut glyphs: Vec<Span> = Vec::new();
@@ -189,8 +189,8 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                 .begin_symbol(Some("↑"))
                 .end_symbol(Some("↓"))
                 .track_symbol(Some("│"))
-                .thumb_style(Style::default().fg(self.colors.key))
-                .track_style(Style::default().fg(self.colors.text_dim));
+                .thumb_style(Style::default().fg(self.colors.accent))
+                .track_style(Style::default().fg(self.colors.border));
             let mut scrollbar_state = ScrollbarState::new(content_len)
                 .position(self.cursor)
                 .viewport_content_length(page_size);
@@ -215,7 +215,7 @@ fn entries_label(count: usize) -> String {
 fn render_file_legend(buf: &mut ratatui::buffer::Buffer, area: Rect, colors: &ThemeColors) {
     let items: Vec<ListItem> = vec![
         ListItem::new(Line::from(vec![
-            Span::styled("  /  ", Style::default().fg(colors.text)),
+            Span::styled("  /  ", Style::default().fg(colors.accent)),
             Span::styled("Directory", Style::default().fg(colors.text_dim)),
         ])),
         ListItem::new(Line::from(vec![

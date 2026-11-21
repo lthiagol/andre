@@ -16,7 +16,7 @@ jobs:
     name: lint + test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -104,7 +104,7 @@ jobs:
     steps:
       # The meta step below resolves the tag with `git rev-list`, so this job
       # needs the repository itself — not just the tap.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Resolve tag + commit SHA + SHA256
         id: meta

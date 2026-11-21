@@ -25,7 +25,7 @@ pub fn render_adopt_name(
         Line::from(vec![
             Span::raw("> "),
             Span::styled(package_name.to_string(), Style::default().fg(colors.value)),
-            Span::styled("_", Style::default().fg(colors.key)),
+            Span::styled("_", Style::default().fg(colors.accent)),
         ]),
         Line::from(""),
         Line::from(Span::styled(

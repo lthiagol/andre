@@ -958,7 +958,7 @@ fn test_top_bar_verbose_meter_fits_80_columns_at_low_mid_and_max_level() {
         let x = (from..buf.area().width)
             .find(|&x| buf[(x, y)].symbol() == "│")
             .expect("divider missing");
-        assert_eq!(buf[(x, y)].fg, colors.text_dim, "divider colour");
+        assert_eq!(buf[(x, y)].fg, colors.border, "divider colour");
     }
 }
 
@@ -1979,12 +1979,12 @@ fn test_package_list_draws_its_scrollbar_thumb_when_rows_overflow() {
     let (mut app, _tmp) = make_two_group_app();
     push_packages(&mut app, &["home", "workstation"]);
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
-    assert_ne!(colors.key, colors.border, "thumb and track must differ");
+    assert_ne!(colors.accent, colors.border, "thumb and track must differ");
     let buf = render_updated(&mut app, 80, 24);
 
     let column = panel_right_column(&buf, PACKAGES_TITLE);
     let rows = panel_rows(&buf, PACKAGES_TITLE);
-    let thumb = rows_with_fg(&buf, column, rows.clone(), colors.key);
+    let thumb = rows_with_fg(&buf, column, rows.clone(), colors.accent);
     assert!(!thumb.is_empty(), "no scrollbar thumb on the right border");
     assert!(thumb.len() < rows.len(), "the thumb fills the whole track");
     for y in rows.filter(|y| !thumb.contains(y)) {
@@ -2005,7 +2005,7 @@ fn test_package_list_draws_no_scrollbar_when_every_row_fits() {
 
     let column = panel_right_column(&buf, PACKAGES_TITLE);
     let rows = panel_rows(&buf, PACKAGES_TITLE);
-    assert!(rows_with_fg(&buf, column, rows.clone(), colors.key).is_empty());
+    assert!(rows_with_fg(&buf, column, rows.clone(), colors.accent).is_empty());
     assert!(
         rows.clone()
             .all(|y| buf[(column, y)].symbol() == "\u{2502}"),
@@ -2052,9 +2052,45 @@ fn test_group_list_draws_its_scrollbar_thumb_when_groups_overflow() {
     let column = panel_right_column(&buf, title);
     let rows = panel_rows(&buf, title);
     assert!(
-        !rows_with_fg(&buf, column, rows, colors.key).is_empty(),
+        !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
         "no scrollbar thumb on the group list's right border"
     );
+}
+
+#[test]
+fn test_execute_highlighted_row_is_text_on_selection() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::execute::{ExecutionResult, ExecutionState};
+
+    let (mut app, _tmp) = make_test_app();
+    let colors = ThemeColors::from_theme(app.ctx.core.theme);
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    let results = vec![ExecutionResult {
+        group: "home".into(),
+        package: "pkg0".into(),
+        success: false,
+        error_message: Some("boom".into()),
+    }];
+    let mut exec = ExecuteComponent::new(rx, results.len(), results);
+    exec.state = ExecutionState::Completed;
+    // Row 0 is the "Results:" heading, so row 1 is the failed package.
+    exec.scroll_index = 1;
+    app.component_stack.push(Box::new(exec));
+
+    let buf = render_app(&mut app, 80, 24);
+    let y = (0..buf.area().height)
+        .find(|&y| row_text(&buf, y).contains("boom"))
+        .expect("failed row is drawn");
+    let text_x = column_of(&buf, y, "boom").expect("error text is drawn");
+    let mark_x = column_of(&buf, y, "\u{2717}").expect("failure mark is drawn");
+    for x in [text_x, mark_x] {
+        let cell = &buf[(x, y)];
+        assert_eq!(cell.fg, colors.text, "highlighted row text at column {x}");
+        assert_eq!(
+            cell.bg, colors.selection,
+            "highlighted row fill at column {x}"
+        );
+    }
 }
 
 #[test]
@@ -2082,7 +2118,7 @@ fn test_execute_list_draws_its_scrollbar_thumb_on_the_panel_border() {
     let column = panel_right_column(&buf, title);
     let rows = panel_rows(&buf, title);
     assert!(
-        !rows_with_fg(&buf, column, rows, colors.key).is_empty(),
+        !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
         "no scrollbar thumb on the execute list's panel border"
     );
 }
@@ -2101,7 +2137,7 @@ fn test_status_list_draws_its_scrollbar_thumb_when_rows_overflow() {
     let rows = panel_rows(&buf, STATUS_TITLE);
     assert_eq!(rows.len(), 6, "the status list should show 6 rows at 80x24");
     assert!(
-        !rows_with_fg(&buf, column, rows, colors.key).is_empty(),
+        !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
         "no scrollbar thumb on the status list's right border"
     );
 }
@@ -2115,7 +2151,7 @@ fn test_status_list_draws_no_scrollbar_when_every_row_fits() {
 
     let column = panel_right_column(&buf, STATUS_TITLE);
     let rows = panel_rows(&buf, STATUS_TITLE);
-    assert!(rows_with_fg(&buf, column, rows.clone(), colors.key).is_empty());
+    assert!(rows_with_fg(&buf, column, rows.clone(), colors.accent).is_empty());
     assert!(
         rows.clone()
             .all(|y| buf[(column, y)].symbol() == "\u{2502}"),

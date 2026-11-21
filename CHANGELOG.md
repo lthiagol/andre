@@ -20,16 +20,30 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
-- Theme colour roles are renamed by purpose (no colour changes): `background`→`bg`,
+- Theme colour roles are renamed by purpose: `background`→`bg`,
   `secondary`→`text`, `muted`→`text_dim`, `primary`→`accent`, `highlight`→`value`,
   `indicator`→`key`, `success`→`ok`, `warning`→`warn`, `error`→`err`. `ThemeColors`
-  gains `on_accent` (the action pill's text, the old background value in every theme)
-  and `banner` (the five banner letters, the current built-in colours). The
-  `selection` glyph fallback names follow the rename. Rendering is unchanged.
+  gains `on_accent` (the action pill's text) and `banner` (the five banner letters).
+  The `selection` glyph fallback names follow the rename. The rename alone changed
+  no colour.
+- Theme palettes are the published colours of each theme: Catppuccin (style guide,
+  accent from the palette file), Dracula (spec), Nord (colour docs) and Gruvbox
+  (`colors/gruvbox.vim`, dark mode). Default keeps its terminal background
+  (`Reset`) and uses the xterm-256 colours. Every role is applied to the purpose
+  its name gives, so colours move where the purpose changed: the action pill is
+  `on_accent` on `accent`; `unstowed` and the file browser's plain files are
+  `text`; directories and the `/` legend are `accent`; the confirm group row,
+  settings values and menu fact values are `value`; the execute gauge is `accent`
+  on `selection`, and the execute highlight is `text` on `selection`; the toast's success
+  border is `ok`; the help headings are `accent`; the scrollbar thumbs are
+  `accent`; the top bar's `on` labels are bold `text`, its divider and the `═` and
+  `-` rules are `border`; the banner breadcrumb and taglines are `text_dim`. The
+  derived colours are noted in `andre/src/theme.rs`. Colours change in every
+  theme; the glyph fallbacks shrink to the five listed below.
 - Main menu is a list and a detail panel. The list on the left shows each action
   with an icon, its label and a jump digit (`1`–`7`) at the right edge. The
   selected row is filled edge to edge with a new `selection` theme colour and
-  marked with a `▌` accent in the primary colour on the normal background; the
+  marked with a `▌` accent in the `accent` colour on the normal background; the
   `>>` marker is gone. The list panel is titled `actions`. The Settings
   breadcrumb reads `Settings` (was `Config`). The first item is
   `stow packages` and follows the current action. The labels are `adopt files`,
@@ -57,23 +71,23 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   the render tests find it from the drawn banner separator.
 - Top bar redesigned as one flat, lowercase row: the current action as a pill
   on the left (`stow`, `restow`, `unstow`), then the verbosity level, then a
-  muted `│` divider and a chip per boolean flag (`✗ dry-run`, `✗ no-fold`,
+  `│` divider in `border` and a chip per boolean flag (`✗ dry-run`, `✗ no-fold`,
   `✗ adopt`, `✗ dotfiles`; nerd set uses the Font Awesome check and times).
   Verbosity is a level, so its chip has no mark: `verbose ▰▰▱▱▱` is a meter of
-  `MAX_VERBOSITY` segments, `▰` filled in primary and bold up to the level and
-  `▱` muted for the rest (glyphs in `Icons::meter_full` / `meter_empty`). Each
-  flag chip's mark is green (success) when on and red
-  (error) when off. Each chip's hotkey letter is drawn in the indicator colour
-  inside its label, so the separate key letters are gone. On labels are bright,
-  off labels muted. The whole group (pill and chips) is centred in the bar's
+  `MAX_VERBOSITY` segments, `▰` filled in `accent` and bold up to the level and
+  `▱` in `text_dim` for the rest (glyphs in `Icons::meter_full` / `meter_empty`). Each
+  flag chip's mark is green (`ok`) when on and red
+  (`err`) when off. Each chip's hotkey letter is drawn in the `key` colour
+  inside its label, so the separate key letters are gone. On labels are bold `text`,
+  off labels `text_dim`. The whole group (pill and chips) is centred in the bar's
   width, with any odd column on the right. A `debug` chip shows in debug mode.
   Labels shrink to hotkey letters when the full bar does not fit (`v ▰▱▱▱▱`),
   and to `v<level>` (`v2`) when even that does not fit. The top bar no longer
   shows the theme. The bar is built by the pure function
   `ui::status_bar::top_bar_line`, which has unit tests.
 - Bottom bar is one row: the current screen's key hints on the left, then
-  `theme <name>` and `q quit` at the right edge (`t` in the indicator colour,
-  the name in the highlight colour). The theme chip shrinks to `theme` when the
+  `theme <name>` and `q quit` at the right edge (`t` in the `key` colour,
+  the name in the `value` colour). The theme chip shrinks to `theme` when the
   full name does not fit beside the hints, and is dropped when not even that
   fits. `q quit` is always kept. The global-key line is gone (those keys now
   live in the top bar). The freed row goes back to the content area. Both bars
@@ -225,20 +239,18 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   closure so debug messages are only formatted while debugging is on.
 - One cursor style for every list. The new `ui::selection::row` helper draws the
   cursor row on the group, package, target, file browser, settings and settings
-  popup lists: a `▌` accent in the primary colour on the normal background, and
+  popup lists: a `▌` accent in the `accent` colour on the normal background, and
   the row filled edge to edge with the theme's `selection` colour. Unselected rows
   get the same one-column gutter, so text lines up. The main menu uses the helper
   too. The `>>`, `-->` and `> ` markers are gone. The status and confirm screens
   have no cursor, so they keep their scrolling lists. The execution list keeps its
-  progress highlight. On the cursor row, text takes the label colour (secondary)
-  and the accent is primary, so every theme keeps the row readable. A checkbox or
+  progress highlight. On the cursor row, text takes the label colour (`text`)
+  whatever its role, so every theme keeps the row readable. A checkbox or
   status glyph keeps its own colour there where that colour reads at 3:1 on the
   fill (WCAG 1.4.11); where it does not, the glyph falls back to the label colour.
-  The glyph shape still tells the states apart. The fallbacks are: Dracula error
-  and muted; Catppuccin Mocha muted; Catppuccin Latte success, warning and muted;
-  Catppuccin Frappe error and muted; Catppuccin Macchiato muted; Nord error and
-  muted; Gruvbox success, warning, error and muted. Tests: `ui::selection` unit
-  tests, and `andre/tests/render.rs` checks the fill, the accent, the absence of
+  The glyph shape still tells the states apart. The fallbacks are: Dracula error;
+  Catppuccin Latte success and warning; Catppuccin Frappe error; Nord error.
+  Tests: `ui::selection` unit tests, and `andre/tests/render.rs` checks the fill, the accent, the absence of
   the old markers and the glyph contrast on every list screen, in all eight themes.
 - Checkboxes come from `ui::icons` and follow `global.icons`: `■` / `□` in
   unicode, the Font Awesome check-square and square glyphs in nerd. The package
@@ -250,10 +262,10 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   `ui::status_style`: the same colour, the same lowercase word (`stowed`,
   `unstowed`, `partial`, `conflict`, `missing`, `empty`, from `StowStatus::label`)
   and the same legend. The package select's `Installed`, `Ready`, `Blocked` and
-  `Not found` are gone. Unstowed is primary on both screens (it was muted on the
-  status screen). Test: `test_package_and_status_screens_share_glyph_colour_and_word`.
+  `Not found` are gone. Unstowed is `text` on both screens. Its colour differs from partial's (`warn`)
+  in every theme. Test: `test_package_and_status_screens_share_glyph_colour_and_word`.
 - Package rows read `<checkbox> <status glyph> <package>  <group>  <status word>
-  <detail>`. The package is in the label colour and the group is muted. Each
+  <detail>`. The package is in the label colour and the group is `text_dim`. Each
   column is padded to its longest entry when the rows are built, so the groups,
   status words and details each start in one column. The package column is capped
   at 32 columns and the group column at 16; longer names are cut with `…`, so every
@@ -303,7 +315,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   settings, confirm, execute, help). Each one reserved a single column that was
   narrower than the scrollbar's minimum, so the column stayed blank and no thumb
   showed. The bar now draws over the right border of its panel: the track is in the
-  border colour and the thumb in the indicator colour, and it appears only when the
+  border colour and the thumb in the `accent` colour, and it appears only when the
   rows overflow. The list keeps the full panel width, so its right border lines up
   with the legend's. Pre-existing; affects released versions. Tests:
   `andre/tests/render.rs` (thumb present when overflowing, absent when fitting,

@@ -68,14 +68,9 @@ pub fn row_with_glyphs(
     Line::from(spans)
 }
 
-/// Text on the cursor row keeps the accent colour and takes the label colour otherwise.
-/// Modifiers such as bold are kept.
+/// Text on the cursor row always takes the label colour. Modifiers such as bold are kept.
 fn text_on_fill(span: Span<'static>, colors: &ThemeColors) -> Span<'static> {
-    if span.style.fg == Some(colors.accent) {
-        span
-    } else {
-        Span::styled(span.content, span.style.fg(colors.text))
-    }
+    Span::styled(span.content, span.style.fg(colors.text))
 }
 
 /// A glyph keeps its colour on the cursor row when the colour reads at
@@ -106,19 +101,21 @@ mod tests {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
-    /// The glyph colours a list row can draw: checkbox on and off, and the status colours.
-    fn glyph_colours(colors: &ThemeColors) -> [(&'static str, Color); 5] {
+    /// The glyph colours a list row can draw: checkbox on and off, the status colours, and
+    /// the accent of the main-menu icon.
+    fn glyph_colours(colors: &ThemeColors) -> [(&'static str, Color); 6] {
         [
             ("ok", colors.ok),
-            ("accent", colors.accent),
+            ("text", colors.text),
             ("warn", colors.warn),
             ("err", colors.err),
             ("text_dim", colors.text_dim),
+            ("accent", colors.accent),
         ]
     }
 
     #[test]
-    fn test_selected_row_starts_with_primary_accent_on_normal_background() {
+    fn test_selected_row_starts_with_accent_bar_on_normal_background() {
         let colors = colors();
         let line = row(vec![Span::raw("alpha")], true, &colors, 10);
         let accent = &line.spans[0];
@@ -149,20 +146,18 @@ mod tests {
     #[test]
     fn test_selected_row_uses_the_label_colour_for_other_text() {
         let colors = colors();
-        for fg in [colors.text_dim, colors.ok, colors.err, colors.value] {
+        for fg in [
+            colors.text_dim,
+            colors.ok,
+            colors.err,
+            colors.value,
+            colors.accent,
+        ] {
             let span = Span::styled("value", Style::default().fg(fg));
             let line = row(vec![span], true, &colors, 20);
             assert_eq!(line.spans[1].style.fg, Some(colors.text));
             assert_eq!(line.spans[1].style.bg, Some(colors.selection));
         }
-    }
-
-    #[test]
-    fn test_selected_row_keeps_the_accent_colour_on_text() {
-        let colors = colors();
-        let icon = Span::styled("i", Style::default().fg(colors.accent));
-        let line = row(vec![icon], true, &colors, 10);
-        assert_eq!(line.spans[1].style.fg, Some(colors.accent));
     }
 
     #[test]
@@ -198,15 +193,15 @@ mod tests {
 
     #[test]
     fn test_selected_row_glyph_keeps_its_colour_when_it_reads_at_3_to_1() {
-        // Nord: ok, accent and warn reach 3:1 on the fill and keep their colour.
-        // Err and text_dim do not, so they fall back (see FALLBACKS).
+        // Nord: ok, accent, warn and text_dim reach 3:1 on the fill and keep their
+        // colour. Err does not, so it falls back (see FALLBACKS).
         let colors = colors();
         for (name, fg, keeps) in [
             ("ok", colors.ok, true),
             ("accent", colors.accent, true),
             ("warn", colors.warn, true),
             ("err", colors.err, false),
-            ("text_dim", colors.text_dim, false),
+            ("text_dim", colors.text_dim, true),
         ] {
             let glyph = Span::styled("\u{f00c}", Style::default().fg(fg));
             let line = row_with_glyphs(vec![glyph], vec![Span::raw("x")], true, &colors, 10);
@@ -261,23 +256,14 @@ mod tests {
 
     /// Every theme and glyph colour where the glyph falls back to the label colour on the
     /// cursor row. Each one reads below 3:1 against that theme's `selection` fill, so the
-    /// glyph shape alone carries the state there. Listed in theme order. Default has none.
+    /// glyph shape alone carries the state there. Listed in theme order. Default, Mocha,
+    /// Macchiato and Gruvbox have none.
     const FALLBACKS: &[(Theme, &str)] = &[
         (Theme::Dracula, "err"),
-        (Theme::Dracula, "text_dim"),
-        (Theme::CatppuccinMocha, "text_dim"),
         (Theme::CatppuccinLatte, "ok"),
         (Theme::CatppuccinLatte, "warn"),
-        (Theme::CatppuccinLatte, "text_dim"),
         (Theme::CatppuccinFrappe, "err"),
-        (Theme::CatppuccinFrappe, "text_dim"),
-        (Theme::CatppuccinMacchiato, "text_dim"),
         (Theme::Nord, "err"),
-        (Theme::Nord, "text_dim"),
-        (Theme::Gruvbox, "ok"),
-        (Theme::Gruvbox, "warn"),
-        (Theme::Gruvbox, "err"),
-        (Theme::Gruvbox, "text_dim"),
     ];
 
     #[test]

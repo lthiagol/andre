@@ -14,7 +14,7 @@ fn k(label: &str, colors: &ThemeColors) -> Span<'static> {
 }
 
 fn h(label: &str, colors: &ThemeColors) -> Span<'static> {
-    Span::styled(label.to_string(), Style::default().fg(colors.value))
+    Span::styled(label.to_string(), Style::default().fg(colors.accent))
 }
 
 pub fn help_item_count() -> usize {

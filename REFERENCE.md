@@ -430,7 +430,7 @@ Cycle through themes with `t`:
 
 | Theme | Description |
 |:---|:---|
-| **Default** | Dark base with amber accents |
+| **Default** | Dark base with amber accents. Paints no background, so it follows the terminal; it is built for dark terminals (use Catppuccin Latte on a light one) |
 | **Dracula** | Classic dark purple theme |
 | **Catppuccin Mocha** | Dark, color-rich |
 | **Catppuccin Latte** | Light theme |

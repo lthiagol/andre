@@ -39,7 +39,7 @@ pub const STATUS_WORD_WIDTH: usize = 8;
 pub fn status_color(colors: &ThemeColors, status: StowStatus) -> Color {
     match status {
         StowStatus::Stowed => colors.ok,
-        StowStatus::Unstowed => colors.accent,
+        StowStatus::Unstowed => colors.text,
         StowStatus::Partial => colors.warn,
         StowStatus::Conflict => colors.err,
         StowStatus::Missing | StowStatus::Empty => colors.text_dim,
@@ -95,11 +95,26 @@ mod tests {
         for theme in Theme::ALL {
             let colors = ThemeColors::from_theme(theme);
             assert_eq!(status_color(&colors, StowStatus::Stowed), colors.ok);
-            assert_eq!(status_color(&colors, StowStatus::Unstowed), colors.accent);
+            assert_eq!(status_color(&colors, StowStatus::Unstowed), colors.text);
             assert_eq!(status_color(&colors, StowStatus::Partial), colors.warn);
             assert_eq!(status_color(&colors, StowStatus::Conflict), colors.err);
             assert_eq!(status_color(&colors, StowStatus::Missing), colors.text_dim);
             assert_eq!(status_color(&colors, StowStatus::Empty), colors.text_dim);
+        }
+    }
+
+    #[test]
+    fn test_unstowed_and_partial_are_distinct_colours_in_every_theme() {
+        // Text and warn can share a luminance (Mocha: about 1.1:1), so the colours
+        // must differ in hue as well as brightness.
+        for theme in Theme::ALL {
+            let colors = ThemeColors::from_theme(theme);
+            assert_ne!(
+                status_color(&colors, StowStatus::Unstowed),
+                status_color(&colors, StowStatus::Partial),
+                "{}",
+                theme.name()
+            );
         }
     }
 

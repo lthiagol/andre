@@ -40,7 +40,7 @@ pub fn render_scrollbar(
         .begin_symbol(None)
         .end_symbol(None)
         .track_symbol(Some("│"))
-        .thumb_style(Style::default().fg(colors.key))
+        .thumb_style(Style::default().fg(colors.accent))
         .track_style(Style::default().fg(colors.border));
 
     let mut state = ScrollbarState::new(content_len)

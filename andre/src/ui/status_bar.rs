@@ -144,7 +144,7 @@ fn left_chips(
     let mut spans = vec![action_pill(colors, flags.action.as_str()), Span::raw(" ")];
     spans.extend(verbose_chip(colors, icons, flags.verbosity, labels));
     spans.push(Span::raw(" ".repeat(GAP)));
-    spans.push(Span::styled(DIVIDER, Style::default().fg(colors.text_dim)));
+    spans.push(Span::styled(DIVIDER, Style::default().fg(colors.border)));
     for chip in chips {
         spans.push(Span::raw(" ".repeat(GAP)));
         spans.extend(chip);
@@ -219,7 +219,7 @@ fn icon_span(colors: &ThemeColors, icons: &Icons, on: bool) -> Vec<Span<'static>
 }
 
 /// A label with its hotkey letter (`hotkey` is a byte index into an ASCII label)
-/// drawn in the `key` colour. On labels are bright, off labels `text_dim`.
+/// drawn in the `key` colour. On labels are bold `text`, off labels `text_dim`.
 fn label_spans(
     colors: &ThemeColors,
     label: &str,
@@ -244,11 +244,11 @@ fn label_spans(
     ]
 }
 
-/// Bright and bold when the chip is on, `text_dim` when off.
+/// Bold `text` when the chip is on, `text_dim` when off.
 fn word_style(colors: &ThemeColors, on: bool) -> Style {
     if on {
         Style::default()
-            .fg(colors.accent)
+            .fg(colors.text)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(colors.text_dim)
@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn test_top_bar_action_pill_shows_current_action_on_primary() {
+    fn test_top_bar_action_pill_shows_current_action_on_accent() {
         let flags = StowFlags {
             action: StowAction::Unstow,
             ..all_off()
@@ -423,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mark_is_success_when_on_and_error_when_off() {
+    fn test_mark_is_ok_when_on_and_err_when_off() {
         let flags = StowFlags {
             dry_run: true,
             ..all_off()
@@ -434,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn test_marks_are_error_when_off_in_unicode_set_too() {
+    fn test_marks_are_err_when_off_in_unicode_set_too() {
         let line = bar(&all_off(), &UNICODE, false, 76);
         assert_eq!(span(&line, "\u{2717} ").style.fg, Some(colors().err));
         let on = bar(
@@ -450,14 +450,14 @@ mod tests {
     }
 
     #[test]
-    fn test_on_label_is_bright_bold_and_off_label_is_muted() {
+    fn test_on_label_is_bold_text_and_off_label_is_text_dim() {
         let flags = StowFlags {
             dry_run: true,
             ..all_off()
         };
         let line = bar(&flags, &NERD, false, 76);
         let on_word = span(&line, "ry-run");
-        assert_eq!(on_word.style.fg, Some(colors().accent));
+        assert_eq!(on_word.style.fg, Some(colors().text));
         assert!(on_word.style.add_modifier.contains(Modifier::BOLD));
 
         let off_word = span(&line, "o-fold");
@@ -465,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hotkey_letter_is_indicator_bold_inside_the_label() {
+    fn test_hotkey_letter_is_key_bold_inside_the_label() {
         let line = bar(&all_off(), &NERD, false, 76);
         let key = span(&line, "d");
         assert_eq!(key.style.fg, Some(colors().key));
@@ -495,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verbose_label_is_bright_above_zero_and_muted_at_zero() {
+    fn test_verbose_label_is_bold_text_above_zero_and_text_dim_at_zero() {
         let on = bar(
             &StowFlags {
                 verbosity: 2,
@@ -505,7 +505,7 @@ mod tests {
             false,
             76,
         );
-        assert_eq!(span(&on, "erbose").style.fg, Some(colors().accent));
+        assert_eq!(span(&on, "erbose").style.fg, Some(colors().text));
         assert!(span(&on, "erbose")
             .style
             .add_modifier
@@ -587,13 +587,13 @@ mod tests {
     }
 
     #[test]
-    fn test_muted_divider_sits_between_verbose_and_the_flags() {
+    fn test_border_divider_sits_between_verbose_and_the_flags() {
         let line = bar(&all_on(StowAction::Unstow), &NERD, false, 120);
         let t = text(&line);
         let divider = t.find(DIVIDER).expect("divider missing");
         assert!(t.find("verbose").unwrap() < divider, "{t:?}");
         assert!(divider < t.find("dry-run").unwrap(), "{t:?}");
-        assert_eq!(span(&line, DIVIDER).style.fg, Some(colors().text_dim));
+        assert_eq!(span(&line, DIVIDER).style.fg, Some(colors().border));
     }
 
     #[test]

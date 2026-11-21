@@ -49,7 +49,7 @@ pub fn render_toast(frame: &mut Frame, area: Rect, colors: &ThemeColors, toast: 
         ToastKind::Error => colors.err,
     };
     let border = match toast.kind {
-        ToastKind::Success => colors.value,
+        ToastKind::Success => colors.ok,
         ToastKind::Error => colors.err,
     };
 
@@ -57,7 +57,7 @@ pub fn render_toast(frame: &mut Frame, area: Rect, colors: &ThemeColors, toast: 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border))
-        .style(Style::default().bg(colors.bg).fg(colors.accent));
+        .style(Style::default().bg(colors.bg).fg(colors.text));
     let paragraph = Paragraph::new(Line::from(Span::styled(
         msg,
         Style::default().fg(fg).add_modifier(Modifier::BOLD),

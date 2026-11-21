@@ -97,7 +97,7 @@ pub fn render_execute(
     let gauge = Gauge::default()
         .ratio(gauge_ratio(results.len(), total))
         .label(label)
-        .gauge_style(Style::default().fg(colors.accent).bg(colors.text_dim))
+        .gauge_style(Style::default().fg(colors.accent).bg(colors.selection))
         .use_unicode(true);
     frame.render_widget(gauge, chunks[0]);
 
@@ -160,7 +160,8 @@ pub fn render_execute(
         "execute_list_len must match rendered items"
     );
 
-    let list = List::new(items).highlight_style(Style::default().bg(colors.text_dim));
+    let list =
+        List::new(items).highlight_style(Style::default().bg(colors.selection).fg(colors.text));
     let page_size = list_area.height.max(1) as usize;
 
     let mut list_state = ratatui::widgets::ListState::default();

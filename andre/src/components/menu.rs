@@ -210,7 +210,7 @@ impl Component for MainMenuComponent {
         for (label, value) in &self.detail.facts {
             lines.push(Line::from(vec![
                 Span::styled(format!("{label:<10}"), Style::default().fg(colors.text_dim)),
-                Span::styled(value.clone(), Style::default().fg(colors.accent)),
+                Span::styled(value.clone(), Style::default().fg(colors.value)),
             ]));
         }
         frame.render_widget(
@@ -289,9 +289,12 @@ fn list_row(
     let used = 1 + 2 + label.width() + 1 + 1;
     let gap = (width as usize).saturating_sub(used + 1);
 
-    selection::row(
+    selection::row_with_glyphs(
+        vec![Span::styled(
+            item.icon(icons),
+            Style::default().fg(colors.accent),
+        )],
         vec![
-            Span::styled(item.icon(icons), Style::default().fg(colors.accent)),
             Span::raw("  "),
             Span::styled(label, label_style),
             Span::raw(" ".repeat(gap)),

@@ -305,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn test_key_names_use_indicator_colour() {
+    fn test_key_names_use_key_colour() {
         let spans = screen_hints("Settings", &colors());
         let enter = spans.iter().find(|s| s.content == "Enter").unwrap();
         assert_eq!(enter.style.fg, Some(colors().key));
@@ -360,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quit_key_is_indicator_and_label_is_muted() {
+    fn test_quit_key_is_key_and_label_is_text_dim() {
         let line = footer_line(&colors(), "MainMenu", "nord", INNER_WIDTH);
         assert_eq!(span(&line, "q").style.fg, Some(colors().key));
         assert_eq!(span(&line, " quit").style.fg, Some(colors().text_dim));

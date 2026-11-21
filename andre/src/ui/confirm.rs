@@ -38,7 +38,7 @@ pub fn render_confirm(
                 ListItem::new(text.as_str()).style(Style::default().fg(colors.accent))
             }
             ConfirmRow::Group(text) => {
-                ListItem::new(text.as_str()).style(Style::default().fg(colors.ok))
+                ListItem::new(text.as_str()).style(Style::default().fg(colors.value))
             }
             ConfirmRow::Command(text) => {
                 ListItem::new(text.as_str()).style(Style::default().fg(colors.text))

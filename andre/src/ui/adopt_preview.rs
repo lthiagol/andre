@@ -40,7 +40,7 @@ pub fn render_adopt_preview(
     let plan = match plan {
         Some(p) => p,
         None => {
-            let msg = Paragraph::new("Building plan...").style(Style::default().fg(colors.warn));
+            let msg = Paragraph::new("Building plan...").style(Style::default().fg(colors.accent));
             frame.render_widget(msg, area);
             return;
         }
@@ -56,7 +56,7 @@ pub fn render_adopt_preview(
     )));
     lines.push(Line::from(Span::styled(
         sep.clone(),
-        Style::default().fg(colors.text_dim),
+        Style::default().fg(colors.border),
     )));
 
     lines.push(Line::from(Span::styled(
@@ -104,7 +104,7 @@ pub fn render_adopt_preview(
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         sep,
-        Style::default().fg(colors.text_dim),
+        Style::default().fg(colors.border),
     )));
     lines.push(Line::from(Span::styled(
         "Press y to execute, n to cancel",

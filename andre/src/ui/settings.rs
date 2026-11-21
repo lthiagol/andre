@@ -94,7 +94,7 @@ fn render_row(
         )],
         SettingsRow::Verbosity => vec![
             label("verbosity:", colors, selected),
-            value(verbosity.to_string(), colors.accent),
+            value(verbosity.to_string(), colors.value),
         ],
         SettingsRow::DryRun => vec![
             label("dry_run:", colors, selected),
@@ -111,7 +111,7 @@ fn render_row(
         ],
         SettingsRow::Action => vec![
             label("action:", colors, selected),
-            value(action.as_str().to_string(), colors.accent),
+            value(action.as_str().to_string(), colors.value),
         ],
         SettingsRow::ThemeName => vec![
             label("theme:", colors, selected),
@@ -125,7 +125,7 @@ fn render_row(
             let noun = if *count == 1 { "pattern" } else { "patterns" };
             vec![
                 label("ignore:", colors, selected),
-                value(format!("{count} {noun}"), colors.accent),
+                value(format!("{count} {noun}"), colors.value),
             ]
         }
         SettingsRow::Spacer => vec![Span::raw("")],
@@ -133,12 +133,12 @@ fn render_row(
             let noun = if *count == 1 { "group" } else { "groups" };
             vec![
                 label("group:", colors, selected),
-                value(format!("{count} {noun}"), colors.accent),
+                value(format!("{count} {noun}"), colors.value),
             ]
         }
         SettingsRow::SaveButton => {
             let (text, fg) = if config_dirty {
-                (format!("[Update {filename}]"), colors.value)
+                (format!("[Update {filename}]"), colors.accent)
             } else {
                 ("[All saved]".to_string(), colors.text_dim)
             };
@@ -558,7 +558,7 @@ fn render_ignore_manage_popup(
         })
         .collect();
 
-    let rule = Span::styled("-".repeat(max_len), Style::default().fg(colors.text_dim));
+    let rule = Span::styled("-".repeat(max_len), Style::default().fg(colors.border));
     items.push(ListItem::new(selection::row(
         vec![rule],
         false,
