@@ -48,12 +48,12 @@ impl Component for HelpComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
-        let title = format!(" {} > Help ", ctx.breadcrumb);
+        let title = " help ";
         crate::ui::render_help(
             frame,
             area,
             &colors,
-            &title,
+            title,
             self.scroll_index,
             self.viewport_height,
         );

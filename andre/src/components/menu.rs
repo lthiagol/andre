@@ -23,6 +23,7 @@ use crate::components::{AppContext, Component, Transition};
 use crate::input;
 use crate::theme::ThemeColors;
 use crate::ui::icons::Icons;
+use crate::ui::selection;
 
 /// Width of the action list. The detail panel takes the rest of the content area.
 const LIST_WIDTH: u16 = 34;
@@ -258,9 +259,8 @@ impl MainMenuComponent {
     }
 }
 
-/// One list row: accent bar, icon, label, and the jump digit at the right.
-/// The selected row is filled with the theme's selection colour from the icon to the
-/// right edge. The accent bar sits on the normal background, so it is not filled.
+/// One list row: icon, label, and the jump digit at the right. The shared selection
+/// style draws the accent bar and the fill.
 fn list_row(
     item: MenuItem,
     index: usize,
@@ -270,41 +270,38 @@ fn list_row(
     colors: &ThemeColors,
     width: u16,
 ) -> Line<'static> {
-    let base = if selected {
-        Style::default().bg(colors.selection)
-    } else {
-        Style::default()
-    };
     let label = item.label(action);
     let label_style = if selected {
-        base.fg(colors.secondary).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(colors.secondary)
+            .add_modifier(Modifier::BOLD)
     } else {
-        base.fg(colors.secondary)
+        Style::default().fg(colors.secondary)
     };
     let digit_style = if selected {
-        base.fg(colors.secondary)
+        Style::default().fg(colors.secondary)
     } else {
-        base.fg(colors.muted)
-    };
-    let accent = if selected {
-        Span::styled("\u{258c}", Style::default().fg(colors.primary))
-    } else {
-        Span::styled(" ", base)
+        Style::default().fg(colors.muted)
     };
 
-    // accent + icon + two spaces + label, then the gap, the digit and one column of margin.
-    let used = 4 + label.width();
-    let gap = (width as usize).saturating_sub(used + 2);
+    // Icon, two spaces, label, the gap, the digit and one column of margin. The accent
+    // bar takes the one column before them.
+    let used = 1 + 2 + label.width() + 1 + 1;
+    let gap = (width as usize).saturating_sub(used + 1);
 
-    Line::from(vec![
-        accent,
-        Span::styled(item.icon(icons), base.fg(colors.primary)),
-        Span::styled("  ", base),
-        Span::styled(label, label_style),
-        Span::styled(" ".repeat(gap), base),
-        Span::styled((index + 1).to_string(), digit_style),
-        Span::styled(" ", base),
-    ])
+    selection::row(
+        vec![
+            Span::styled(item.icon(icons), Style::default().fg(colors.primary)),
+            Span::raw("  "),
+            Span::styled(label, label_style),
+            Span::raw(" ".repeat(gap)),
+            Span::styled((index + 1).to_string(), digit_style),
+            Span::raw(" "),
+        ],
+        selected,
+        colors,
+        width,
+    )
 }
 
 /// Stow-status counts for every configured group. Reads the status cache only:

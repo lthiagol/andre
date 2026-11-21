@@ -16,17 +16,6 @@ pub enum StowStatus {
 }
 
 impl StowStatus {
-    pub fn icon(&self) -> &'static str {
-        match self {
-            StowStatus::Stowed => "✓",
-            StowStatus::Unstowed => "→",
-            StowStatus::Partial => "◐",
-            StowStatus::Conflict => "⚠",
-            StowStatus::Missing => "?",
-            StowStatus::Empty => "∅",
-        }
-    }
-
     pub fn label(&self) -> &'static str {
         match self {
             StowStatus::Stowed => "Stowed",
@@ -481,18 +470,11 @@ mod tests {
     }
 
     #[test]
-    fn test_stow_status_icon_and_label() {
-        assert_eq!(StowStatus::Stowed.icon(), "✓");
+    fn test_stow_status_label_and_is_stowed() {
         assert_eq!(StowStatus::Stowed.label(), "Stowed");
         assert!(StowStatus::Stowed.is_stowed());
 
-        assert_eq!(StowStatus::Unstowed.icon(), "→");
         assert!(!StowStatus::Unstowed.is_stowed());
-
-        assert_eq!(StowStatus::Conflict.icon(), "⚠");
-        assert_eq!(StowStatus::Missing.icon(), "?");
-        assert_eq!(StowStatus::Empty.icon(), "∅");
-        assert_eq!(StowStatus::Partial.icon(), "◐");
     }
 
     #[test]

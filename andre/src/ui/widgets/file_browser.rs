@@ -9,9 +9,12 @@ use ratatui::{
 };
 
 use crate::theme::ThemeColors;
+use crate::ui::icons::Icons;
+use crate::ui::selection;
 
 pub struct FileBrowserWidget<'a> {
     pub colors: &'a ThemeColors,
+    pub icons: &'a Icons,
     pub path: &'a std::path::Path,
     pub cursor: usize,
     pub title: &'a str,
@@ -24,12 +27,14 @@ pub struct FileBrowserWidget<'a> {
 impl<'a> FileBrowserWidget<'a> {
     pub fn new(
         colors: &'a ThemeColors,
+        icons: &'a Icons,
         path: &'a std::path::Path,
         cursor: usize,
         title: &'a str,
     ) -> Self {
         Self {
             colors,
+            icons,
             path,
             cursor,
             title,
@@ -68,7 +73,7 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
         // Entries come from the caller's cache (`with_entries`); painting never reads the disk.
         let entries = self.entries;
 
-        let legend_height: u16 = if area.height > 10 { 6 } else { 0 };
+        let legend_height: u16 = if area.height > 10 { 5 } else { 0 };
 
         let vert = Layout::default()
             .direction(Direction::Vertical)
@@ -84,6 +89,20 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
         Widget::render(breadcrumb, vert[0], buf);
 
         state.select(Some(self.cursor.min(entries.len().saturating_sub(1))));
+
+        let content_len = entries.len();
+        let page_size = vert[1].height.saturating_sub(2).max(1) as usize;
+        let (list_rect, scrollbar_rect) = if content_len > page_size && vert[1].width > 4 {
+            let horiz = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
+                .split(vert[1]);
+            (horiz[0], Some(horiz[1]))
+        } else {
+            (vert[1], None)
+        };
+        // The panel borders take one column on each side.
+        let width = list_rect.width.saturating_sub(2);
 
         let items: Vec<ListItem> = entries
             .iter()
@@ -102,14 +121,8 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                     self.colors.primary
                 };
 
-                let mut parts: Vec<Span> = Vec::new();
-
-                let marker = if is_cursor {
-                    Span::styled("--> ", Style::default().fg(self.colors.highlight))
-                } else {
-                    Span::raw("    ")
-                };
-                parts.push(marker);
+                let mut glyphs: Vec<Span> = Vec::new();
+                let mut spans: Vec<Span> = Vec::new();
 
                 if self.is_unstow && entry.is_symlink {
                     let target_str = self
@@ -118,37 +131,48 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                         .find(|(path, _)| *path == entry.name)
                         .map(|(_, target)| target.as_str())
                         .unwrap_or("?");
-                    parts.push(Span::styled(
+                    spans.push(Span::styled(
                         format!("{}  {}  →  {}", kind, entry.name, target_str),
                         Style::default().fg(entry_fg),
                     ));
                 } else if let Some(selected) = self.selected_files {
                     let is_selected = selected.contains(&self.path.join(&entry.name));
-                    let show_check = entry.is_selectable();
-                    let mark = if show_check && is_selected {
-                        "[x] "
-                    } else if show_check {
-                        "[ ] "
+                    if entry.is_selectable() {
+                        let mark_fg = if is_selected {
+                            self.colors.success
+                        } else {
+                            self.colors.muted
+                        };
+                        glyphs.push(Span::styled(
+                            format!("{} ", self.icons.checkbox(is_selected)),
+                            Style::default().fg(mark_fg),
+                        ));
                     } else {
-                        "    "
-                    };
+                        glyphs.push(Span::raw("  "));
+                    }
                     let fg = if is_selected {
                         self.colors.success
                     } else {
                         entry_fg
                     };
-                    parts.push(Span::styled(
-                        format!("{}{} {}", mark, kind, entry.name),
+                    spans.push(Span::styled(
+                        format!("{} {}", kind, entry.name),
                         Style::default().fg(fg),
                     ));
                 } else {
-                    parts.push(Span::styled(
+                    spans.push(Span::styled(
                         format!("{} {}", kind, entry.name),
                         Style::default().fg(entry_fg),
                     ));
                 }
 
-                ListItem::new(Line::from(parts))
+                ListItem::new(selection::row_with_glyphs(
+                    glyphs,
+                    spans,
+                    is_cursor,
+                    self.colors,
+                    width,
+                ))
             })
             .collect();
 
@@ -162,21 +186,12 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
             }
         );
 
-        let list = List::new(items)
-            .highlight_symbol(">> ")
-            .highlight_style(Style::default().fg(self.colors.highlight))
-            .block(crate::ui::themed_panel(self.colors).title(list_title.as_str()));
+        let list =
+            List::new(items).block(crate::ui::themed_panel(self.colors).title(list_title.as_str()));
 
-        let content_len = entries.len();
-        let page_size = vert[1].height.saturating_sub(2).max(1) as usize;
+        StatefulWidget::render(list, list_rect, buf, state);
 
-        if content_len > page_size && vert[1].width > 4 {
-            let horiz = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(1), Constraint::Length(1)])
-                .split(vert[1]);
-            StatefulWidget::render(list, horiz[0], buf, state);
-
+        if let Some(scrollbar_rect) = scrollbar_rect {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(Some("↑"))
                 .end_symbol(Some("↓"))
@@ -186,9 +201,7 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
             let mut scrollbar_state = ScrollbarState::new(content_len)
                 .position(self.cursor)
                 .viewport_content_length(page_size);
-            StatefulWidget::render(scrollbar, horiz[1], buf, &mut scrollbar_state);
-        } else {
-            StatefulWidget::render(list, vert[1], buf, state);
+            StatefulWidget::render(scrollbar, scrollbar_rect, buf, &mut scrollbar_state);
         }
 
         if legend_height > 0 {
@@ -199,7 +212,6 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
 
 fn render_file_legend(buf: &mut ratatui::buffer::Buffer, area: Rect, colors: &ThemeColors) {
     let items: Vec<ListItem> = vec![
-        ListItem::new(Line::from("Legend:")).style(Style::default().fg(colors.primary)),
         ListItem::new(Line::from(vec![
             Span::styled("  /  ", Style::default().fg(colors.secondary)),
             Span::styled("Directory", Style::default().fg(colors.muted)),
@@ -214,6 +226,6 @@ fn render_file_legend(buf: &mut ratatui::buffer::Buffer, area: Rect, colors: &Th
         ])),
     ];
 
-    let legend = List::new(items).block(crate::ui::themed_panel(colors));
+    let legend = List::new(items).block(crate::ui::themed_panel(colors).title(" legend "));
     Widget::render(legend, area, buf);
 }

@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::{List, ListItem, ListState},
@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::theme::ThemeColors;
-use crate::ui::widgets::scrollbar::render_scrollbar;
+use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
 
 fn k(label: &str, colors: &ThemeColors) -> Span<'static> {
     Span::styled(label.to_string(), Style::default().fg(colors.indicator))
@@ -122,18 +122,16 @@ pub fn render_help(
     let total = items(colors).len();
     let list = List::new(items(colors)).block(crate::ui::themed_panel(colors).title(title));
 
-    if total > viewport_height && area.width > 4 {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(area);
-        let mut state = ListState::default();
-        state.select(Some(scroll_index.min(total.saturating_sub(1))));
-        frame.render_stateful_widget(list, chunks[0], &mut state);
-        render_scrollbar(frame, chunks[1], colors, total, scroll_index);
-    } else {
-        let mut state = ListState::default();
-        state.select(Some(scroll_index.min(total.saturating_sub(1))));
-        frame.render_stateful_widget(list, area, &mut state);
-    }
+    let scroll_at = scroll_index.min(total.saturating_sub(1));
+    let mut state = ListState::default();
+    state.select(Some(scroll_at));
+    frame.render_stateful_widget(list, area, &mut state);
+    render_scrollbar(
+        frame,
+        border_track(area),
+        colors,
+        total,
+        viewport_height,
+        scroll_at,
+    );
 }

@@ -194,7 +194,9 @@ counts, the stowed count (`–` until every package's status has been checked),
 and the target directories. Keys: `↑`/`↓` (or `j`/`k`) move, `1`–`7` jump to and
 open an item, `Enter` opens the selected item, `q` quits. The full banner shows
 on the main menu only; every other screen has a one-row `andre` title with the
-breadcrumb. Content is capped at 120 columns and centred on wider terminals.
+breadcrumb. The cursor row on every list is filled with the theme's selection
+colour and marked with a `▌` bar. Panel titles are lowercase and do not repeat
+the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 
 | Option | Icon (nerd / unicode) | What it does |
 |--------|------|-------------|
@@ -446,6 +448,10 @@ you save the config.
 |:---|:---|:---|
 | **nerd** | Nerd Font glyphs | Your terminal font is a [Nerd Font](https://www.nerdfonts.com/) |
 | **unicode** | `●` / `○` | Any other font. Common symbols, one column wide each |
+
+The set also draws the checkboxes on the group, package and file lists (`■` / `□`
+in unicode) and the package status glyphs (`✓` stowed, `→` unstowed, `◐` partial,
+`✗` conflict, `?` missing, `∅` empty in unicode).
 
 An unknown value in the config triggers a warning and falls back to `nerd`.
 

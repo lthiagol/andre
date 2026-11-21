@@ -216,7 +216,7 @@ impl Component for SettingsComponent {
             frame,
             area,
             &colors,
-            &format!(" {} > Config ", ctx.breadcrumb),
+            " settings ",
             &pending.config,
             &ctx.config_path,
             &ctx.config_dir,

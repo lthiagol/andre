@@ -2,18 +2,21 @@ use std::path::Path;
 
 use ratatui::{
     layout::Rect,
-    style::Style,
-    text::{Line, Span},
+    style::{Modifier, Style},
+    text::Span,
     widgets::{List, ListItem, ListState, StatefulWidget},
 };
 
 use crate::theme::ThemeColors;
+use crate::ui::icons::Icons;
+use crate::ui::selection;
 use andre_core::config::Config;
 use andre_core::path::resolve_path;
 
 pub struct GroupListWidget<'a> {
     pub config: &'a Config,
     pub colors: &'a ThemeColors,
+    pub icons: &'a Icons,
     pub title: &'a str,
     pub cursor: usize,
     pub selected_groups: Option<&'a [String]>,
@@ -26,6 +29,7 @@ impl<'a> GroupListWidget<'a> {
     pub fn new(
         config: &'a Config,
         colors: &'a ThemeColors,
+        icons: &'a Icons,
         title: &'a str,
         cursor: usize,
         config_dir: &'a Path,
@@ -34,6 +38,7 @@ impl<'a> GroupListWidget<'a> {
         Self {
             config,
             colors,
+            icons,
             title,
             cursor,
             selected_groups: None,
@@ -62,30 +67,38 @@ impl<'a> StatefulWidget for GroupListWidget<'a> {
 
         state.select(Some(self.cursor.min(groups.len().saturating_sub(1))));
 
+        // The panel borders take one column on each side.
+        let width = area.width.saturating_sub(2);
+
         let items: Vec<ListItem> = groups
             .iter()
             .enumerate()
             .map(|(i, group_name)| {
                 let is_cursor = i == self.cursor;
+                let mut glyphs = Vec::new();
                 let mut spans = Vec::new();
 
-                let marker = if is_cursor {
-                    Span::styled("--> ", Style::default().fg(self.colors.highlight))
-                } else {
-                    Span::raw("    ")
-                };
-                spans.push(marker);
-
                 if let Some(selected) = self.selected_groups {
-                    let checkbox = if selected.contains(*group_name) {
-                        "[x] "
+                    let checked = selected.contains(*group_name);
+                    let fg = if checked {
+                        self.colors.success
                     } else {
-                        "[ ] "
+                        self.colors.muted
                     };
-                    spans.push(Span::raw(checkbox));
+                    glyphs.push(Span::styled(
+                        format!("{} ", self.icons.checkbox(checked)),
+                        Style::default().fg(fg),
+                    ));
                 }
 
-                spans.push(Span::raw(group_name.to_string()));
+                let name_style = if is_cursor {
+                    Style::default()
+                        .fg(self.colors.secondary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(self.colors.secondary)
+                };
+                spans.push(Span::styled(group_name.to_string(), name_style));
 
                 if let Some(group) = self.config.groups.get(*group_name) {
                     let resolved = resolve_path(&group.target, self.config_dir, self.home_dir);
@@ -95,13 +108,17 @@ impl<'a> StatefulWidget for GroupListWidget<'a> {
                     ));
                 }
 
-                ListItem::new(Line::from(spans)).style(Style::default().fg(self.colors.primary))
+                ListItem::new(selection::row_with_glyphs(
+                    glyphs,
+                    spans,
+                    is_cursor,
+                    self.colors,
+                    width,
+                ))
             })
             .collect();
 
         let list = List::new(items)
-            .highlight_symbol(">> ")
-            .highlight_style(Style::default().fg(self.colors.highlight))
             .block(crate::ui::themed_panel(self.colors).title(format!(" {} ", self.title)));
 
         StatefulWidget::render(list, area, buf, state);

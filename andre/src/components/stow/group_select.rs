@@ -1,15 +1,12 @@
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    widgets::ListState,
-    Frame,
-};
+use ratatui::{layout::Rect, widgets::ListState, Frame};
 
 use crate::components::stow::PackageSelectComponent;
 use crate::components::{AppContext, Component, Transition};
 use crate::theme::ThemeColors;
+use crate::ui::icons::Icons;
 use crate::ui::widgets::group_list::GroupListWidget;
-use crate::ui::widgets::scrollbar::render_scrollbar;
+use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
 
 #[derive(Default)]
 pub struct GroupSelectComponent {
@@ -73,38 +70,26 @@ impl Component for GroupSelectComponent {
         let group_count = ctx.core.config.groups.len();
         let page_size = self.viewport_height;
 
-        if group_count > page_size && area.width > 4 {
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(1), Constraint::Length(1)])
-                .split(area);
-            let mut state = ListState::default();
-            let title = format!(" {} > Select Groups ", ctx.breadcrumb);
-            let widget = GroupListWidget::new(
-                &ctx.core.config,
-                &colors,
-                &title,
-                self.cursor,
-                &ctx.config_dir,
-                &ctx.home_dir,
-            )
-            .with_selected(&self.selected);
-            frame.render_stateful_widget(widget, chunks[0], &mut state);
-            render_scrollbar(frame, chunks[1], &colors, group_count, self.cursor);
-        } else {
-            let mut state = ListState::default();
-            let title = format!(" {} > Select Groups ", ctx.breadcrumb);
-            let widget = GroupListWidget::new(
-                &ctx.core.config,
-                &colors,
-                &title,
-                self.cursor,
-                &ctx.config_dir,
-                &ctx.home_dir,
-            )
-            .with_selected(&self.selected);
-            frame.render_stateful_widget(widget, area, &mut state);
-        }
+        let mut state = ListState::default();
+        let widget = GroupListWidget::new(
+            &ctx.core.config,
+            &colors,
+            Icons::for_set(ctx.core.icons),
+            "select groups",
+            self.cursor,
+            &ctx.config_dir,
+            &ctx.home_dir,
+        )
+        .with_selected(&self.selected);
+        frame.render_stateful_widget(widget, area, &mut state);
+        render_scrollbar(
+            frame,
+            border_track(area),
+            &colors,
+            group_count,
+            page_size,
+            self.cursor,
+        );
     }
 
     fn prepare(&mut self, area: Rect) {

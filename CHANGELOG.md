@@ -210,8 +210,63 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   collapse into one `ExecutionResult` construction.
 - `Transition::name` returns `&'static str`, and `AppContext::log` takes a
   closure so debug messages are only formatted while debugging is on.
+- One cursor style for every list. The new `ui::selection::row` helper draws the
+  cursor row on the group, package, target, file browser, settings and settings
+  popup lists: a `▌` accent in the primary colour on the normal background, and
+  the row filled edge to edge with the theme's `selection` colour. Unselected rows
+  get the same one-column gutter, so text lines up. The main menu uses the helper
+  too. The `>>`, `-->` and `> ` markers are gone. The status and confirm screens
+  have no cursor, so they keep their scrolling lists. The execution list keeps its
+  progress highlight. On the cursor row, text takes the label colour (secondary)
+  and the accent is primary, so every theme keeps the row readable. A checkbox or
+  status glyph keeps its own colour there where that colour reads at 3:1 on the
+  fill (WCAG 1.4.11); where it does not, the glyph falls back to the label colour.
+  The glyph shape still tells the states apart. The fallbacks are: Dracula error
+  and muted; Catppuccin Mocha muted; Catppuccin Latte success, warning and muted;
+  Catppuccin Frappe error and muted; Catppuccin Macchiato muted; Nord error and
+  muted; Gruvbox success, warning, error and muted. Tests: `ui::selection` unit
+  tests, and `andre/tests/render.rs` checks the fill, the accent, the absence of
+  the old markers and the glyph contrast on every list screen, in all eight themes.
+- Checkboxes come from `ui::icons` and follow `global.icons`: `■` / `□` in
+  unicode, the Font Awesome check-square and square glyphs in nerd. The package
+  status glyphs (stowed, unstowed, partial, conflict, missing, empty) also come
+  from `ui::icons`, so they follow the icon set too. Each status keeps its own
+  glyph and its own colour. In unicode the conflict glyph is `✗` (was `⚠`,
+  which falls outside the blocks the unicode set is limited to).
+- The package select and the status screen share one status vocabulary in
+  `ui::status_style`: the same colour, the same lowercase word (`stowed`,
+  `unstowed`, `partial`, `conflict`, `missing`, `empty`, from `StowStatus::label`)
+  and the same legend. The package select's `Installed`, `Ready`, `Blocked` and
+  `Not found` are gone. Unstowed is primary on both screens (it was muted on the
+  status screen). Test: `test_package_and_status_screens_share_glyph_colour_and_word`.
+- Package rows read `<checkbox> <status glyph> <package>  <group>  <status word>
+  <detail>`. The package is in the label colour and the group is muted. Each
+  column is padded to its longest entry when the rows are built, so the groups,
+  status words and details each start in one column. The package column is capped
+  at 32 columns and the group column at 16; longer names are cut with `…`, so every
+  status word stays on screen at 80x24. The detail follows a status word padded to
+  the longest one. It is cut to the room left on the row with a trailing `…`, and
+  dropped when fewer than two columns are left.
+- Legends (package select, status, file browser) use the ` legend ` panel title
+  like every other panel, and drop the `Legend:` header row. The package select
+  legend had seven rows in eight lines, so `Empty` was cut off; it now lists all six
+  statuses. The status legend is eight lines (was nine) and the file browser legend
+  is five (was six).
+- Panel titles are lowercase and no longer repeat the breadcrumb, which the
+  compact banner already shows: `select groups`, `select packages`,
+  `select target for adoption`, `select target for unstow`, `select files to adopt`,
+  `unstow symlinks`, `stow status`, `settings`, `review commands`, `execution`,
+  `confirm adoption`, `adoption plan preview`, `adoption result`, `package name`,
+  `help` and `unlink`. Settings popup titles follow the same rule (`pick theme`,
+  `edit: <group>`, `ignore patterns`). The settings title was `Config`; it is
+  `settings`.
+- Settings rows: the value column starts at the same column on every row, and
+  the info lines (config path, resolve path, saved message) are not indented.
 
 ### Removed
+
+- `StowStatus::icon` in `andre-core`. The glyphs now live in `ui::icons`, where
+  the icon set can choose them.
 
 - Dead configuration state: `AppState::effective_action` and
   `AppState::yolo_mode`. The per-option `Config::effective_*` and `set_*`
@@ -231,6 +286,20 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Fixed
 
+- Scrollbars never drew on any list screen (package select, group select, status,
+  settings, confirm, execute, help). Each one reserved a single column that was
+  narrower than the scrollbar's minimum, so the column stayed blank and no thumb
+  showed. The bar now draws over the right border of its panel: the track is in the
+  border colour and the thumb in the indicator colour, and it appears only when the
+  rows overflow. The list keeps the full panel width, so its right border lines up
+  with the legend's. Pre-existing; affects released versions. Tests:
+  `andre/tests/render.rs` (thumb present when overflowing, absent when fitting,
+  border column matches the legend).
+- Package select and status sized their page from the whole panel, not the list
+  beside the legend, so paging jumped too far and the thumb could hide when rows
+  overflowed. Both now use `status_layout`, the same split paint uses. Tests:
+  `andre/tests/render.rs` (status thumb at 80x24) and `prepare_sizes_the_viewport`
+  unit tests in `components/status` and `components/stow/package_select`.
 - On the Unstow and Adopt target screens, Enter could open a different group
   than the highlighted row when a config has two or more groups. The group
   list is now name-ordered everywhere, so Enter opens the group shown under

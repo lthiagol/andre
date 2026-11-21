@@ -6,8 +6,9 @@ use ratatui::{layout::Rect, Frame};
 use crate::components::confirm::ConfirmComponent;
 use crate::components::{AppContext, Component, Transition};
 use crate::theme::ThemeColors;
-use crate::ui::packages::FlatItem;
-use crate::ui::render_package_select;
+use crate::ui::icons::Icons;
+use crate::ui::packages::{align_columns, FlatItem};
+use crate::ui::{render_package_select, status_layout};
 use andre_core::StowStatus;
 
 #[derive(Default)]
@@ -97,9 +98,14 @@ impl PackageSelectComponent {
                     selected: pkg_selected,
                     status,
                     preview,
+                    package_display: String::new(),
+                    group_display: String::new(),
+                    package_pad: 0,
+                    group_pad: 0,
                 });
             }
         }
+        align_columns(&mut items);
         items
     }
 }
@@ -173,12 +179,12 @@ impl Component for PackageSelectComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
-        let title = format!(" {} > Select Packages ", ctx.breadcrumb);
         render_package_select(
             frame,
             area,
             &colors,
-            &title,
+            Icons::for_set(ctx.core.icons),
+            " select packages ",
             &self.items,
             self.cursor,
             self.entered_at,
@@ -187,7 +193,7 @@ impl Component for PackageSelectComponent {
     }
 
     fn prepare(&mut self, area: Rect) {
-        self.viewport_height = area.height.saturating_sub(2).max(1) as usize;
+        self.viewport_height = status_layout(area).0.height.saturating_sub(2).max(1) as usize;
     }
 }
 
@@ -270,5 +276,18 @@ mod tests {
         let mut component = PackageSelectComponent::new(vec!["dots".into()]);
         press(&mut component, &mut ctx, KeyCode::Down);
         assert_eq!(component.items.len(), 2);
+    }
+
+    #[test]
+    fn test_prepare_sizes_the_viewport_to_the_rows_the_list_shows() {
+        // 80x24 terminal: the content area is 16 rows. The legend takes 8 and the
+        // borders 2, so the list shows 6 rows, and that is the page size.
+        let mut component = PackageSelectComponent::new(vec!["dots".into()]);
+        component.prepare(Rect::new(0, 0, 80, 16));
+        assert_eq!(component.viewport_height, 6);
+
+        // Too short for a legend: the list takes the whole area.
+        component.prepare(Rect::new(0, 0, 80, 10));
+        assert_eq!(component.viewport_height, 8);
     }
 }

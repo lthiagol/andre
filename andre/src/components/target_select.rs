@@ -8,6 +8,7 @@ use crate::components::unstow::UnstowBrowseComponent;
 use crate::components::{AppContext, Component, Transition};
 use crate::input::Input;
 use crate::theme::ThemeColors;
+use crate::ui::icons::Icons;
 use crate::ui::widgets::group_list::GroupListWidget;
 use andre_core::path::resolve_path;
 
@@ -22,14 +23,14 @@ struct TargetFlow {
 
 static ADOPT: TargetFlow = TargetFlow {
     id: "AdoptTargetSelect",
-    title: "Select Target for Adoption",
+    title: "select target for adoption",
     target_label: Some("Adopt from"),
     open: |group, path| Box::new(AdoptFileSelectComponent::with_path(group, path)),
 };
 
 static UNSTOW: TargetFlow = TargetFlow {
     id: "UnstowTargetSelect",
-    title: "Select Target for Unstow",
+    title: "select target for unstow",
     target_label: None,
     open: |group, path| Box::new(UnstowBrowseComponent::with_path(group, path)),
 };
@@ -100,6 +101,7 @@ impl Component for TargetSelectComponent {
         let mut widget = GroupListWidget::new(
             &ctx.core.config,
             &colors,
+            Icons::for_set(ctx.core.icons),
             self.flow.title,
             self.cursor,
             &ctx.config_dir,

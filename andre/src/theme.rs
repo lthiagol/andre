@@ -127,3 +127,43 @@ impl ThemeColors {
         }
     }
 }
+
+/// WCAG contrast ratio between two colours, from 1.0 to 21.0. `None` when either colour
+/// is not an RGB value (for example the terminal's own `Reset`).
+pub fn contrast_ratio(a: Color, b: Color) -> Option<f64> {
+    fn luminance(c: Color) -> Option<f64> {
+        let Color::Rgb(r, g, b) = c else {
+            return None;
+        };
+        let linear = |v: u8| {
+            let v = v as f64 / 255.0;
+            if v <= 0.03928 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        Some(0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b))
+    }
+    let (la, lb) = (luminance(a)?, luminance(b)?);
+    let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+    Some((hi + 0.05) / (lo + 0.05))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_contrast_ratio_is_21_for_black_on_white_and_symmetric() {
+        let black = Color::Rgb(0, 0, 0);
+        let white = Color::Rgb(255, 255, 255);
+        assert!((contrast_ratio(black, white).unwrap() - 21.0).abs() < 1e-9);
+        assert_eq!(contrast_ratio(white, black), contrast_ratio(black, white));
+    }
+
+    #[test]
+    fn test_contrast_ratio_is_none_for_non_rgb_colours() {
+        assert_eq!(contrast_ratio(Color::Reset, Color::Rgb(0, 0, 0)), None);
+    }
+}

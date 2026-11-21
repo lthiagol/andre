@@ -132,7 +132,8 @@ the selected one and shows what it touches: group and package counts, how many
 packages are stowed once their status has been checked (`–` until then), and
 the target directories. Move with `↑`/`↓`, or press `1`–`7` to jump to an
 action. Every other screen shows a one-row title with its breadcrumb instead of
-the full banner.
+the full banner. On the list screens the cursor row is filled with the theme's
+selection colour and marked with a `▌` bar.
 
 | Option | What it does |
 |--------|-------------|

@@ -2,9 +2,9 @@ use std::path::Path;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{List, ListItem, ListState},
+    widgets::{Clear, List, ListItem, ListState},
     Frame,
 };
 
@@ -13,9 +13,14 @@ use crate::components::settings::rows::{build_flat_items, SettingsRow};
 use crate::components::settings::ConfigMessage;
 use crate::components::settings::{GroupDialog, PickerState};
 use crate::theme::ThemeColors;
+use crate::ui::icons::Icons;
+use crate::ui::selection;
 use crate::ui::widgets::file_browser::FileBrowserWidget;
-use crate::ui::widgets::scrollbar::render_scrollbar;
+use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
 use andre_core::{config::Config, IconSet, StowFlags};
+
+/// Width of the setting name column. Values start at the same column on every row.
+const LABEL_WIDTH: usize = 18;
 
 fn val_str(on: bool) -> &'static str {
     if on {
@@ -25,11 +30,31 @@ fn val_str(on: bool) -> &'static str {
     }
 }
 
+/// A setting's name. Bold on the cursor row, like the labels elsewhere.
+fn label(text: &str, colors: &ThemeColors, selected: bool) -> Span<'static> {
+    let style = if selected {
+        Style::default()
+            .fg(colors.secondary)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(colors.secondary)
+    };
+    Span::styled(format!("{text:<LABEL_WIDTH$}"), style)
+}
+
+fn value(text: String, fg: Color) -> Span<'static> {
+    Span::styled(text, Style::default().fg(fg))
+}
+
+fn flag_value(on: bool, colors: &ThemeColors) -> Span<'static> {
+    let fg = if on { colors.success } else { colors.error };
+    value(val_str(on).to_string(), fg)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_row(
-    index: usize,
-    cursor: usize,
     row: &SettingsRow,
+    is_cursor: bool,
     colors: &ThemeColors,
     flags: &StowFlags,
     theme_name: &str,
@@ -39,6 +64,7 @@ fn render_row(
     config_dirty: bool,
     config_message: ConfigMessage,
     filename: &str,
+    width: u16,
 ) -> ListItem<'static> {
     let StowFlags {
         action,
@@ -48,189 +74,90 @@ fn render_row(
         adopt,
         dotfiles,
     } = *flags;
-    let is_cursor = index == cursor;
-    let is_interactive = !matches!(
+    let selectable = !matches!(
         row,
         SettingsRow::ConfigPathInfo
             | SettingsRow::ConfigResolveInfo
             | SettingsRow::Spacer
             | SettingsRow::SavedMessage
     );
-    let marker = if is_cursor && is_interactive {
-        "--> "
-    } else {
-        "    "
-    };
+    let selected = is_cursor && selectable;
 
-    let line = match row {
-        SettingsRow::ConfigPathInfo => Line::from(Span::styled(
-            format!("  Config: {}", config_path.display()),
-            Style::default().fg(colors.muted),
-        )),
-        SettingsRow::ConfigResolveInfo => Line::from(Span::styled(
-            format!("  Paths resolve relative to: {}", config_dir.display()),
-            Style::default().fg(colors.muted),
-        )),
-        SettingsRow::Verbosity => Line::from(Span::styled(
-            format!("{}verbosity:         {}", marker, verbosity),
-            Style::default().fg(if is_cursor {
-                colors.primary
-            } else {
-                colors.secondary
-            }),
-        )),
-        SettingsRow::DryRun => {
-            let val = val_str(dry_run);
-            let fg = if dry_run {
-                colors.success
-            } else {
-                colors.error
-            };
-            let parts = vec![
-                Span::styled(
-                    format!("{}dry_run:          ", marker),
-                    Style::default().fg(if is_cursor {
-                        colors.primary
-                    } else {
-                        colors.secondary
-                    }),
-                ),
-                Span::styled(val, Style::default().fg(fg)),
-            ];
-            Line::from(parts)
-        }
-        SettingsRow::NoFolding => {
-            let val = val_str(no_folding);
-            let fg = if no_folding {
-                colors.success
-            } else {
-                colors.error
-            };
-            let parts = vec![
-                Span::styled(
-                    format!("{}no_folding:       ", marker),
-                    Style::default().fg(if is_cursor {
-                        colors.primary
-                    } else {
-                        colors.secondary
-                    }),
-                ),
-                Span::styled(val, Style::default().fg(fg)),
-            ];
-            Line::from(parts)
-        }
-        SettingsRow::Adopt => {
-            let val = val_str(adopt);
-            let fg = if adopt { colors.success } else { colors.error };
-            let parts = vec![
-                Span::styled(
-                    format!("{}adopt:            ", marker),
-                    Style::default().fg(if is_cursor {
-                        colors.primary
-                    } else {
-                        colors.secondary
-                    }),
-                ),
-                Span::styled(val, Style::default().fg(fg)),
-            ];
-            Line::from(parts)
-        }
-        SettingsRow::Dotfiles => {
-            let val = val_str(dotfiles);
-            let fg = if dotfiles {
-                colors.success
-            } else {
-                colors.error
-            };
-            let parts = vec![
-                Span::styled(
-                    format!("{}dotfiles:         ", marker),
-                    Style::default().fg(if is_cursor {
-                        colors.primary
-                    } else {
-                        colors.secondary
-                    }),
-                ),
-                Span::styled(val, Style::default().fg(fg)),
-            ];
-            Line::from(parts)
-        }
-        SettingsRow::Action => Line::from(Span::styled(
-            format!("{}action:           {}", marker, action.as_str()),
-            Style::default().fg(if is_cursor {
-                colors.primary
-            } else {
-                colors.secondary
-            }),
-        )),
-        SettingsRow::ThemeName => Line::from(Span::styled(
-            format!("{}theme:            {}", marker, theme_name),
-            Style::default().fg(if is_cursor {
-                colors.highlight
-            } else {
-                colors.secondary
-            }),
-        )),
-        SettingsRow::IconsName => Line::from(Span::styled(
-            format!("{}icons:            {}", marker, icons.name()),
-            Style::default().fg(if is_cursor {
-                colors.highlight
-            } else {
-                colors.secondary
-            }),
-        )),
+    let spans: Vec<Span<'static>> = match row {
+        SettingsRow::ConfigPathInfo => vec![value(
+            format!("Config: {}", config_path.display()),
+            colors.muted,
+        )],
+        SettingsRow::ConfigResolveInfo => vec![value(
+            format!("Paths resolve relative to: {}", config_dir.display()),
+            colors.muted,
+        )],
+        SettingsRow::Verbosity => vec![
+            label("verbosity:", colors, selected),
+            value(verbosity.to_string(), colors.primary),
+        ],
+        SettingsRow::DryRun => vec![
+            label("dry_run:", colors, selected),
+            flag_value(dry_run, colors),
+        ],
+        SettingsRow::NoFolding => vec![
+            label("no_folding:", colors, selected),
+            flag_value(no_folding, colors),
+        ],
+        SettingsRow::Adopt => vec![label("adopt:", colors, selected), flag_value(adopt, colors)],
+        SettingsRow::Dotfiles => vec![
+            label("dotfiles:", colors, selected),
+            flag_value(dotfiles, colors),
+        ],
+        SettingsRow::Action => vec![
+            label("action:", colors, selected),
+            value(action.as_str().to_string(), colors.primary),
+        ],
+        SettingsRow::ThemeName => vec![
+            label("theme:", colors, selected),
+            value(theme_name.to_string(), colors.highlight),
+        ],
+        SettingsRow::IconsName => vec![
+            label("icons:", colors, selected),
+            value(icons.name().to_string(), colors.highlight),
+        ],
         SettingsRow::IgnoreLine { count } => {
-            let label = if *count == 1 { "pattern" } else { "patterns" };
-            Line::from(vec![Span::styled(
-                format!("{}ignore:          {} {}", marker, count, label),
-                Style::default().fg(if is_cursor {
-                    colors.primary
-                } else {
-                    colors.secondary
-                }),
-            )])
+            let noun = if *count == 1 { "pattern" } else { "patterns" };
+            vec![
+                label("ignore:", colors, selected),
+                value(format!("{count} {noun}"), colors.primary),
+            ]
         }
-        SettingsRow::Spacer => Line::from(Span::raw("")),
+        SettingsRow::Spacer => vec![Span::raw("")],
         SettingsRow::GroupLine { count } => {
-            let label = if *count == 1 { "group" } else { "groups" };
-            Line::from(vec![Span::styled(
-                format!("{}group:           {} {}", marker, count, label),
-                Style::default().fg(if is_cursor {
-                    colors.primary
-                } else {
-                    colors.secondary
-                }),
-            )])
+            let noun = if *count == 1 { "group" } else { "groups" };
+            vec![
+                label("group:", colors, selected),
+                value(format!("{count} {noun}"), colors.primary),
+            ]
         }
         SettingsRow::SaveButton => {
-            let label = if config_dirty {
-                format!("[Update {}]", filename)
+            let (text, fg) = if config_dirty {
+                (format!("[Update {filename}]"), colors.highlight)
             } else {
-                "[All saved]".to_string()
+                ("[All saved]".to_string(), colors.muted)
             };
-            let style = if is_cursor {
-                Style::default().fg(colors.success).bg(colors.background)
-            } else if config_dirty {
-                Style::default().fg(colors.highlight)
-            } else {
-                Style::default().fg(colors.muted)
-            };
-            Line::from(Span::styled(format!("{}    {}", marker, label), style))
+            vec![value(text, fg)]
         }
         SettingsRow::SavedMessage => {
-            let (text, fg_color) = match config_message {
+            let (text, fg) = match config_message {
                 ConfigMessage::ConfirmDiscard => (
-                    "    Unsaved changes  y=save  n=discard  Esc=cancel".to_string(),
+                    "Unsaved changes  y=save  n=discard  Esc=cancel".to_string(),
                     colors.warning,
                 ),
-                ConfigMessage::Saved => ("    Saved.".to_string(), colors.success),
+                ConfigMessage::Saved => ("Saved.".to_string(), colors.success),
                 ConfigMessage::Hidden => (String::new(), colors.muted),
             };
-            Line::from(Span::styled(text, Style::default().fg(fg_color)))
+            vec![value(text, fg)]
         }
     };
 
-    ListItem::new(line)
+    ListItem::new(selection::row(spans, selected, colors, width))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -260,14 +187,17 @@ pub fn render_settings(
     let total = flat.len();
     let cursor = cursor.min(total.saturating_sub(1));
 
+    let viewport_height = area.height.saturating_sub(2).max(1) as usize;
+    // The panel borders take one column on each side.
+    let width = area.width.saturating_sub(2);
+
     let list_items: Vec<ListItem> = flat
         .iter()
         .enumerate()
         .map(|(i, row)| {
             render_row(
-                i,
-                cursor,
                 row,
+                i == cursor,
                 colors,
                 flags,
                 theme_name,
@@ -277,38 +207,58 @@ pub fn render_settings(
                 config_dirty,
                 config_message,
                 filename,
+                width,
             )
         })
         .collect();
 
-    let total = flat.len();
-    let list = List::new(list_items)
-        .highlight_symbol(">> ")
-        .highlight_style(Style::default().fg(colors.highlight))
-        .block(crate::ui::themed_panel(colors).title(title));
-
-    let viewport_height = area.height.saturating_sub(2).max(1) as usize;
-    if total > viewport_height && area.width > 4 {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(area);
-        let mut list_state = ListState::default();
-        list_state.select(Some(cursor));
-        frame.render_stateful_widget(list, chunks[0], &mut list_state);
-        render_scrollbar(frame, chunks[1], colors, total, cursor);
-    } else {
-        let mut list_state = ListState::default();
-        list_state.select(Some(cursor));
-        frame.render_stateful_widget(list, area, &mut list_state);
-    }
+    let list = List::new(list_items).block(crate::ui::themed_panel(colors).title(title));
+    let mut list_state = ListState::default();
+    list_state.select(Some(cursor));
+    frame.render_stateful_widget(list, area, &mut list_state);
+    render_scrollbar(
+        frame,
+        border_track(area),
+        colors,
+        total,
+        viewport_height,
+        cursor,
+    );
 
     if let Some(picker) = picker {
         render_picker_popup(frame, area, colors, picker);
     }
     if let Some(dialog) = group_dialog {
-        render_group_dialog(frame, area, colors, dialog, config);
+        render_group_dialog(frame, area, colors, icons, dialog, config);
     }
+}
+
+/// One row of a popup list: the shared cursor style over plain text.
+fn popup_row(text: &str, selected: bool, colors: &ThemeColors, width: u16) -> ListItem<'static> {
+    let span = Span::styled(text.to_string(), Style::default().fg(colors.secondary));
+    ListItem::new(selection::row(vec![span], selected, colors, width))
+}
+
+/// Clears the popup area and draws a themed panel with a list in it. `cursor` keeps
+/// the cursor row in view when the list is taller than the popup.
+fn render_popup_list(
+    frame: &mut Frame,
+    popup_area: Rect,
+    colors: &ThemeColors,
+    title: &str,
+    items: Vec<ListItem>,
+    cursor: usize,
+) {
+    let list = List::new(items).block(
+        crate::ui::themed_panel(colors)
+            .title(format!(" {} ", title))
+            .style(Style::default().bg(colors.background).fg(colors.border)),
+    );
+    let mut list_state = ListState::default();
+    list_state.select(Some(cursor));
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_stateful_widget(list, popup_area, &mut list_state);
 }
 
 fn render_picker_popup(frame: &mut Frame, area: Rect, colors: &ThemeColors, picker: &PickerState) {
@@ -318,43 +268,23 @@ fn render_picker_popup(frame: &mut Frame, area: Rect, colors: &ThemeColors, pick
         (picker.options.len() + 2).min(area.height.saturating_sub(4) as usize) as u16;
 
     let popup_area = centered_rect(popup_width, popup_height, area);
+    let width = popup_area.width.saturating_sub(2);
 
     let items: Vec<ListItem> = picker
         .options
         .iter()
         .enumerate()
-        .map(|(i, opt)| {
-            let marker = if i == picker.selected_index {
-                Span::styled("> ", Style::default().fg(colors.highlight))
-            } else {
-                Span::raw("  ")
-            };
-            let text = Span::styled(
-                opt.clone(),
-                if i == picker.selected_index {
-                    Style::default().fg(colors.primary)
-                } else {
-                    Style::default().fg(colors.secondary)
-                },
-            );
-            ListItem::new(Line::from(vec![marker, text]))
-        })
+        .map(|(i, opt)| popup_row(opt, i == picker.selected_index, colors, width))
         .collect();
 
-    let list = List::new(items)
-        .highlight_symbol(">> ")
-        .highlight_style(Style::default().fg(colors.highlight))
-        .block(
-            crate::ui::themed_panel(colors)
-                .title(format!("Pick {}", picker.title))
-                .style(Style::default().bg(colors.background).fg(colors.border)),
-        );
-
-    let mut list_state = ListState::default();
-    list_state.select(Some(picker.selected_index));
-
-    frame.render_widget(ratatui::widgets::Clear, popup_area);
-    frame.render_stateful_widget(list, popup_area, &mut list_state);
+    render_popup_list(
+        frame,
+        popup_area,
+        colors,
+        &format!("pick {}", picker.title.to_lowercase()),
+        items,
+        picker.selected_index,
+    );
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
@@ -381,6 +311,7 @@ fn render_group_dialog(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    icons: IconSet,
     dialog: &GroupDialog,
     config: &Config,
 ) {
@@ -389,39 +320,39 @@ fn render_group_dialog(
             render_group_actions_popup(frame, area, colors, *cursor);
         }
         GroupDialog::AddName { name } => {
-            render_name_input_popup(frame, area, colors, name, "Add Group");
+            render_name_input_popup(frame, area, colors, name, "add group");
         }
         GroupDialog::AddBrowse {
             name: _,
             source: _,
             browser,
         } => {
-            render_dir_browser_popup(frame, area, colors, browser, "Select Directory");
+            render_dir_browser_popup(frame, area, colors, icons, browser, "select directory");
         }
         GroupDialog::RemoveSelect { cursor } => {
             let names: Vec<&str> = config.groups.keys().map(String::as_str).collect();
-            render_list_picker_popup(frame, area, colors, names, *cursor, "Remove Group");
+            render_list_picker_popup(frame, area, colors, names, *cursor, "remove group");
         }
         GroupDialog::RemoveConfirm { name } => {
-            render_confirm_popup(frame, area, colors, name, "Remove group");
+            render_confirm_popup(frame, area, colors, name, "remove group");
         }
         GroupDialog::EditSelect { cursor } => {
             let names: Vec<&str> = config.groups.keys().map(String::as_str).collect();
-            render_list_picker_popup(frame, area, colors, names, *cursor, "Edit Group");
+            render_list_picker_popup(frame, area, colors, names, *cursor, "edit group");
         }
         GroupDialog::EditField { group, cursor } => {
             let fields = vec!["Name", "Source", "Target", "Ignore"];
             render_edit_field_popup(frame, area, colors, group, fields, *cursor);
         }
         GroupDialog::EditName { name, .. } => {
-            render_name_input_popup(frame, area, colors, name, "Edit Group Name");
+            render_name_input_popup(frame, area, colors, name, "edit group name");
         }
         GroupDialog::EditBrowse {
             group: _,
             field: _,
             browser,
         } => {
-            render_dir_browser_popup(frame, area, colors, browser, "Select Directory");
+            render_dir_browser_popup(frame, area, colors, icons, browser, "select directory");
         }
         GroupDialog::IgnoreManage { group, cursor } => {
             let patterns: Vec<String> = match group {
@@ -434,7 +365,7 @@ fn render_group_dialog(
             render_ignore_manage_popup(frame, area, colors, &patterns, *cursor);
         }
         GroupDialog::IgnoreAdd { group: _, pattern } => {
-            render_name_input_popup(frame, area, colors, pattern, "Add Ignore Pattern");
+            render_name_input_popup(frame, area, colors, pattern, "add ignore pattern");
         }
     }
 }
@@ -444,31 +375,15 @@ fn render_group_actions_popup(frame: &mut Frame, area: Rect, colors: &ThemeColor
     let popup_width = 24u16.min(area.width.saturating_sub(4));
     let popup_height = (options.len() + 2) as u16;
     let popup_area = centered_rect(popup_width, popup_height, area);
+    let width = popup_area.width.saturating_sub(2);
 
     let items: Vec<ListItem> = options
         .iter()
         .enumerate()
-        .map(|(i, opt)| {
-            let marker = if i == cursor { "> " } else { "  " };
-            ListItem::new(Line::from(Span::styled(
-                format!("{}{}", marker, opt),
-                Style::default().fg(if i == cursor {
-                    colors.highlight
-                } else {
-                    colors.secondary
-                }),
-            )))
-        })
+        .map(|(i, opt)| popup_row(opt, i == cursor, colors, width))
         .collect();
 
-    let list = List::new(items).block(
-        crate::ui::themed_panel(colors)
-            .title(" Group Actions ")
-            .style(Style::default().bg(colors.background).fg(colors.border)),
-    );
-
-    frame.render_widget(ratatui::widgets::Clear, popup_area);
-    frame.render_widget(list, popup_area);
+    render_popup_list(frame, popup_area, colors, "group actions", items, cursor);
 }
 
 fn render_name_input_popup(
@@ -512,7 +427,7 @@ fn render_name_input_popup(
             .style(Style::default().bg(colors.background).fg(colors.border)),
     );
 
-    frame.render_widget(ratatui::widgets::Clear, popup_area);
+    frame.render_widget(Clear, popup_area);
     frame.render_widget(list, popup_area);
 }
 
@@ -548,7 +463,7 @@ fn render_confirm_popup(
             .style(Style::default().bg(colors.background).fg(colors.border)),
     );
 
-    frame.render_widget(ratatui::widgets::Clear, popup_area);
+    frame.render_widget(Clear, popup_area);
     frame.render_widget(list, popup_area);
 }
 
@@ -564,31 +479,15 @@ fn render_list_picker_popup(
     let popup_width = (max_len + 8).min(area.width.saturating_sub(4) as usize) as u16;
     let popup_height = (options.len() + 2).min(area.height.saturating_sub(4) as usize) as u16;
     let popup_area = centered_rect(popup_width, popup_height, area);
+    let width = popup_area.width.saturating_sub(2);
 
     let items: Vec<ListItem> = options
         .iter()
         .enumerate()
-        .map(|(i, opt)| {
-            let marker = if i == cursor { "> " } else { "  " };
-            ListItem::new(Line::from(Span::styled(
-                format!("{}{}", marker, opt),
-                Style::default().fg(if i == cursor {
-                    colors.highlight
-                } else {
-                    colors.secondary
-                }),
-            )))
-        })
+        .map(|(i, opt)| popup_row(opt, i == cursor, colors, width))
         .collect();
 
-    let list = List::new(items).block(
-        crate::ui::themed_panel(colors)
-            .title(format!(" {} ", title))
-            .style(Style::default().bg(colors.background).fg(colors.border)),
-    );
-
-    frame.render_widget(ratatui::widgets::Clear, popup_area);
-    frame.render_widget(list, popup_area);
+    render_popup_list(frame, popup_area, colors, title, items, cursor);
 }
 
 fn render_edit_field_popup(
@@ -604,31 +503,22 @@ fn render_edit_field_popup(
         ((max_len + 8).max(group.len() + 8)).min(area.width.saturating_sub(4) as usize) as u16;
     let popup_height = (fields.len() + 2).min(area.height.saturating_sub(4) as usize) as u16;
     let popup_area = centered_rect(popup_width, popup_height, area);
+    let width = popup_area.width.saturating_sub(2);
 
     let items: Vec<ListItem> = fields
         .iter()
         .enumerate()
-        .map(|(i, field)| {
-            let marker = if i == cursor { "> " } else { "  " };
-            ListItem::new(Line::from(Span::styled(
-                format!("{}{}", marker, field),
-                Style::default().fg(if i == cursor {
-                    colors.highlight
-                } else {
-                    colors.secondary
-                }),
-            )))
-        })
+        .map(|(i, field)| popup_row(field, i == cursor, colors, width))
         .collect();
 
-    let list = List::new(items).block(
-        crate::ui::themed_panel(colors)
-            .title(format!(" Edit: {} ", group))
-            .style(Style::default().bg(colors.background).fg(colors.border)),
+    render_popup_list(
+        frame,
+        popup_area,
+        colors,
+        &format!("edit: {}", group),
+        items,
+        cursor,
     );
-
-    frame.render_widget(ratatui::widgets::Clear, popup_area);
-    frame.render_widget(list, popup_area);
 }
 
 fn render_ignore_manage_popup(
@@ -647,62 +537,45 @@ fn render_ignore_manage_popup(
     let popup_width = (max_len + 6).min(area.width.saturating_sub(4) as usize) as u16;
     let popup_height = (patterns.len() + 4).min(area.height.saturating_sub(4) as usize) as u16;
     let popup_area = centered_rect(popup_width, popup_height, area);
+    let width = popup_area.width.saturating_sub(2);
 
     let mut items: Vec<ListItem> = patterns
         .iter()
         .enumerate()
         .map(|(i, pat)| {
-            let marker = if i == cursor { "> " } else { "  " };
-            ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("{}{}", marker, pat),
-                    Style::default().fg(if i == cursor {
-                        colors.highlight
-                    } else {
-                        colors.secondary
-                    }),
-                ),
+            let selected = i == cursor;
+            let remove_fg = if selected { colors.error } else { colors.muted };
+            let spans = vec![
+                Span::styled(pat.clone(), Style::default().fg(colors.secondary)),
                 Span::raw("  "),
-                Span::styled(
-                    "[r]",
-                    Style::default().fg(if i == cursor {
-                        colors.error
-                    } else {
-                        colors.muted
-                    }),
-                ),
-            ]))
+                Span::styled("[r]", Style::default().fg(remove_fg)),
+            ];
+            ListItem::new(selection::row(spans, selected, colors, width))
         })
         .collect();
 
-    items.push(ListItem::new(Line::from(Span::styled(
-        "-".repeat(max_len),
-        Style::default().fg(colors.muted),
-    ))));
-    let add_marker = if cursor >= patterns.len() { "> " } else { "  " };
-    items.push(ListItem::new(Line::from(Span::styled(
-        format!("{}[+] Add Pattern", add_marker),
-        Style::default().fg(if cursor >= patterns.len() {
-            colors.highlight
-        } else {
-            colors.secondary
-        }),
-    ))));
+    let rule = Span::styled("-".repeat(max_len), Style::default().fg(colors.muted));
+    items.push(ListItem::new(selection::row(
+        vec![rule],
+        false,
+        colors,
+        width,
+    )));
+    items.push(popup_row(
+        "[+] Add Pattern",
+        cursor >= patterns.len(),
+        colors,
+        width,
+    ));
 
-    let list = List::new(items).block(
-        crate::ui::themed_panel(colors)
-            .title(" Ignore Patterns ")
-            .style(Style::default().bg(colors.background).fg(colors.border)),
-    );
-
-    frame.render_widget(ratatui::widgets::Clear, popup_area);
-    frame.render_widget(list, popup_area);
+    render_popup_list(frame, popup_area, colors, "ignore patterns", items, cursor);
 }
 
 fn render_dir_browser_popup(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
+    icons: IconSet,
     browser: &Browser,
     title: &str,
 ) {
@@ -711,9 +584,15 @@ fn render_dir_browser_popup(
     let popup_area = centered_rect(popup_width, popup_height, area);
 
     let mut list_state = ListState::default();
-    let widget = FileBrowserWidget::new(colors, &browser.path, browser.cursor, title)
-        .with_entries(browser.entries(), &[]);
+    let widget = FileBrowserWidget::new(
+        colors,
+        Icons::for_set(icons),
+        &browser.path,
+        browser.cursor,
+        title,
+    )
+    .with_entries(browser.entries(), &[]);
 
-    frame.render_widget(ratatui::widgets::Clear, popup_area);
+    frame.render_widget(Clear, popup_area);
     frame.render_stateful_widget(widget, popup_area, &mut list_state);
 }

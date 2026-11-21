@@ -5,7 +5,8 @@ use ratatui::{layout::Rect, Frame};
 use crate::components::{AppContext, Component, Transition};
 use crate::input::Input;
 use crate::theme::ThemeColors;
-use crate::ui::StatusRow;
+use crate::ui::icons::Icons;
+use crate::ui::{status_layout, StatusRow};
 
 #[derive(Default)]
 pub struct StatusComponent {
@@ -95,7 +96,7 @@ impl Component for StatusComponent {
             frame,
             area,
             &colors,
-            &ctx.breadcrumb,
+            Icons::for_set(ctx.core.icons),
             &self.rows,
             self.scroll_index,
             self.viewport_height,
@@ -103,7 +104,7 @@ impl Component for StatusComponent {
     }
 
     fn prepare(&mut self, area: Rect) {
-        self.viewport_height = area.height.saturating_sub(2).max(1) as usize;
+        self.viewport_height = status_layout(area).0.height.saturating_sub(2).max(1) as usize;
     }
 }
 
@@ -164,6 +165,19 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let ctx = AppContext::for_tests(Config::default_empty(), tmp.path());
         assert_eq!(build_rows(&ctx), vec![StatusRow::NoPackages]);
+    }
+
+    #[test]
+    fn test_prepare_sizes_the_viewport_to_the_rows_the_list_shows() {
+        // 80x24 terminal: the content area is 16 rows. The legend takes 8 and the
+        // borders 2, so the list shows 6 rows, and that is the page size.
+        let mut component = StatusComponent::default();
+        component.prepare(Rect::new(0, 0, 80, 16));
+        assert_eq!(component.viewport_height, 6);
+
+        // Too short for a legend: the list takes the whole area.
+        component.prepare(Rect::new(0, 0, 80, 10));
+        assert_eq!(component.viewport_height, 8);
     }
 
     #[test]

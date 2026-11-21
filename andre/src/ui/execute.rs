@@ -163,24 +163,23 @@ pub fn render_execute(
     let list = List::new(items).highlight_style(Style::default().bg(colors.muted));
     let page_size = list_area.height.max(1) as usize;
 
-    if content_len > page_size && list_area.width > 4 {
-        let row_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(list_area);
-        let mut list_state = ratatui::widgets::ListState::default();
-        list_state.select(scroll_index);
-        frame.render_stateful_widget(list, row_chunks[0], &mut list_state);
-        render_scrollbar(
-            frame,
-            row_chunks[1],
-            colors,
-            content_len,
-            scroll_index.unwrap_or(0),
-        );
-    } else {
-        let mut list_state = ratatui::widgets::ListState::default();
-        list_state.select(scroll_index);
-        frame.render_stateful_widget(list, list_area, &mut list_state);
-    }
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(scroll_index);
+    frame.render_stateful_widget(list, list_area, &mut list_state);
+
+    // The list has no border of its own: its right edge is the panel's right border.
+    let track = Rect {
+        x: list_area.right(),
+        y: list_area.y,
+        width: 1,
+        height: list_area.height,
+    };
+    render_scrollbar(
+        frame,
+        track,
+        colors,
+        content_len,
+        page_size,
+        scroll_index.unwrap_or(0),
+    );
 }

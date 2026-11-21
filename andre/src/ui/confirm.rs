@@ -1,12 +1,12 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::Style,
     widgets::{List, ListItem, ListState},
     Frame,
 };
 
 use crate::theme::ThemeColors;
-use crate::ui::widgets::scrollbar::render_scrollbar;
+use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
 
 /// One line of the review list. The component builds these before paint, so
 /// rendering only draws text.
@@ -55,19 +55,16 @@ pub fn render_confirm(
     let total = items.len();
     let list = List::new(items).block(crate::ui::themed_panel(colors).title(title));
 
-    if total > viewport_height && area.width > 4 {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(area);
-        let scroll_at = scroll_index.min(total.saturating_sub(1));
-        let mut list_state = ListState::default();
-        list_state.select(Some(scroll_at));
-        frame.render_stateful_widget(list, chunks[0], &mut list_state);
-        render_scrollbar(frame, chunks[1], colors, total, scroll_index);
-    } else {
-        let mut list_state = ListState::default();
-        list_state.select(Some(scroll_index.min(total.saturating_sub(1))));
-        frame.render_stateful_widget(list, area, &mut list_state);
-    }
+    let scroll_at = scroll_index.min(total.saturating_sub(1));
+    let mut list_state = ListState::default();
+    list_state.select(Some(scroll_at));
+    frame.render_stateful_widget(list, area, &mut list_state);
+    render_scrollbar(
+        frame,
+        border_track(area),
+        colors,
+        total,
+        viewport_height,
+        scroll_at,
+    );
 }

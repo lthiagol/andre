@@ -21,10 +21,8 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## TUI
 
-- Drop the breadcrumb prefix from panel titles that repeat the compact title
-  (`" {} > Review Commands "`, `" {} > Execution "`, `" {} > Stow Status "`,
-  group/package select, etc.) and lowercase them. The Settings panel title
-  still hard-codes `Config`; it should read `settings`. Batch R4.
+- (nothing open) — list screens share one cursor style, and panel titles are
+    lowercase without the breadcrumb.
 
 ## Documentation
 

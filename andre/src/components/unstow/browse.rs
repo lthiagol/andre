@@ -6,6 +6,7 @@ use ratatui::{layout::Rect, widgets::ListState, Frame};
 use crate::components::browser::{all_entries, Browser};
 use crate::components::{AppContext, Component, Transition};
 use crate::theme::ThemeColors;
+use crate::ui::icons::Icons;
 use crate::ui::widgets::file_browser::FileBrowserWidget;
 
 pub struct UnstowBrowseComponent {
@@ -87,9 +88,10 @@ impl Component for UnstowBrowseComponent {
         let mut state = ListState::default();
         let widget = FileBrowserWidget::new(
             &colors,
+            Icons::for_set(ctx.core.icons),
             &self.browser.path,
             self.browser.cursor,
-            "Unstow Symlinks",
+            "unstow symlinks",
         )
         .unstow_mode()
         .with_entries(self.browser.entries(), &self.cached_symlinks);

@@ -79,12 +79,12 @@ impl Component for AdoptNamePromptComponent {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
-        let title = format!(" {} > Package Name ", ctx.breadcrumb);
+        let title = " package name ";
         crate::ui::render_adopt_name(
             frame,
             area,
             &colors,
-            &title,
+            title,
             &self.name,
             &self.cached_existing,
         );

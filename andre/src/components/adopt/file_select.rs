@@ -7,6 +7,7 @@ use crate::components::browser::{all_entries, Browser};
 use crate::components::{AppContext, Component, Transition};
 use crate::input::{step_cursor, Input};
 use crate::theme::ThemeColors;
+use crate::ui::icons::Icons;
 use crate::ui::widgets::file_browser::FileBrowserWidget;
 
 pub struct AdoptFileSelectComponent {
@@ -109,9 +110,10 @@ impl Component for AdoptFileSelectComponent {
         let mut state = ListState::default();
         let widget = FileBrowserWidget::new(
             &colors,
+            Icons::for_set(ctx.core.icons),
             &self.browser.path,
             self.browser.cursor,
-            "Select Files to Adopt",
+            "select files to adopt",
         )
         .with_selected(&self.selected_files)
         .with_entries(self.browser.entries(), &[]);
