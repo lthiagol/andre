@@ -217,7 +217,7 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
             enter("select"),
         ],
         "Packages" => vec![arrows("navigate"), space("mark"), enter("run"), esc("back")],
-        "Status" => vec![enter("continue")],
+        "Status" => status_hints(),
         "Help" => vec![esc("back")],
         "Settings" => vec![arrows("navigate"), enter("group menu"), esc("back")],
         "UnstowTargetSelect" => vec![arrows("navigate"), enter("select"), esc("back")],
@@ -356,6 +356,25 @@ pub fn packages_hints(run: Option<String>, on_row: bool, on_package: bool) -> Ve
     }
     hints.push(Hint::new("Esc", "back", PRIO_BACK));
     hints
+}
+
+/// Hints for the status screen. `f` picks the profile the rows are filtered to, `r` reads
+/// every status again.
+pub fn status_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("f", "profile", PRIO_VERB),
+        Hint::new("\u{2190}\u{2192}", "fold", PRIO_VERB),
+        Hint::new("r", "rescan", PRIO_VERB),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
+}
+
+/// Hints for the profile dropdown open over the status screen.
+pub fn status_filter_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("Enter", "pick", PRIO_PRIMARY),
+        Hint::new("Esc", "cancel", PRIO_BACK),
+    ]
 }
 
 /// Hints for the ignore editor's list. `on_line` says the cursor is on a line (so `e` and `x`

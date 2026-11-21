@@ -32,6 +32,16 @@ fn chip_text(chip: &Chip) -> String {
     }
 }
 
+/// The chip as one span, in its style.
+pub fn chip_span(chip: &Chip, colors: &ThemeColors) -> Span<'static> {
+    Span::styled(chip_text(chip), chip_style(chip, colors))
+}
+
+/// The columns the chip takes.
+pub fn chip_width(chip: &Chip) -> usize {
+    chip_text(chip).width()
+}
+
 fn chip_style(chip: &Chip, colors: &ThemeColors) -> Style {
     if chip.active {
         Style::default()
@@ -54,7 +64,7 @@ pub fn chip_line(
         if i > 0 {
             spans.push(Span::raw(" ".repeat(usize::from(CHIP_GAP))));
         }
-        spans.push(Span::styled(chip_text(chip), chip_style(chip, colors)));
+        spans.push(chip_span(chip, colors));
     }
     let used: usize = spans.iter().map(|s| s.content.width()).sum();
     let right_width: usize = right.iter().map(|s| s.content.width()).sum();

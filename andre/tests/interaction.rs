@@ -259,6 +259,19 @@ fn test_esc_status_to_main_menu() {
 }
 
 #[test]
+fn test_status_profile_dropdown_takes_esc_before_the_screen_does() {
+    let (mut app, _) = make_test_app();
+    push_component(&mut app, "Status");
+    app.component_dispatch(key_char('f'));
+    assert_eq!(component_id(&app), "Status");
+
+    app.component_dispatch(esc_key());
+    assert_eq!(component_id(&app), "Status", "Esc closes the dropdown only");
+    app.component_dispatch(esc_key());
+    assert_eq!(component_id(&app), "MainMenu");
+}
+
+#[test]
 fn test_esc_help_to_main_menu() {
     let (mut app, _) = make_test_app();
     push_component(&mut app, "Help");

@@ -1,13 +1,11 @@
 //! The stow status vocabulary shared by every screen that lists packages. The glyph
-//! comes from `Icons::status`; this module supplies the colour, the word and the legend,
-//! so the same status reads the same on the package select and the status screens.
+//! comes from `Icons::status`; this module supplies the colour, the word, the meaning and
+//! the detail headline, so the same status reads the same on the packages browser and the
+//! status screen.
 
 use ratatui::{
-    layout::Rect,
     style::{Color, Style},
-    text::{Line, Span},
-    widgets::{List, ListItem},
-    Frame,
+    text::Line,
 };
 
 use andre_core::StowStatus;
@@ -15,29 +13,21 @@ use andre_core::StowStatus;
 use crate::theme::ThemeColors;
 use crate::ui::icons::Icons;
 
-/// Every status in legend order, with the meaning shown beside it.
-const LEGEND: [(StowStatus, &str); 7] = [
-    (StowStatus::Stowed, "all files symlinked correctly"),
-    (StowStatus::Unstowed, "package exists but no symlinks"),
-    (StowStatus::Partial, "some files symlinked, some not"),
-    (
-        StowStatus::Conflict,
-        "real file at target, cannot overwrite",
-    ),
-    (StowStatus::Missing, "package source directory not found"),
-    (StowStatus::Empty, "package contains no files"),
-    (
-        StowStatus::Invalid,
-        "ignore list cannot be read or compiled",
-    ),
-];
-
-/// The legend's rows plus its two border rows.
-pub const LEGEND_HEIGHT: u16 = LEGEND.len() as u16 + 2;
-
 /// The width of the longest status word (`unstowed` and `conflict`). Checked against the
 /// words by `test_status_word_width_is_the_longest_word`.
 pub const STATUS_WORD_WIDTH: usize = 8;
+
+/// The statuses in the order a summary lists them: linked first, then the ones that need
+/// a fix.
+pub const SUMMARY_ORDER: [StowStatus; 7] = [
+    StowStatus::Stowed,
+    StowStatus::Partial,
+    StowStatus::Unstowed,
+    StowStatus::Conflict,
+    StowStatus::Missing,
+    StowStatus::Empty,
+    StowStatus::Invalid,
+];
 
 /// The colour of a status's glyph and word.
 pub fn status_color(colors: &ThemeColors, status: StowStatus) -> Color {
@@ -56,28 +46,35 @@ pub fn status_word(status: StowStatus) -> String {
     status.label().to_ascii_lowercase()
 }
 
-/// Draws the legend: one row per status, with its glyph, word and meaning.
-pub fn render_legend(frame: &mut Frame, area: Rect, colors: &ThemeColors, icons: &Icons) {
-    let items: Vec<ListItem> = LEGEND
-        .iter()
-        .map(|&(status, meaning)| {
-            let fg = status_color(colors, status);
-            ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("  {}  ", icons.status(status)),
-                    Style::default().fg(fg),
-                ),
-                Span::styled(
-                    format!("{:<8}  ", status_word(status)),
-                    Style::default().fg(fg),
-                ),
-                Span::styled(meaning, Style::default().fg(colors.text_dim)),
-            ]))
-        })
-        .collect();
+/// What a status means, in a few words.
+pub fn status_meaning(status: StowStatus) -> &'static str {
+    match status {
+        StowStatus::Stowed => "stowed \u{2014} every file is linked",
+        StowStatus::Unstowed => "not stowed \u{2014} nothing is linked",
+        StowStatus::Partial => "partial \u{2014} some files linked",
+        StowStatus::Conflict => "conflict \u{2014} a real file is in place",
+        StowStatus::Missing => "missing \u{2014} the package is gone",
+        StowStatus::Empty => "empty \u{2014} the package has no files",
+        StowStatus::Invalid => "invalid \u{2014} ignore list unreadable",
+    }
+}
 
-    let list = List::new(items).block(crate::ui::themed_panel(colors).title(" legend "));
-    frame.render_widget(list, area);
+/// The headline of a package's detail: its status glyph, then what the status means. An
+/// unread status shows `·` and says so.
+pub fn status_headline(
+    status: Option<StowStatus>,
+    icons: &Icons,
+    colors: &ThemeColors,
+) -> Line<'static> {
+    let (glyph, text, colour) = match status {
+        Some(status) => (
+            icons.status(status),
+            status_meaning(status),
+            status_color(colors, status),
+        ),
+        None => (icons.unknown, "status not read yet", colors.text_dim),
+    };
+    Line::styled(format!("{glyph} {text}"), Style::default().fg(colour))
 }
 
 #[cfg(test)]
@@ -126,32 +123,18 @@ mod tests {
     }
 
     #[test]
-    fn test_legend_lists_every_status_once_in_order() {
-        let statuses: Vec<StowStatus> = LEGEND.iter().map(|(s, _)| *s).collect();
-        assert_eq!(
-            statuses,
-            [
-                StowStatus::Stowed,
-                StowStatus::Unstowed,
-                StowStatus::Partial,
-                StowStatus::Conflict,
-                StowStatus::Missing,
-                StowStatus::Empty,
-                StowStatus::Invalid,
-            ]
-        );
-    }
-
-    #[test]
-    fn test_legend_height_is_seven_rows_and_two_borders() {
-        assert_eq!(LEGEND_HEIGHT, 9);
+    fn test_summary_order_lists_every_status_once() {
+        let mut statuses = SUMMARY_ORDER.to_vec();
+        statuses.sort_by_key(|status| status.label());
+        statuses.dedup();
+        assert_eq!(statuses.len(), 7);
     }
 
     #[test]
     fn test_status_word_width_is_the_longest_word() {
-        let longest = LEGEND
+        let longest = SUMMARY_ORDER
             .iter()
-            .map(|(status, _)| status_word(*status).width())
+            .map(|status| status_word(*status).width())
             .max()
             .unwrap();
         assert_eq!(STATUS_WORD_WIDTH, longest);

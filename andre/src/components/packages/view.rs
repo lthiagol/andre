@@ -23,24 +23,13 @@ use crate::ui::detail::{Detail, VALUE_WIDTH};
 use crate::ui::dialog::{dialog_rect, render_dialog, Button, Dialog};
 use crate::ui::icons::Icons;
 use crate::ui::selection;
-use crate::ui::status_style::status_color;
+use crate::ui::status_style::{status_headline, SUMMARY_ORDER};
 use crate::ui::{display_path, elide, plural};
 
 /// Most file names the package detail lists. The rest are counted.
 const FILES_SHOWN: usize = 8;
 /// Widest a file name may be, so it stays on one line in the detail pane at 80 columns.
 const NAME_WIDTH: usize = 34;
-
-/// The statuses in the order a group summary lists them.
-const SUMMARY_ORDER: [StowStatus; 7] = [
-    StowStatus::Stowed,
-    StowStatus::Partial,
-    StowStatus::Unstowed,
-    StowStatus::Conflict,
-    StowStatus::Missing,
-    StowStatus::Empty,
-    StowStatus::Invalid,
-];
 
 /// The list title: the packages, with the marked count once something is marked.
 pub fn packages_title(marked: usize, total: usize) -> String {
@@ -328,36 +317,6 @@ fn shown(path: &std::path::Path, ctx: &AppContext) -> String {
     display_path(path, &ctx.home_dir)
 }
 
-/// The headline for a package's status: its glyph, then what the status means.
-fn status_headline(
-    status: Option<StowStatus>,
-    icons: &Icons,
-    colors: &ThemeColors,
-) -> Line<'static> {
-    let (glyph, text, colour) = match status {
-        Some(status) => (
-            icons.status(status),
-            status_text(status),
-            status_color(colors, status),
-        ),
-        None => (icons.unknown, "status not read yet", colors.text_dim),
-    };
-    Line::styled(format!("{glyph} {text}"), Style::default().fg(colour))
-}
-
-/// What a status means, in a few words.
-fn status_text(status: StowStatus) -> &'static str {
-    match status {
-        StowStatus::Stowed => "stowed \u{2014} every file is linked",
-        StowStatus::Unstowed => "not stowed \u{2014} nothing is linked",
-        StowStatus::Partial => "partial \u{2014} some files linked",
-        StowStatus::Conflict => "conflict \u{2014} a real file is in place",
-        StowStatus::Missing => "missing \u{2014} the package is gone",
-        StowStatus::Empty => "empty \u{2014} the package has no files",
-        StowStatus::Invalid => "invalid \u{2014} ignore list unreadable",
-    }
-}
-
 /// Each status a group holds, with its glyph and count: `✓ 2  ◐ 1`. `—` when the group has
 /// no packages, and unknown statuses are counted with `·`.
 fn status_summary(statuses: &[Option<StowStatus>], icons: &Icons) -> String {
@@ -384,6 +343,7 @@ mod tests {
 
     use super::*;
     use crate::ui::footer::{packages_hints, Hint};
+    use crate::ui::status_style::status_meaning;
 
     #[test]
     fn test_title_counts_packages_and_the_marks_once_something_is_marked() {
@@ -420,7 +380,7 @@ mod tests {
             StowStatus::Invalid,
         ];
         for status in all {
-            let width = status_text(status).width() + 2;
+            let width = status_meaning(status).width() + 2;
             assert!(width <= 37, "{status:?} headline is {width} columns");
         }
     }

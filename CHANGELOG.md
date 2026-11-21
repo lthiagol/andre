@@ -135,6 +135,19 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **Status uses the list and detail layout.** `5 verify status` lists every group with its
+  packages folded under it, each with its status glyph. The chip row reads
+  `profile [all ▾]` with the status counts after it, at a fixed column. `f` opens the profile dropdown
+  (every package first, then the profiles; `Enter` picks, `Esc` keeps the current choice).
+  A filtered list is titled with the profile and its count (`agent-work 5`), and a package
+  that comes through an include reads `via <profile>`. `r` reads every status again. A
+  folded group shows its worst status and how many packages have it. The detail shows the
+  package's status, its group's target, how each of its files sits in the target (`linked`,
+  `not linked`, `real file`, `wrong link`; the files in the way come first) and a fix line for
+  a conflict, a missing package or a missing target. A package whose group has no source or
+  target reads `·`, not `missing`. An empty profile says so with an `f` hint, not a `Press` line.
+  The legend and the `stow status` panel title are gone; the status meanings are in the
+  detail headline. `Enter` and `Esc` still leave the screen.
 - **Review and run screens use the list and detail layout.** The stow, restow and unstow
   review is a tree of the selected groups and packages on the left, with the command,
   target and link count of the cursor's row on the right. Its action bar reads

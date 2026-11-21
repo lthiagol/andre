@@ -1590,7 +1590,7 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
     // have no old panel title to check: the banner draws their breadcrumb.
     let cases = [
         ("Packages", "packages 1", "Select Packages"),
-        ("Status", "stow status", "Stow Status"),
+        ("Status", "packages 1", "Stow Status"),
         ("Settings", "settings", ""),
         ("Help", "help", ""),
         (
@@ -1623,18 +1623,25 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
     }
 
     // Legends are titled like every other panel and have no header row.
-    for screen in ["Status", "UnstowBrowse"] {
-        let (mut app, tmp) = make_test_app();
-        add_status_fixtures(tmp.path());
-        push_screen(&mut app, screen);
-        let buf = render_updated(&mut app, 80, 24);
-        let text = buffer_text(&buf);
-        assert!(text.contains(" legend "), "{screen}: legend title missing");
-        assert!(
-            !text.contains("Legend:"),
-            "{screen}: legend header row is back"
-        );
-    }
+    let (mut app, tmp) = make_test_app();
+    add_status_fixtures(tmp.path());
+    push_screen(&mut app, "UnstowBrowse");
+    let text = buffer_text(&render_updated(&mut app, 80, 24));
+    assert!(
+        text.contains(" legend "),
+        "UnstowBrowse: legend title missing"
+    );
+    assert!(
+        !text.contains("Legend:"),
+        "UnstowBrowse: legend header row is back"
+    );
+
+    // The status screen has no legend: its counts sit in the chip row instead.
+    let (mut app, tmp) = make_test_app();
+    add_status_fixtures(tmp.path());
+    push_screen(&mut app, "Status");
+    let text = buffer_text(&render_updated(&mut app, 80, 24));
+    assert!(!text.contains(" legend "), "Status: legend is back");
 }
 
 #[test]
@@ -1706,15 +1713,16 @@ fn test_package_with_a_broken_ignore_list_shows_invalid() {
         let colors = ThemeColors::from_theme(app.ctx.core.theme);
         push_screen(&mut app, "Status");
         let status = render_updated(&mut app, 80, 24);
+        let border = list_border(&status, "packages 7");
 
         let y = (0..status.area().height)
-            .find(|&y| row_text(&status, y).contains("broken  invalid"))
-            .unwrap_or_else(|| panic!("{set:?}: broken row should read invalid"));
+            .find(|&y| list_text(&status, y, border).contains("broken"))
+            .unwrap_or_else(|| panic!("{set:?}: broken row missing"));
         assert!(
-            !row_text(&status, y).contains("missing"),
+            !list_text(&status, y, border).contains("missing"),
             "{set:?}: an invalid list must not read as missing"
         );
-        let (_, fg) = glyph_on_row(&status, y, icons.invalid)
+        let (_, fg) = list_glyph_on_row(&status, y, border, icons.invalid)
             .unwrap_or_else(|| panic!("{set:?}: invalid glyph missing"));
         assert_eq!(fg, status_color(&colors, StowStatus::Invalid));
     }
@@ -1751,13 +1759,6 @@ fn add_status_fixtures(home: &std::path::Path) {
     std::fs::create_dir_all(source.join("hollow")).unwrap();
 }
 
-/// The first cell on row `y` drawn with `glyph`, as (column, foreground).
-fn glyph_on_row(buf: &Buffer, y: u16, glyph: &str) -> Option<(u16, Color)> {
-    (0..buf.area().width)
-        .find(|&x| buf[(x, y)].symbol() == glyph)
-        .map(|x| (x, buf[(x, y)].fg))
-}
-
 /// The package status vocabulary is the same on the packages browser and the status screens:
 /// one glyph, one colour and one lowercase word per status.
 #[test]
@@ -1781,6 +1782,10 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
         status_app.ctx.core.icons = set;
         push_screen(&mut status_app, "Status");
         let status = render_updated(&mut status_app, 80, 25);
+        let status_border = list_border(&status, "packages 6");
+        // At 120 columns the list pane is wide enough to show each status word.
+        let wide = render_updated(&mut status_app, 120, 40);
+        let wide_border = list_border(&wide, "packages 6");
 
         let mut checked = 0;
         for (name, state) in STATUS_FIXTURES {
@@ -1792,12 +1797,20 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
                 .find(|&y| list_text(&packages, y, border).contains(name))
                 .unwrap_or_else(|| panic!("{set:?}: {name} row missing"));
             let status_y = (0..status.area().height)
-                .find(|&y| row_text(&status, y).contains(&format!("{name}  {word}")))
+                .find(|&y| list_text(&status, y, status_border).contains(name))
                 .unwrap_or_else(|| panic!("{set:?}: {name} status row missing"));
 
-            let (_, status_fg) = glyph_on_row(&status, status_y, glyph)
+            let (_, status_fg) = list_glyph_on_row(&status, status_y, status_border, glyph)
                 .unwrap_or_else(|| panic!("{set:?}: {name}: status glyph {glyph:?} missing"));
             assert_eq!(status_fg, colour, "{set:?}: {name} on the status screen");
+
+            let wide_y = (0..wide.area().height)
+                .find(|&y| list_text(&wide, y, wide_border).contains(name))
+                .unwrap_or_else(|| panic!("{set:?}: {name} wide status row missing"));
+            assert!(
+                list_text(&wide, wide_y, wide_border).contains(&word),
+                "{set:?}: {name} should read {word:?} on the status screen"
+            );
 
             if Some(package_y) != cursor_row {
                 let (_, package_fg) = list_glyph_on_row(&packages, package_y, border, glyph)
@@ -1945,18 +1958,6 @@ fn panel_right_column(buf: &Buffer, title: &str) -> u16 {
         .rev()
         .find(|&x| buf[(x, y)].symbol() == "\u{256e}")
         .unwrap_or_else(|| panic!("{title} panel has no top-right corner"))
-}
-
-/// The rows strictly between the top and bottom borders of the panel titled `title`.
-fn panel_rows(buf: &Buffer, title: &str) -> std::ops::Range<u16> {
-    let column = panel_right_column(buf, title);
-    let top = (0..buf.area().height)
-        .find(|&y| row_text(buf, y).contains(title))
-        .unwrap_or_else(|| panic!("{title} panel missing"));
-    let bottom = (top + 1..buf.area().height)
-        .find(|&y| buf[(column, y)].symbol() == "\u{256f}")
-        .unwrap_or_else(|| panic!("{title} panel has no bottom-right corner"));
-    top + 1..bottom
 }
 
 /// The column of a two-pane screen's list border: the first top-right corner after `title`
@@ -2116,23 +2117,226 @@ fn test_execute_list_draws_its_scrollbar_thumb_on_the_panel_border() {
     );
 }
 
-/// The top border title of the stow status panel.
-const STATUS_TITLE: &str = " stow status ";
+/// The title of the stow status list. It names the packages, so any count matches.
+const STATUS_TITLE: &str = " packages ";
 
 #[test]
 fn test_status_list_draws_its_scrollbar_thumb_when_rows_overflow() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, tmp) = make_two_group_app();
+    // Eight more packages make 16 rows with the two group rows, more than the 13 that fit.
+    for i in 0..8 {
+        write_package(
+            &tmp.path().join("dotfiles/home"),
+            &format!("extra{i}"),
+            ".x_rc",
+        );
+    }
     push_screen(&mut app, "Status");
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
     let buf = render_updated(&mut app, 80, 24);
 
-    let column = panel_right_column(&buf, STATUS_TITLE);
-    let rows = panel_rows(&buf, STATUS_TITLE);
-    assert_eq!(rows.len(), 5, "the status list should show 5 rows at 80x24");
+    let column = list_border(&buf, STATUS_TITLE);
+    let rows = panel_rows_at(&buf, STATUS_TITLE, column);
+    assert_eq!(
+        rows.len(),
+        13,
+        "the status list should show 13 rows at 80x24"
+    );
     assert!(
         !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
         "no scrollbar thumb on the status list's right border"
     );
+}
+
+/// A status screen filtered to a profile: the chip names it, the list title counts its
+/// packages, and `f` opens the dropdown with every package first and the profile under the bar.
+#[test]
+fn test_status_profile_chip_title_and_dropdown_follow_the_filter() {
+    let (mut app, _tmp) = make_test_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    app.ctx
+        .core
+        .profiles
+        .create(andre_core::profile::Profile {
+            name: "work".into(),
+            packages: vec!["home/test".into()],
+            ..Default::default()
+        })
+        .unwrap();
+    app.component_stack.push(Box::new(
+        andre::components::status::StatusComponent::for_profile("work"),
+    ));
+
+    let buf = render_updated(&mut app, 80, 24);
+    let chip = format!("profile [work {}]", UNICODE.fold_open);
+    let chip_y = (0..buf.area().height)
+        .find(|&y| row_text(&buf, y).contains(&chip))
+        .unwrap_or_else(|| panic!("{chip:?} chip missing"));
+    assert!(
+        buffer_text(&buf).contains(" work 1 "),
+        "filtered title missing"
+    );
+
+    app.component_dispatch(key_char('f'));
+    let buf = render_updated(&mut app, 80, 24);
+    let first = row_text(&buf, chip_y + 2);
+    let second = row_text(&buf, chip_y + 3);
+    assert!(
+        first.contains("all packages"),
+        "every packages comes first: {first:?}"
+    );
+    assert!(
+        second.contains("work") && second.contains('\u{258c}'),
+        "the profile is second, under the bar: {second:?}"
+    );
+}
+
+/// The filtered status screen with its profile dropdown open draws at the large sizes too.
+#[test]
+fn test_status_filter_dropdown_renders_at_120x40_and_200x50_without_panic() {
+    let (mut app, tmp) = make_test_app();
+    add_status_fixtures(tmp.path());
+    app.ctx
+        .core
+        .profiles
+        .create(andre_core::profile::Profile {
+            name: "work".into(),
+            packages: vec!["home/clash".into()],
+            ..Default::default()
+        })
+        .unwrap();
+    app.component_stack.push(Box::new(
+        andre::components::status::StatusComponent::for_profile("work"),
+    ));
+    app.component_dispatch(key_char('f'));
+    for (width, height) in [(120, 40), (200, 50)] {
+        render_updated(&mut app, width, height);
+    }
+}
+
+/// The chip row names the filter, and the counts start at a fixed column after the chip, so
+/// they line up across profiles: 25 columns after `profile`, as in the 80x24 mockup.
+#[test]
+fn test_status_chip_row_names_all_and_puts_the_counts_at_a_fixed_column() {
+    let (mut app, tmp) = make_test_app();
+    add_status_fixtures(tmp.path());
+    app.ctx.core.icons = IconSet::Unicode;
+    push_screen(&mut app, "Status");
+
+    let buf = render_updated(&mut app, 80, 24);
+    let y = (0..buf.area().height)
+        .find(|&y| row_text(&buf, y).contains("profile [all ▾]"))
+        .expect("profile [all ▾] chip row");
+    let label = column_of(&buf, y, "profile").unwrap();
+    let counts = column_of(&buf, y, UNICODE.status(StowStatus::Stowed)).unwrap();
+    assert_eq!(counts - label, 25, "{:?}", row_text(&buf, y));
+}
+
+/// A chip too long to leave room keeps three spaces before the counts.
+#[test]
+fn test_status_chip_row_keeps_three_columns_before_the_counts_after_a_long_profile() {
+    let (mut app, tmp) = make_test_app();
+    add_status_fixtures(tmp.path());
+    app.ctx.core.icons = IconSet::Unicode;
+    app.ctx
+        .core
+        .profiles
+        .create(andre_core::profile::Profile {
+            name: "a-very-long-profile-name".into(),
+            packages: vec!["home/test".into()],
+            ..Default::default()
+        })
+        .unwrap();
+    app.component_stack.push(Box::new(
+        andre::components::status::StatusComponent::for_profile("a-very-long-profile-name"),
+    ));
+
+    let buf = render_updated(&mut app, 80, 24);
+    let y = (0..buf.area().height)
+        .find(|&y| row_text(&buf, y).contains("profile [a-very-long-profile-name"))
+        .expect("long chip row");
+    let close = column_of(&buf, y, "▾]").unwrap() + 1;
+    // Only the unstowed package is listed, so the counts are its glyph.
+    let counts = column_of(&buf, y, UNICODE.status(StowStatus::Unstowed))
+        .unwrap_or_else(|| panic!("{:?}", row_text(&buf, y)));
+    assert_eq!(counts - close - 1, 3, "{:?}", row_text(&buf, y));
+}
+
+/// A package in a group whose target is missing is on disk but unread: its row shows `·`, its
+/// detail says the status is not read, and the fix is the target's, not a missing package's.
+#[test]
+fn test_status_package_in_a_group_with_no_target_reads_unknown() {
+    let (mut app, tmp) = make_empty_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    let source = tmp.path().join("dotfiles/gone");
+    std::fs::create_dir_all(source.join("pkg")).unwrap();
+    std::fs::write(source.join("pkg/.rc"), "x").unwrap();
+    app.ctx.core.config.add_group(
+        "gone".into(),
+        source.display().to_string(),
+        tmp.path().join("nowhere").display().to_string(),
+    );
+    push_screen(&mut app, "Status");
+    // The cursor starts on the group's header, so the package's detail needs one step down.
+    app.component_dispatch(down_key());
+
+    let buf = render_updated(&mut app, 80, 24);
+    let border = list_border(&buf, STATUS_TITLE);
+    let y = (0..buf.area().height)
+        .find(|&y| list_text(&buf, y, border).contains("pkg"))
+        .expect("pkg row");
+    assert!(
+        list_glyph_on_row(&buf, y, border, UNICODE.unknown).is_some(),
+        "{:?}",
+        list_text(&buf, y, border)
+    );
+    let text = buffer_text(&buf);
+    assert!(text.contains("status not read yet"), "{text}");
+    assert!(text.contains("Fix: create the"), "{text}");
+    assert!(!text.contains("the package is gone"), "{text}");
+    assert!(!text.contains("restore the package folder"), "{text}");
+}
+
+/// A conflict's detail names the file in the way, as `real file`, and the fix.
+#[test]
+fn test_status_conflict_detail_names_the_real_file_in_the_way() {
+    let (mut app, tmp) = make_test_app();
+    add_status_fixtures(tmp.path());
+    app.ctx.core.icons = IconSet::Unicode;
+    push_screen(&mut app, "Status");
+    // Packages sort by name, so `clash` is the first one under the group's header.
+    app.component_dispatch(down_key());
+
+    let buf = render_updated(&mut app, 80, 24);
+    let text = buffer_text(&buf);
+    assert!(text.contains("✗ .clash_rc"), "{text}");
+    assert!(text.contains("real file"), "{text}");
+    assert!(text.contains("Fix: move the real file"), "{text}");
+}
+
+/// A profile with no packages on disk says why in its detail, with no `Press` line, and the
+/// list carries the `f` hint under its message.
+#[test]
+fn test_status_empty_profile_has_an_f_hint_and_no_press_line() {
+    let (mut app, _tmp) = make_test_app();
+    app.ctx
+        .core
+        .profiles
+        .create(andre_core::profile::Profile {
+            name: "bare".into(),
+            packages: vec!["home/nope".into()],
+            ..Default::default()
+        })
+        .unwrap();
+    app.component_stack.push(Box::new(
+        andre::components::status::StatusComponent::for_profile("bare"),
+    ));
+
+    let buf = render_updated(&mut app, 80, 24);
+    let text = buffer_text(&buf);
+    assert!(text.contains("No packages on disk."), "{text}");
+    assert!(text.contains("f show every package"), "{text}");
+    assert!(!text.contains("Press"), "{text}");
 }
 
 #[test]
@@ -2142,8 +2346,8 @@ fn test_status_list_draws_no_scrollbar_when_every_row_fits() {
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
     let buf = render_updated(&mut app, 80, 24);
 
-    let column = panel_right_column(&buf, STATUS_TITLE);
-    let rows = panel_rows(&buf, STATUS_TITLE);
+    let column = list_border(&buf, STATUS_TITLE);
+    let rows = panel_rows_at(&buf, STATUS_TITLE, column);
     assert!(rows_with_fg(&buf, column, rows.clone(), colors.accent).is_empty());
     assert!(
         rows.clone()

@@ -29,6 +29,6 @@ pub use profile::{
 pub use state::{AppState, IconSet, StowAction, StowFlag, StowFlags, Theme, MAX_VERBOSITY};
 pub use stow::{
     build_stow_args, check_stowed_status, check_stowed_status_with_ignores, execute_stow,
-    linkable_files, unlink_stowed_symlink, StowStatus,
+    file_links, linkable_files, unlink_stowed_symlink, FileLink, StowStatus,
 };
 pub use yolo::{build_plan, profile_plan, run_job, StowJob};

@@ -434,6 +434,20 @@ count) and the selected profile on the right: description, includes, its package
 | `c` | Status of the profile's packages (the status screen, listing only them) |
 | `Esc` | Back |
 
+### Status
+
+Main menu item `verify status` shows every group's packages, each with its status glyph.
+`c` on the profiles screen opens the same screen filtered to that profile. The chip row
+names the filter and shows the counts. The detail lists each file of the package with its link
+state, the files in the way first.
+
+| Key | Action |
+|:---|:---|
+| `f` | Choose the profile the rows show: a dropdown with every package first, then the profiles. `Enter` picks, `Esc` keeps the current choice |
+| `←` `→` | Fold or unfold a group. On a package, `←` moves to its group's header |
+| `r` | Read every status again |
+| `Esc` / `Enter` | Back |
+
 ### Global Settings Toggles
 
 | Key | Action |

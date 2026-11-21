@@ -57,95 +57,113 @@ pub fn check_stowed_status_with_ignores(
     ignores: &[String],
     global: Option<&Path>,
 ) -> Result<StowStatus> {
-    let package_source = source.join(package);
-
-    if !package_source.exists() {
+    if !source.join(package).exists() {
         return Ok(StowStatus::Missing);
     }
 
-    let files = linkable_files(&package_source, ignores, global)?;
-
-    if files.is_empty() {
+    let links = file_links(source, target, package, ignores, global)?;
+    if links.is_empty() {
         return Ok(StowStatus::Empty);
     }
 
-    let mut stowed_count = 0;
-    let mut conflict_count = 0;
-
-    for file in &files {
-        let relative = match file.strip_prefix(&package_source) {
-            Ok(p) => p.to_path_buf(),
-            Err(_) => file
-                .file_name()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| file.clone()),
-        };
-        let target_path = target.join(&relative);
-
-        if !target_path.exists() {
-            continue;
-        }
-
-        let metadata = match fs::symlink_metadata(&target_path) {
-            Ok(m) => m,
-            Err(_) => {
-                continue;
-            }
-        };
-
-        if metadata.file_type().is_symlink() {
-            // Direct symlink — verify it points to the right place
-            let link_target = match fs::read_link(&target_path) {
-                Ok(lt) => lt,
-                Err(_) => {
-                    conflict_count += 1;
-                    continue;
-                }
-            };
-
-            let link_target_abs = target_path
-                .parent()
-                .map(|p| p.join(&link_target))
-                .unwrap_or(link_target);
-            let link_target_canonical = match fs::canonicalize(&link_target_abs) {
-                Ok(p) => p,
-                Err(_) => {
-                    conflict_count += 1;
-                    continue;
-                }
-            };
-
-            let file_canonical = match fs::canonicalize(file) {
-                Ok(p) => p,
-                Err(_) => {
-                    conflict_count += 1;
-                    continue;
-                }
-            };
-
-            if link_target_canonical == file_canonical {
-                stowed_count += 1;
-            } else {
-                conflict_count += 1;
-            }
-        } else {
-            // Not a direct symlink — check folding: a parent directory symlink
-            // may point into the package source (stow default behavior).
-            match (fs::canonicalize(&target_path), fs::canonicalize(file)) {
-                (Ok(t), Ok(f)) if t == f => stowed_count += 1,
-                _ => conflict_count += 1,
-            }
-        }
-    }
-
-    if conflict_count > 0 {
+    let linked = links
+        .iter()
+        .filter(|(_, link)| *link == FileLink::Linked)
+        .count();
+    if links.iter().any(|(_, link)| link.is_conflict()) {
         Ok(StowStatus::Conflict)
-    } else if stowed_count == files.len() {
+    } else if linked == links.len() {
         Ok(StowStatus::Stowed)
-    } else if stowed_count == 0 {
+    } else if linked == 0 {
         Ok(StowStatus::Unstowed)
     } else {
         Ok(StowStatus::Partial)
+    }
+}
+
+/// How one file that a link run would link sits in the target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileLink {
+    /// The target holds a link to the package's file.
+    Linked,
+    /// Nothing is in the target's place, or only a broken link is.
+    Unlinked,
+    /// A real file is in the target's place.
+    RealFile,
+    /// A link is in the target's place, but it does not lead to the package's file.
+    WrongLink,
+}
+
+impl FileLink {
+    /// True when something other than a link to the file is in its place.
+    pub fn is_conflict(self) -> bool {
+        matches!(self, FileLink::RealFile | FileLink::WrongLink)
+    }
+}
+
+/// Every file a link run would link for `package` under `source` (see [`linkable_files`]),
+/// relative to the package, with how each sits in `target`. Files come in name order.
+pub fn file_links(
+    source: &Path,
+    target: &Path,
+    package: &str,
+    ignores: &[String],
+    global: Option<&Path>,
+) -> Result<Vec<(PathBuf, FileLink)>> {
+    let package_source = source.join(package);
+    let files = linkable_files(&package_source, ignores, global)?;
+    Ok(files
+        .iter()
+        .map(|file| {
+            let relative = match file.strip_prefix(&package_source) {
+                Ok(p) => p.to_path_buf(),
+                Err(_) => file
+                    .file_name()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| file.clone()),
+            };
+            let link = link_state(&target.join(&relative), file);
+            (relative, link)
+        })
+        .collect())
+}
+
+/// How `file` sits at `target_path`. A path that does not exist, a broken link included,
+/// counts as unlinked.
+fn link_state(target_path: &Path, file: &Path) -> FileLink {
+    if !target_path.exists() {
+        return FileLink::Unlinked;
+    }
+    let Ok(metadata) = fs::symlink_metadata(target_path) else {
+        return FileLink::Unlinked;
+    };
+
+    if !metadata.file_type().is_symlink() {
+        // Not a direct symlink — check folding: a parent directory symlink
+        // may point into the package source (stow default behavior).
+        return match (fs::canonicalize(target_path), fs::canonicalize(file)) {
+            (Ok(t), Ok(f)) if t == f => FileLink::Linked,
+            _ => FileLink::RealFile,
+        };
+    }
+
+    // Direct symlink — verify it points to the right place.
+    let Ok(link_target) = fs::read_link(target_path) else {
+        return FileLink::WrongLink;
+    };
+    let link_target_abs = target_path
+        .parent()
+        .map(|p| p.join(&link_target))
+        .unwrap_or(link_target);
+    let (Ok(link_target_canonical), Ok(file_canonical)) =
+        (fs::canonicalize(&link_target_abs), fs::canonicalize(file))
+    else {
+        return FileLink::WrongLink;
+    };
+    if link_target_canonical == file_canonical {
+        FileLink::Linked
+    } else {
+        FileLink::WrongLink
     }
 }
 
@@ -418,6 +436,45 @@ mod tests {
 
         let status = check_stowed_status(&source, &target, "bash-env", None).unwrap();
         assert_eq!(status, StowStatus::Partial);
+    }
+
+    #[test]
+    fn test_file_links_say_how_each_file_sits_in_the_target() {
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("packages");
+        let target = tmp.path().join("target");
+        let pkg_src = source.join("bash-env");
+
+        fs::create_dir_all(&pkg_src).unwrap();
+        for name in [".a", ".b", ".c", ".d", ".e"] {
+            fs::write(pkg_src.join(name), "content").unwrap();
+        }
+        fs::create_dir_all(&target).unwrap();
+        make_symlink(&pkg_src.join(".a"), &target.join(".a")).unwrap();
+        fs::write(target.join(".c"), "real file").unwrap();
+        let elsewhere = tmp.path().join("elsewhere");
+        fs::write(&elsewhere, "other").unwrap();
+        make_symlink(&elsewhere, &target.join(".d")).unwrap();
+        // A broken link is not counted, as before: it reads as unlinked.
+        make_symlink(&tmp.path().join("gone"), &target.join(".e")).unwrap();
+
+        let links = file_links(&source, &target, "bash-env", &[], None).unwrap();
+        assert_eq!(
+            links,
+            vec![
+                (PathBuf::from(".a"), FileLink::Linked),
+                (PathBuf::from(".b"), FileLink::Unlinked),
+                (PathBuf::from(".c"), FileLink::RealFile),
+                (PathBuf::from(".d"), FileLink::WrongLink),
+                (PathBuf::from(".e"), FileLink::Unlinked),
+            ]
+        );
+        let status = check_stowed_status(&source, &target, "bash-env", None).unwrap();
+        assert_eq!(
+            status,
+            StowStatus::Conflict,
+            "a real file wins over the links"
+        );
     }
 
     #[test]
