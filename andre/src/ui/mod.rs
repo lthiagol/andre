@@ -52,9 +52,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     let outer = crate::ui::themed_panel(&colors)
         .style(Style::default().fg(colors.border).bg(colors.background));
-    frame.render_widget(&outer, frame.size());
+    frame.render_widget(&outer, frame.area());
 
-    let inner = frame.size().inner(&Margin::new(1, 1));
+    let inner = frame.area().inner(Margin::new(1, 1));
 
     let v = Layout::default()
         .direction(Direction::Vertical)
@@ -136,7 +136,7 @@ fn render_too_small_overlay(frame: &mut Frame, cols: u16, rows: u16) {
         )),
     ]);
 
-    let area = frame.size();
+    let area = frame.area();
     let paragraph = Paragraph::new(text)
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));

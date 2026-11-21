@@ -105,7 +105,7 @@ Borrow seams from mature TUIs (e.g. herdr / ratatui event-driven templates), not
 | https://docs.rs/ratatui | API after version upgrades |
 | https://github.com/ratatui/awesome-ratatui | Optional third-party widgets — only if std + our widgets are insufficient |
 
-**Version:** workspace pins `ratatui` (see root `Cargo.toml`). Prefer a deliberate, planned bump over silent majors; watch `frame.size()` → `frame.area()` and layout API changes.
+**Version:** workspace pins `ratatui` 0.29 and `crossterm` 0.28 (the crossterm ratatui 0.29 builds on; see root `Cargo.toml`). Bump both together, deliberately; check ratatui's BREAKING-CHANGES.md for each skipped minor version.
 
 ### Dependency policy
 

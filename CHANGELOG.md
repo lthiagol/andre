@@ -11,6 +11,15 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- Dependency upgrade: `ratatui` 0.26 → 0.29 and `crossterm` 0.27 → 0.28 (the
+  version ratatui 0.29 builds on). No intended visual change; the existing
+  render snapshot tests pass unchanged. API fallout:
+  - `Frame::size()` (deprecated) → `Frame::area()` in `ui/mod.rs`.
+  - `Rect::inner` takes `Margin` by value (was `&Margin`) in `ui/mod.rs`.
+  - `Buffer::get(x, y)` (deprecated) → `buf[(x, y)]` in the `render` and
+    `interaction` test helpers. Same panic on out-of-bounds, same `&Cell`.
+  - `instability` pinned to 0.3.12 in `Cargo.lock` so the build keeps a single
+    `syn` major version.
 - Settings directory picker, unstow/adopt browse screens, and the stow status
   and package lists now keep their rows out of paint (refactor; no intended
   behaviour change except as noted):

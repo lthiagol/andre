@@ -19,7 +19,7 @@ fn line_contains(buf: &Buffer, fragment: &str) -> bool {
     for y in 0..buf.area().height {
         let mut line = String::new();
         for x in 0..buf.area().width {
-            line.push_str(buf.get(x, y).symbol());
+            line.push_str(buf[(x, y)].symbol());
         }
         if line.contains(fragment) {
             return true;
@@ -34,7 +34,7 @@ fn status_bar_contains(buf: &Buffer, fragment: &str) -> bool {
     for y in 0..buf.area().height {
         let mut line = String::new();
         for x in 0..buf.area().width {
-            line.push_str(buf.get(x, y).symbol());
+            line.push_str(buf[(x, y)].symbol());
         }
         let is_status = line.contains("Verbosity")
             || line.contains("Dry-Run")
@@ -154,11 +154,11 @@ fn test_status_bar_toggle_colors_distinguish_on_from_off() {
     fn first_on_color(buf: &ratatui::buffer::Buffer) -> Option<Color> {
         for y in 0..buf.area().height {
             for x in 0..buf.area().width.saturating_sub(2) {
-                if buf.get(x, y).symbol() == "O"
-                    && buf.get(x + 1, y).symbol() == "N"
-                    && buf.get(x + 2, y).symbol() == " "
+                if buf[(x, y)].symbol() == "O"
+                    && buf[(x + 1, y)].symbol() == "N"
+                    && buf[(x + 2, y)].symbol() == " "
                 {
-                    return Some(buf.get(x, y).fg);
+                    return Some(buf[(x, y)].fg);
                 }
             }
         }
@@ -167,11 +167,11 @@ fn test_status_bar_toggle_colors_distinguish_on_from_off() {
     fn first_off_color(buf: &ratatui::buffer::Buffer) -> Option<Color> {
         for y in 0..buf.area().height {
             for x in 0..buf.area().width.saturating_sub(2) {
-                if buf.get(x, y).symbol() == "O"
-                    && buf.get(x + 1, y).symbol() == "F"
-                    && buf.get(x + 2, y).symbol() == "F"
+                if buf[(x, y)].symbol() == "O"
+                    && buf[(x + 1, y)].symbol() == "F"
+                    && buf[(x + 2, y)].symbol() == "F"
                 {
-                    return Some(buf.get(x, y).fg);
+                    return Some(buf[(x, y)].fg);
                 }
             }
         }
@@ -242,7 +242,7 @@ fn test_banner_has_content() {
     let top_content = (0..5).any(|y| {
         let mut line = String::new();
         for x in 0..buf.area().width {
-            let s = buf.get(x, y).symbol();
+            let s = buf[(x, y)].symbol();
             if s != " " {
                 line.push_str(s);
             }

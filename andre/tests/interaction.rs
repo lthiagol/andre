@@ -1102,7 +1102,7 @@ fn screen_text(app: &mut App) -> String {
     (0..buf.area().height)
         .map(|y| {
             (0..buf.area().width)
-                .map(|x| buf.get(x, y).symbol())
+                .map(|x| buf[(x, y)].symbol())
                 .collect::<String>()
         })
         .collect::<Vec<_>>()
