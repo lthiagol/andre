@@ -162,6 +162,11 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   every subfolder is a package, folders starting with `.` are skipped) and an optional
   `target:` (default: your home folder). Profile refs are plain package names (`nvim`),
   not `group/package`.
+- **`--yolo` stows every package in name order.** It prints `ok    <name>` per package
+  (stdout) or `FAIL  <name>  (engine=…): <error>` (stderr), then the totals. A `FAIL` line
+  is one line even when the engine's error spans lines. Each package's target folder is
+  created when missing. The `group(s) skipped` line is gone. With no `packages:` it exits 1 with
+  `no packages folder: set \`packages:\` in <config>`; an empty folder exits 0.
 
 ### Changed
 

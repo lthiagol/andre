@@ -178,7 +178,10 @@ fn stdout(out: &Output) -> String {
 #[test]
 fn process_loads_xdg_config_without_flags() {
     let sb = Sandbox::new();
-    write(&sb.xdg.join("andre").join("andre.yml"), MINIMAL_CONFIG);
+    // An empty packages folder: `--yolo` with no `packages:` exits 1 instead.
+    let folder = sb.xdg.join("andre");
+    write(&folder.join("andre.yml"), "packages: packages\n");
+    fs::create_dir_all(folder.join("packages")).unwrap();
 
     let out = sb.run(&["--yolo"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
@@ -193,7 +196,8 @@ fn process_loads_xdg_config_without_flags() {
 fn process_loads_config_folder() {
     let sb = Sandbox::new();
     let repo = sb.cwd.join("repo");
-    write(&repo.join("andre.yml"), MINIMAL_CONFIG);
+    write(&repo.join("andre.yml"), "packages: packages\n");
+    fs::create_dir_all(repo.join("packages")).unwrap();
 
     let out = sb.run(&["--yolo", "--config-folder", repo.to_str().unwrap()]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));

@@ -272,9 +272,9 @@ pub fn render_review(
 ) {
     let title = match &wizard.plan {
         Some(plan) if plan.package_exists => {
-            format!("review \u{b7} add to {}/{}", plan.group, plan.package)
+            format!("review \u{b7} add to {}", plan.package_ref)
         }
-        Some(plan) => format!("review \u{b7} new package {}/{}", plan.group, plan.package),
+        Some(plan) => format!("review \u{b7} new package {}", plan.package_ref),
         None => "review".to_string(),
     };
     let block = focus_panel(colors, true).title(format!(" {title} "));
@@ -316,11 +316,10 @@ fn done_lines(
     colors: &ThemeColors,
     icons: &Icons,
 ) -> Vec<Line<'static>> {
-    let (group, package) = wizard
+    let package_ref = wizard
         .plan
         .as_ref()
-        .map(|plan| (plan.group.as_str(), plan.package.as_str()))
-        .unwrap_or_default();
+        .map_or("", |plan| plan.package_ref.as_str());
     let line = match done {
         Done::Created => Line::from(vec![
             Span::styled(
@@ -328,7 +327,7 @@ fn done_lines(
                 Style::default().fg(colors.ok).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("created {group}/{package}"),
+                format!("created {package_ref}"),
                 Style::default().fg(colors.text),
             ),
         ]),
@@ -338,7 +337,7 @@ fn done_lines(
                 Style::default().fg(colors.ok).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("added files to {group}/{package}"),
+                format!("added files to {package_ref}"),
                 Style::default().fg(colors.text),
             ),
         ]),

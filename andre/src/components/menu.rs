@@ -180,7 +180,8 @@ impl Component for MainMenuComponent {
                 &ctx.config_dir,
                 &ctx.home_dir,
                 ctx.search_dir.as_deref(),
-            );
+            )
+            .filter(|found| review_can_run(found, &ctx.core.config));
             let items = self.items().len();
             self.list.cursor = self.list.cursor.min(items - 1);
             self.detail = build_detail(self.selected(), ctx, self.bootstrap.as_ref());
@@ -288,8 +289,13 @@ impl MainMenuComponent {
         match item {
             MenuItem::Setup => match &self.bootstrap {
                 Some(found) => {
-                    let selected =
-                        HashMap::from([(found.group.clone(), vec![found.package.clone()])]);
+                    // Interim: the grouped review keys packages by group, which an
+                    // interim `group/package` name carries. G3 passes the name instead.
+                    let (group, package) = found
+                        .package
+                        .split_once('/')
+                        .unwrap_or(("", found.package.as_str()));
+                    let selected = HashMap::from([(group.to_string(), vec![package.to_string()])]);
                     Transition::Push(Box::new(ConfirmComponent::stow_only(selected, ctx)))
                 }
                 None => Transition::Handled,
@@ -429,8 +435,8 @@ fn setup_detail(found: &Bootstrap, ctx: &AppContext, colors: &ThemeColors) -> De
     let source = ctx
         .core
         .config
-        .resolve_group_source(&found.group, &ctx.config_dir, &ctx.home_dir)
-        .map(|path| display_path(&path, &ctx.home_dir))
+        .package(&found.package, &ctx.config_dir, &ctx.home_dir)
+        .map(|entry| display_path(&entry.source, &ctx.home_dir))
         .unwrap_or_else(|| "unresolved".to_string());
     let link = display_path(&found.link, &ctx.home_dir);
     let fact = |value: String| elide(&value, VALUE_WIDTH);
@@ -444,7 +450,7 @@ fn setup_detail(found: &Bootstrap, ctx: &AppContext, colors: &ThemeColors) -> De
         facts: vec![
             (
                 Cow::Borrowed("package"),
-                fact(format!("{}/{}", found.group, found.package)),
+                fact(found.package.clone()),
             ),
             (Cow::Borrowed("links"), fact(link.clone())),
             (Cow::Borrowed("from"), fact(source)),
@@ -526,6 +532,14 @@ fn build_detail(item: MenuItem, ctx: &AppContext, bootstrap: Option<&Bootstrap>)
             .collect(),
         sections: Vec::new(),
     }
+}
+
+/// Whether the set-up review can stow `found` yet. The review still takes grouped names, so
+/// it needs a `group/` part, which a flat package lacks. A config with no `packages:` key is
+/// the grouped one, so it passes too. Until G3 moves the review to names, flat packages are
+/// not offered.
+fn review_can_run(found: &Bootstrap, config: &andre_core::Config) -> bool {
+    found.package.contains('/') || config.packages.is_none()
 }
 
 /// The jump keys the footer and the help fact name: `0–8` while the set-up item is offered.
@@ -728,12 +742,55 @@ mod tests {
     fn test_help_names_zero_to_eight_while_set_up_is_offered() {
         let (_dir, ctx) = fixture(&[]);
         let found = Bootstrap {
-            group: "config".into(),
-            package: "andre".into(),
+            package: "config/andre".into(),
             link: ctx.home_dir.join(".config").join("andre"),
         };
         let help = build_detail(MenuItem::Help, &ctx, Some(&found));
         assert!(fact(&help, "keys").contains("0\u{2013}8 jump"));
+    }
+
+    /// A flat packages folder whose package `andre` holds the config folder at
+    /// `.config/andre`, with the home folder empty (so set-up is pending).
+    fn flat_bootstrap_ctx() -> (tempfile::TempDir, AppContext) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let home = dir.path().join("home");
+        let folder = dir.path().join("dotfiles/andre/.config/andre");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(folder.join("andre.yml"), "global: {}\n").unwrap();
+        let mut config = Config::default_empty();
+        config.packages = Some(dir.path().join("dotfiles").display().to_string());
+        let mut ctx = AppContext::for_tests(config, &home);
+        ctx.config_dir = folder.clone();
+        ctx.config_path = folder.join("andre.yml");
+        (dir, ctx)
+    }
+
+    #[test]
+    fn test_flat_package_holding_the_config_folder_offers_no_set_up_row() {
+        let (_dir, mut ctx) = flat_bootstrap_ctx();
+        let mut menu = MainMenuComponent::default();
+        menu.update(&mut ctx);
+        assert!(
+            !menu.items().contains(&MenuItem::Setup),
+            "the review cannot stow a flat package yet"
+        );
+        assert_eq!(menu.item_count(), MenuItem::ALL.len());
+    }
+
+    #[test]
+    fn test_grouped_package_holding_the_config_folder_offers_set_up() {
+        let (dir, mut ctx) = flat_bootstrap_ctx();
+        let mut config = Config::default_empty();
+        config.add_group(
+            "dotfiles".into(),
+            dir.path().join("dotfiles").display().to_string(),
+            ctx.home_dir.display().to_string(),
+        );
+        ctx.core.config = config;
+        let mut menu = MainMenuComponent::default();
+        menu.update(&mut ctx);
+        assert_eq!(menu.items().first(), Some(&MenuItem::Setup));
     }
 
     #[test]

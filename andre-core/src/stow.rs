@@ -38,7 +38,7 @@ impl StowStatus {
 
 /// Status of `package` under `target`, counting only files that would be linked with no
 /// config ignores applied. `global` is the `.stow-global-ignore` path to read, if any.
-/// Use [`check_stowed_status_with_ignores`] to match a group's `ignore` list too.
+/// Use [`check_stowed_status_with_ignores`] to match the config's `ignore` list too.
 pub fn check_stowed_status(
     source: &Path,
     target: &Path,
@@ -48,7 +48,7 @@ pub fn check_stowed_status(
     check_stowed_status_with_ignores(source, target, package, &[], global)
 }
 
-/// Like [`check_stowed_status`], with the group's config ignores (`ignores`) applied on
+/// Like [`check_stowed_status`], with the config's ignores (`ignores`) applied on
 /// top of the package's ignore list, so status counts the same files a link run would.
 pub fn check_stowed_status_with_ignores(
     source: &Path,
@@ -168,7 +168,7 @@ fn link_state(target_path: &Path, file: &Path) -> FileLink {
 }
 
 /// The files a link run would link for `package_dir`: the package's ignore list
-/// ([`IgnoreRules::load`], with `global` as the global list) applied, then the group's
+/// ([`IgnoreRules::load`], with `global` as the global list) applied, then the config's
 /// `ignores` as substrings of the relative path. Both engines and status use this, so
 /// they agree on what is linked.
 pub fn linkable_files(
@@ -181,14 +181,14 @@ pub fn linkable_files(
         .into_iter()
         .filter(|file| {
             let rel = file.strip_prefix(package_dir).unwrap_or(file);
-            !ignored_by_group(rel, ignores)
+            !ignored_by_config(rel, ignores)
         })
         .collect())
 }
 
-/// True when the group's `ignores` (substring match) exclude `rel`, a path relative to
+/// True when the config's `ignores` (substring match) exclude `rel`, a path relative to
 /// the package. Shared by [`linkable_files`] and the create planner, so previews match.
-pub(crate) fn ignored_by_group(rel: &Path, ignores: &[String]) -> bool {
+pub(crate) fn ignored_by_config(rel: &Path, ignores: &[String]) -> bool {
     let rel = rel.to_string_lossy();
     ignores.iter().any(|ig| rel.contains(ig.as_str()))
 }

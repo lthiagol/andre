@@ -1,0 +1,9 @@
+packages: packages
+target: target
+global:
+  stow:
+    verbosity: 0
+    dry_run: false
+    no_folding: false
+    adopt: false
+    action: stow

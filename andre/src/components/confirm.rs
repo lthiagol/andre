@@ -375,10 +375,7 @@ impl ConfirmComponent {
             &ctx.home_dir,
             &flags,
         );
-        let planned = ops
-            .iter()
-            .map(|op| (op.group.clone(), op.package.clone()))
-            .collect();
+        let planned = ops.iter().map(|op| op.name.clone()).collect();
         // Select the link engine from config (native default, stow opt-in).
         let engine = engine_for(ctx.core.config.effective_engine());
         let total = ops.len() + skipped.len();
@@ -626,11 +623,11 @@ mod tests {
         let ctx = AppContext::for_tests(config, tmp.path());
 
         let component = ConfirmComponent::new(selected.clone(), &ctx);
-        let reviewed: Vec<(String, String)> = component
+        let reviewed: Vec<String> = component
             .rows
             .iter()
             .filter_map(|row| match row {
-                TreeRow::Package { group, name, .. } => Some((group.clone(), name.clone())),
+                TreeRow::Package { group, name, .. } => Some(format!("{group}/{name}")),
                 TreeRow::Group { .. } => None,
             })
             .collect();
@@ -641,10 +638,7 @@ mod tests {
             &ctx.home_dir,
             &StowFlags::default(),
         );
-        let run: Vec<(String, String)> = ops
-            .iter()
-            .map(|op| (op.group.clone(), op.package.clone()))
-            .collect();
+        let run: Vec<String> = ops.iter().map(|op| op.name.clone()).collect();
 
         assert!(skipped.is_empty());
         assert_eq!(reviewed.len(), 12);

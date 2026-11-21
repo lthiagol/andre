@@ -89,7 +89,7 @@ pub fn summary_line(results: &[ExecutionResult], colors: &ThemeColors) -> Line<'
     Line::from(spans)
 }
 
-/// One finished result: its mark and `group/package`.
+/// One finished result: its mark and name.
 pub fn result_row(
     result: &ExecutionResult,
     selected: bool,
@@ -106,7 +106,7 @@ pub fn result_row(
     row_with_glyphs(
         vec![Span::styled(mark, Style::default().fg(color))],
         vec![Span::styled(
-            format!(" {}/{}", result.group, result.package),
+            format!(" {}", result.name),
             Style::default().fg(colors.text),
         )],
         selected,
@@ -200,8 +200,7 @@ mod tests {
 
     fn failed(message: &str) -> ExecutionResult {
         ExecutionResult {
-            group: "home".into(),
-            package: "shell".into(),
+            name: "home/shell".into(),
             success: false,
             error_message: Some(message.into()),
         }
@@ -209,6 +208,18 @@ mod tests {
 
     fn text(line: &Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn test_result_row_shows_the_result_name() {
+        let colors = ThemeColors::from_theme(andre_core::Theme::Default);
+        let result = ExecutionResult {
+            name: "home/shell".into(),
+            success: true,
+            error_message: None,
+        };
+        let row = text(&result_row(&result, false, &colors, 60));
+        assert!(row.contains(" home/shell"), "{row:?}");
     }
 
     #[test]

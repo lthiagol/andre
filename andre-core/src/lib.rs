@@ -31,4 +31,4 @@ pub use stow::{
     build_stow_args, check_stowed_status, check_stowed_status_with_ignores, execute_stow,
     file_links, linkable_files, unlink_stowed_symlink, FileLink, StowStatus,
 };
-pub use yolo::{build_plan, profile_plan, run_job, StowJob};
+pub use yolo::{build_plan, profile_plan, run_package};

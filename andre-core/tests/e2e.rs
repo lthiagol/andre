@@ -12,6 +12,39 @@ fn test_scenario_01_basic_stow() {
 }
 
 #[test]
+fn test_scenario_15_flat_basic() {
+    let env = TestEnv::from_scenario("15-flat-basic");
+    let result = env.run_andre(&["--yolo"]).unwrap();
+    assert_eq!(result.exit_code, 0, "andre failed: {}", result.stderr);
+    assert_eq!(
+        result.stdout,
+        "ok    bash-env\n1 succeeded, 0 failed (total: 1)\n"
+    );
+
+    env.assert_symlinks(&[(".bashrc", "../packages/bash-env/.bashrc")]);
+}
+
+#[test]
+fn test_yolo_creates_a_missing_group_target_for_the_stow_engine() {
+    let env = TestEnv::from_scenario("15-flat-basic");
+    std::fs::write(
+        &env.config_path,
+        "global:\n  engine: stow\ngroups:\n  main:\n    source: packages\n    target: nested/sub\n",
+    )
+    .unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
+    assert_eq!(result.exit_code, 0, "andre failed: {}", result.stderr);
+    assert_eq!(
+        result.stdout,
+        "ok    main/bash-env\n1 succeeded, 0 failed (total: 1)\n"
+    );
+    assert!(
+        env.temp_dir.path().join("nested/sub/.bashrc").is_symlink(),
+        "stow must link into the target it created"
+    );
+}
+
+#[test]
 fn test_scenario_02_multi_package_one_group() {
     let env = TestEnv::from_scenario("02-multi-package-one-group");
     let result = env.run_andre(&["--yolo"]).unwrap();
@@ -91,14 +124,33 @@ fn test_scenario_08_defer_existing_target() {
     let env = TestEnv::from_scenario("08-defer-existing-target");
     let result = env.run_andre(&["--yolo"]).unwrap();
     // Conflict exists, should report failure
-    assert!(result.stderr.contains("FAILED") || result.stdout.contains("FAILED"));
+    assert!(result.stderr.lines().any(|line| line.starts_with("FAIL  ")));
+}
+
+#[test]
+fn test_stow_engine_failure_is_one_fail_line() {
+    // GNU stow's conflict report spans several lines; the FAIL line must not.
+    let env = TestEnv::from_scenario("08-defer-existing-target");
+    std::fs::write(
+        &env.config_path,
+        "global:\n  engine: stow\ngroups:\n  main:\n    source: packages\n    target: target\n",
+    )
+    .unwrap();
+    let result = env.run_andre(&["--yolo"]).unwrap();
+    let lines: Vec<&str> = result.stderr.lines().collect();
+    assert_eq!(lines.len(), 1, "one line per package: {:?}", result.stderr);
+    assert!(
+        lines[0].starts_with("FAIL  main/bash-env  (engine=stow): Stow failed: "),
+        "{:?}",
+        lines[0]
+    );
 }
 
 #[test]
 fn test_scenario_09_override_existing_target() {
     let env = TestEnv::from_scenario("09-override-existing-target");
     let result = env.run_andre(&["--yolo"]).unwrap();
-    assert!(result.stderr.contains("FAILED") || result.stdout.contains("FAILED"));
+    assert!(result.stderr.lines().any(|line| line.starts_with("FAIL  ")));
 }
 
 #[test]

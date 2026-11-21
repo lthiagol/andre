@@ -190,7 +190,7 @@ impl NewPackageWizard {
             .map(|profile| profile.name.clone())
             .collect();
         NewPackage {
-            group: group.clone(),
+            package_ref: format!("{group}/{}", self.name.value),
             source_root: config
                 .get_group_source(&group, &ctx.config_dir, &ctx.home_dir)
                 .unwrap_or_default(),
@@ -350,10 +350,10 @@ fn line(verb: &'static str, text: String) -> ReviewLine {
     ReviewLine { verb, text }
 }
 
-/// A path inside the new package, as `group/package/rest`.
+/// A path inside the new package, as `package_ref/rest`.
 fn in_package(plan: &PackagePlan, path: &Path) -> String {
     let rest = path.strip_prefix(&plan.package_dir).unwrap_or(path);
-    format!("{}/{}/{}", plan.group, plan.package, rest.display())
+    format!("{}/{}", plan.package_ref, rest.display())
 }
 
 /// What an ignore file written by the wizard holds, for its review line.

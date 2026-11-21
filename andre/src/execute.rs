@@ -10,8 +10,8 @@ use andre_core::{Config, LinkEngine, LinkOp, StowFlags};
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
-    pub group: String,
-    pub package: String,
+    /// The package's name as the rows show it: `shell` (interim: `home/shell`).
+    pub name: String,
     pub success: bool,
     pub error_message: Option<String>,
 }
@@ -62,8 +62,7 @@ pub fn spawn_execution(
                 Err(_elapsed) => Some("Operation timed out after 60s".to_string()),
             };
             let exec_result = ExecutionResult {
-                group: op.group.clone(),
-                package: op.package.clone(),
+                name: op.name.clone(),
                 success: error_message.is_none(),
                 error_message,
             };
@@ -100,7 +99,7 @@ pub fn build_execution_results(
         if let (Some(src), Some(tgt)) = (source, target) {
             for pkg in packages {
                 ops.push(LinkOp {
-                    group: group.clone(),
+                    name: format!("{group}/{pkg}"),
                     package: pkg.clone(),
                     source: src.clone(),
                     target: tgt.clone(),
@@ -120,8 +119,7 @@ pub fn build_execution_results(
                     "target directory not found"
                 };
                 skipped.push(ExecutionResult {
-                    group: group.clone(),
-                    package: pkg.clone(),
+                    name: format!("{group}/{pkg}"),
                     success: false,
                     error_message: Some(format!("Skipped: {}", reason)),
                 });
@@ -174,12 +172,46 @@ groups:
             ops.len()
         );
         assert_eq!(skipped.len(), 1, "expected one skipped result");
+        assert_eq!(skipped[0].name, "test-group/test-pkg");
         assert!(!skipped[0].success);
         assert!(skipped[0]
             .error_message
             .as_deref()
             .unwrap()
             .contains("target directory"));
+    }
+
+    #[test]
+    fn test_build_execution_results_names_each_op_group_then_package() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let source = tmp.path().join("dotfiles");
+        std::fs::create_dir_all(source.join("test-pkg")).unwrap();
+        let config_path = tmp.path().join("andre.yml");
+        std::fs::write(
+            &config_path,
+            format!(
+                "global: {{}}\ngroups:\n  test-group:\n    source: {}\n    target: {}\n",
+                source.display(),
+                tmp.path().display()
+            ),
+        )
+        .unwrap();
+        let config = Config::load(&config_path).unwrap();
+        let mut selected = HashMap::new();
+        selected.insert("test-group".to_string(), vec!["test-pkg".to_string()]);
+
+        let (ops, skipped) = build_execution_results(
+            &selected,
+            &config,
+            tmp.path(),
+            tmp.path(),
+            &StowFlags::default(),
+        );
+
+        assert!(skipped.is_empty());
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].name, "test-group/test-pkg");
+        assert_eq!(ops[0].package, "test-pkg");
     }
 
     #[test]

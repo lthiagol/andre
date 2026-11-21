@@ -248,7 +248,7 @@ fn write_package(packages: &Path, files: &[(&str, &str)]) {
 fn native_link(packages: &Path, target: &Path, global: &Path) {
     NativeEngine
         .apply(&LinkOp {
-            group: "g".into(),
+            name: "g".into(),
             package: "pkg".into(),
             source: packages.to_path_buf(),
             target: target.to_path_buf(),
@@ -401,7 +401,7 @@ fn stow_engine_reads_the_global_list_of_the_home_it_is_given() {
     fs::create_dir_all(&target).unwrap();
     StowEngine
         .apply(&LinkOp {
-            group: "g".into(),
+            name: "g".into(),
             package: "pkg".into(),
             source: packages,
             target: target.clone(),

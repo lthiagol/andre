@@ -458,14 +458,12 @@ fn test_execute_gauge_ratio_matches_completed_total() {
         5,
         vec![
             ExecutionResult {
-                group: "home".into(),
-                package: "bash".into(),
+                name: "home/bash".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                group: "home".into(),
-                package: "vim".into(),
+                name: "home/vim".into(),
                 success: false,
                 error_message: Some("conflict".into()),
             },
@@ -493,14 +491,12 @@ fn test_execute_rows_show_icon_name_under_gauge() {
         2,
         vec![
             ExecutionResult {
-                group: "home".into(),
-                package: "bash".into(),
+                name: "home/bash".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                group: "work".into(),
-                package: "git".into(),
+                name: "work/git".into(),
                 success: false,
                 error_message: Some("fail".into()),
             },
@@ -531,8 +527,7 @@ fn test_execute_progress_preserves_total_with_skips() {
     let (mut app, _tmp) = make_test_app();
     let (tx, rx) = tokio::sync::mpsc::channel(4);
     let skipped = vec![ExecutionResult {
-        group: "home".into(),
-        package: "missing".into(),
+        name: "home/missing".into(),
         success: false,
         error_message: Some("Skipped".into()),
     }];
@@ -567,14 +562,12 @@ fn test_execute_spinner_clamps_in_flight_to_total() {
         2,
         vec![
             ExecutionResult {
-                group: "home".into(),
-                package: "a".into(),
+                name: "home/a".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                group: "home".into(),
-                package: "b".into(),
+                name: "home/b".into(),
                 success: true,
                 error_message: None,
             },
@@ -604,14 +597,12 @@ fn test_execute_completion_summary_on_finished() {
         2,
         vec![
             ExecutionResult {
-                group: "home".into(),
-                package: "bash".into(),
+                name: "home/bash".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                group: "home".into(),
-                package: "vim".into(),
+                name: "home/vim".into(),
                 success: false,
                 error_message: Some("conflict".into()),
             },
@@ -643,14 +634,12 @@ fn test_execute_completion_summary_distinguishes_skips() {
         2,
         vec![
             ExecutionResult {
-                group: "home".into(),
-                package: "bash".into(),
+                name: "home/bash".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                group: "home".into(),
-                package: "gone".into(),
+                name: "home/gone".into(),
                 success: false,
                 error_message: Some("Skipped: source directory not found".into()),
             },
@@ -679,8 +668,7 @@ fn test_execute_completed_list_scrolls() {
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results: Vec<_> = (0..20)
         .map(|i| ExecutionResult {
-            group: "home".into(),
-            package: format!("pkg{i}"),
+            name: format!("home/pkg{i}"),
             success: true,
             error_message: None,
         })
@@ -2219,8 +2207,7 @@ fn test_execute_highlighted_row_is_text_on_selection() {
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results = vec![ExecutionResult {
-        group: "home".into(),
-        package: "pkg0".into(),
+        name: "home/pkg0".into(),
         success: false,
         error_message: Some("boom".into()),
     }];
@@ -2256,8 +2243,7 @@ fn test_execute_list_draws_its_scrollbar_thumb_on_the_panel_border() {
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results: Vec<_> = (0..20)
         .map(|i| ExecutionResult {
-            group: "home".into(),
-            package: format!("pkg{i}"),
+            name: format!("home/pkg{i}"),
             success: true,
             error_message: None,
         })
@@ -4165,8 +4151,7 @@ fn test_run_failure_keeps_each_line_of_the_engine_message() {
         rx,
         1,
         vec![ExecutionResult {
-            group: "home".into(),
-            package: "shell".into(),
+            name: "home/shell".into(),
             success: false,
             error_message: Some(message.into()),
         }],
@@ -4199,8 +4184,7 @@ fn test_run_detail_pages_through_a_long_failure() {
         rx,
         1,
         vec![ExecutionResult {
-            group: "home".into(),
-            package: "shell".into(),
+            name: "home/shell".into(),
             success: false,
             error_message: Some(message),
         }],
@@ -4238,8 +4222,8 @@ fn test_run_footer_says_running_until_it_finishes() {
 
     let (mut app, _tmp) = make_test_app();
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
-    let mut exec = ExecuteComponent::new(rx, 2, Vec::new())
-        .for_run("stow", vec![("home".into(), "shell".into())]);
+    let mut exec =
+        ExecuteComponent::new(rx, 2, Vec::new()).for_run("stow", vec!["home/shell".into()]);
     exec.state = ExecutionState::Running;
     app.component_stack.push(Box::new(exec));
     let buf = render_updated(&mut app, 80, 24);
@@ -4252,8 +4236,7 @@ fn test_run_footer_says_running_until_it_finishes() {
     let (mut app, _tmp) = make_test_app();
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results = vec![ExecutionResult {
-        group: "home".into(),
-        package: "shell".into(),
+        name: "home/shell".into(),
         success: true,
         error_message: None,
     }];
@@ -4284,8 +4267,7 @@ fn test_run_done_button_sits_on_the_last_content_row_at_80x24() {
         rx,
         1,
         vec![ExecutionResult {
-            group: "home".into(),
-            package: "shell".into(),
+            name: "home/shell".into(),
             success: true,
             error_message: None,
         }],
@@ -4308,8 +4290,7 @@ fn test_run_detail_offers_a_fix_for_a_real_file_in_the_way() {
     let (mut app, _tmp) = make_test_app();
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results = vec![ExecutionResult {
-        group: "home".into(),
-        package: "shell".into(),
+        name: "home/shell".into(),
         success: false,
         error_message: Some("target already exists and is not a symlink: /home/u/.bashrc".into()),
     }];
@@ -4389,13 +4370,12 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
             rx,
             2,
             vec![ExecutionResult {
-                group: "home".into(),
-                package: "bash".into(),
+                name: "home/bash".into(),
                 success: true,
                 error_message: None,
             }],
         )
-        .for_run("stow", vec![("home".into(), "vim".into())]);
+        .for_run("stow", vec!["home/vim".into()]);
         exec.state = ExecutionState::Running;
         app.component_stack.push(Box::new(exec));
         render_updated(&mut app, width, height);
@@ -4865,6 +4845,62 @@ fn test_ignore_editor_title_row_names_the_package_at_120x40_and_200x50() {
             row_text(&buf, 1).contains("andre  main › packages › home/test › ignore"),
             "{width}x{height}: title row {:?}",
             row_text(&buf, 1)
+        );
+    }
+}
+
+// ---- G2: the run screen names each package by its name ----
+
+#[test]
+fn test_run_rows_show_the_package_name_at_80x24() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::execute::ExecutionResult;
+
+    let (mut app, _tmp) = make_test_app();
+    let (_tx, rx) = tokio::sync::mpsc::channel(1);
+    app.component_stack.push(Box::new(ExecuteComponent::new(
+        rx,
+        1,
+        vec![ExecutionResult {
+            name: "home/shell".into(),
+            success: true,
+            error_message: None,
+        }],
+    )));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "\u{2713} home/shell"),
+        "result row must show `name` after its mark"
+    );
+}
+
+#[test]
+fn test_run_screen_and_set_up_render_at_120x40_and_200x50() {
+    use andre::components::execute::ExecuteComponent;
+    use andre::execute::ExecutionResult;
+
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_bootstrap_app();
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            line_contains(&buf, "config/andre"),
+            "{width}x{height}: set-up detail must name the package"
+        );
+
+        let (_tx, rx) = tokio::sync::mpsc::channel(1);
+        app.component_stack.push(Box::new(ExecuteComponent::new(
+            rx,
+            2,
+            vec![ExecutionResult {
+                name: "config/andre".into(),
+                success: false,
+                error_message: Some("Skipped: source directory not found".into()),
+            }],
+        )));
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            line_contains(&buf, "config/andre"),
+            "{width}x{height}: run row must name the package"
         );
     }
 }

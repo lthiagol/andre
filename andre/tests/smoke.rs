@@ -77,6 +77,25 @@ fn andre_help_lists_known_flags() {
 }
 
 #[test]
+fn yolo_without_a_packages_folder_exits_one_and_says_so() {
+    let tmp = TempDir::new().unwrap();
+    let config = tmp.path().join("andre.yml");
+    std::fs::write(&config, "global: {}\n").unwrap();
+    let output = Command::new(andre_bin())
+        .args(["--config", config.to_str().unwrap(), "--yolo"])
+        .env("HOME", tmp.path())
+        .output()
+        .expect("failed to spawn andre binary");
+
+    assert_eq!(output.status.code(), Some(1), "--yolo without packages:");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("no packages folder: set `packages:` in"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
 fn andre_unknown_flag_exits_nonzero() {
     // Usage errors must NOT exit 0 (a zero exit would let CI scripts that
     // pipe `--help` to a pager accidentally treat typos as success).

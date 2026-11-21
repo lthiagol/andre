@@ -1,4 +1,4 @@
-//! Fresh-machine bootstrap. The config folder may live inside a package of a group,
+//! Fresh-machine bootstrap. The config folder may live inside a package of the packages folder,
 //! so that stowing the package links it to `~/.config/andre`, where plain `andre`
 //! looks next time.
 //!
@@ -9,12 +9,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::config::Config;
-use crate::packages::discover_packages;
 
 /// The package to stow so that plain `andre` finds the loaded config folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bootstrap {
-    pub group: String,
+    /// The package's name as the UI shows it: `andre` (interim: `config/andre`).
     pub package: String,
     /// `~/.config/andre` under the home directory: the path the package links to.
     pub link: PathBuf,
@@ -35,7 +34,7 @@ pub fn default_folder_taken(home_dir: &Path) -> bool {
 /// [`default_folder`]. `search_dir` is the folder plain `andre` reads its config from
 /// (`$XDG_CONFIG_HOME/andre`, or `None` when unknown). `None` is returned when that is not
 /// [`default_folder`], since a link there would not be read. Also `None` when that path is
-/// already taken, or no package holds it.
+/// already taken, when the target is not the home folder, or no package holds it.
 pub fn find(
     config: &Config,
     config_dir: &Path,
@@ -46,29 +45,23 @@ pub fn find(
     if search_dir != Some(link.as_path()) || default_folder_taken(home_dir) {
         return None;
     }
+    if config.target_dir(config_dir, home_dir) != home_dir {
+        return None;
+    }
     let folder = fs::canonicalize(config_dir).ok()?;
 
-    for group in config.groups.keys() {
-        let (Some(source), Some(target)) = (
-            config.resolve_group_source(group, config_dir, home_dir),
-            config.resolve_group_target(group, config_dir, home_dir),
-        ) else {
-            continue;
-        };
-        // The part of the link path that sits under the group's target: stow links
+    for entry in config.package_entries(config_dir, home_dir) {
+        // The part of the link path that sits under the target: stow links
         // `target/<inside>` to `package/<inside>`.
-        let Ok(inside) = link.strip_prefix(&target) else {
+        let Ok(inside) = link.strip_prefix(&entry.target) else {
             continue;
         };
-        for package in discover_packages(&source) {
-            let candidate = source.join(&package).join(inside);
-            if fs::canonicalize(&candidate).ok().as_deref() == Some(folder.as_path()) {
-                return Some(Bootstrap {
-                    group: group.clone(),
-                    package,
-                    link,
-                });
-            }
+        let candidate = entry.dir.join(inside);
+        if fs::canonicalize(&candidate).ok().as_deref() == Some(folder.as_path()) {
+            return Some(Bootstrap {
+                package: entry.name,
+                link,
+            });
         }
     }
     None
@@ -80,23 +73,19 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    /// A repo `dotfiles/config` whose package `andre` holds the config folder at
-    /// `.config/andre`, and a group `config` targeting the home directory.
+    /// A flat packages folder `dotfiles/` whose package `andre` holds the config folder at
+    /// `.config/andre`. The target is the home directory (the default).
     fn repo_fixture() -> (TempDir, Config, PathBuf, PathBuf) {
         let tmp = TempDir::new().unwrap();
         let home = tmp.path().join("home");
-        let source = tmp.path().join("dotfiles").join("config");
-        let folder = source.join("andre").join(".config").join("andre");
+        let packages = tmp.path().join("dotfiles");
+        let folder = packages.join("andre").join(".config").join("andre");
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("andre.yml"), "global: {}\ngroups: {}\n").unwrap();
+        fs::write(folder.join("andre.yml"), "global: {}\n").unwrap();
         fs::create_dir_all(&home).unwrap();
 
         let mut config = Config::default_empty();
-        config.add_group(
-            "config".into(),
-            source.display().to_string(),
-            home.display().to_string(),
-        );
+        config.packages = Some(packages.display().to_string());
         (tmp, config, folder, home)
     }
 
@@ -109,7 +98,6 @@ mod tests {
     fn names_the_package_that_holds_the_config_folder() {
         let (_tmp, config, folder, home) = repo_fixture();
         let found = find(&config, &folder, &home, Some(&search(&home))).expect("bootstrap offered");
-        assert_eq!(found.group, "config");
         assert_eq!(found.package, "andre");
         assert_eq!(found.link, home.join(".config").join("andre"));
     }
@@ -132,17 +120,19 @@ mod tests {
 
     #[test]
     fn nothing_is_offered_when_the_target_does_not_cover_the_link() {
-        let (tmp, _config, folder, home) = repo_fixture();
-        let mut config = Config::default_empty();
-        config.add_group(
-            "config".into(),
-            tmp.path()
-                .join("dotfiles")
-                .join("config")
-                .display()
-                .to_string(),
-            home.join("elsewhere").display().to_string(),
-        );
+        let (_tmp, mut config, folder, home) = repo_fixture();
+        config.target = Some(home.join("elsewhere").display().to_string());
+        assert_eq!(find(&config, &folder, &home, Some(&search(&home))), None);
+    }
+
+    #[test]
+    fn nothing_is_offered_when_the_target_is_not_the_home_folder() {
+        let (tmp, mut config, _folder, home) = repo_fixture();
+        // Stowing `andre/andre` into `~/.config` would link the same path, but only a
+        // home target is offered.
+        let folder = tmp.path().join("dotfiles").join("andre").join("andre");
+        fs::create_dir_all(&folder).unwrap();
+        config.target = Some(home.join(".config").display().to_string());
         assert_eq!(find(&config, &folder, &home, Some(&search(&home))), None);
     }
 

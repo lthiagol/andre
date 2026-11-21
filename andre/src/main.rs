@@ -1,5 +1,6 @@
+use std::collections::BTreeSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};
@@ -13,8 +14,9 @@ use andre::app::App;
 use andre::components::profiles::ProfilesComponent;
 use andre::discovery::ConfigSearch;
 use andre::ui;
-use andre_core::yolo::{self, StowJob};
-use andre_core::Result;
+use andre_core::ignore::global_ignore_in;
+use andre_core::yolo;
+use andre_core::{PackageEntry, Result};
 
 /// Parsed CLI flags. Hand-rolled from `std::env::args` (M06 DIY-5) replacing clap;
 /// surface is intentionally small and stable.
@@ -186,67 +188,69 @@ fn parse_args() -> Args {
     }
 }
 
-/// Stows `jobs` without asking. `skipped_groups` is reported first, when non-zero.
-fn run_yolo(app: &App, jobs: &[StowJob], skipped_groups: usize) -> Result<()> {
+/// Stows every package in `plan` without asking. One line per package, then the totals.
+fn run_yolo(app: &App, plan: &[PackageEntry]) -> Result<()> {
     use andre_core::engine_for;
 
-    // Ensure target dirs exist
-    for job in jobs {
-        if !job.target.exists() {
-            fs::create_dir_all(&job.target)?;
+    // A `groups:` config gives each package its own target, so create every distinct one.
+    let targets: BTreeSet<&Path> = plan.iter().map(|entry| entry.target.as_path()).collect();
+    for target in targets {
+        if !target.exists() {
+            fs::create_dir_all(target)?;
         }
-    }
-
-    if skipped_groups > 0 {
-        eprintln!(
-            "[yolo] {} group(s) skipped (missing source or no packages)",
-            skipped_groups
-        );
     }
 
     let engine = engine_for(app.ctx.core.config.effective_engine());
     let flags = app.ctx.core.flags;
+    let global_ignore = global_ignore_in(&app.ctx.home_dir);
 
-    let mut total = 0usize;
     let mut succeeded = 0usize;
     let mut failed = 0usize;
-
-    for job in jobs {
-        let count = job.packages.len();
-        total += count;
-        let (ok, fail) = yolo::run_job(job, engine.as_ref(), &flags);
-        if fail == 0 {
-            println!("[{}] {} package(s): OK", job.group, ok);
-        } else {
-            eprintln!(
-                "[{}] {}/{} package(s): FAILED (engine={})",
-                job.group,
-                fail,
-                count,
-                engine.name()
-            );
+    for entry in plan {
+        match yolo::run_package(entry, engine.as_ref(), &flags, Some(&global_ignore)) {
+            Ok(()) => {
+                println!("{:<6}{}", "ok", entry.name);
+                succeeded += 1;
+            }
+            Err(err) => {
+                eprintln!(
+                    "{:<6}{}  (engine={}): {}",
+                    "FAIL",
+                    entry.name,
+                    engine.name(),
+                    one_line(&err.to_string())
+                );
+                failed += 1;
+            }
         }
-        succeeded += ok;
-        failed += fail;
     }
 
-    println!();
     println!(
         "{} succeeded, {} failed (total: {})",
-        succeeded, failed, total
+        succeeded,
+        failed,
+        plan.len()
     );
     Ok(())
 }
 
-/// What `--yolo` stows: every group's packages, or only those of `--profile`. The second
-/// value counts the groups left out for having no packages on disk. Exits 2 for an
+/// `message` as one line: each line trimmed, empty lines dropped, the rest joined by a space.
+/// GNU stow's errors end in newlines, and a `FAIL` line must stay one line.
+fn one_line(message: &str) -> String {
+    message
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// What `--yolo` stows: every package, or only those of `--profile`. Exits 2 for an
 /// unknown profile and 1 for one that does not resolve (a cycle, an unknown include).
-fn headless_plan(app: &App, profile: Option<&str>) -> (Vec<StowJob>, usize) {
+fn headless_plan(app: &App, profile: Option<&str>) -> Vec<PackageEntry> {
     let config = &app.ctx.core.config;
     let Some(name) = profile else {
-        let jobs = yolo::build_plan(config, &app.ctx.config_dir, &app.ctx.home_dir);
-        let skipped = config.groups.len().saturating_sub(jobs.len());
-        return (jobs, skipped);
+        return yolo::build_plan(config, &app.ctx.config_dir, &app.ctx.home_dir);
     };
     let known = andre_core::profile::known_packages(config, &app.ctx.config_dir, &app.ctx.home_dir);
     let resolved = match app.ctx.core.profiles.resolve(name, &known) {
@@ -256,8 +260,7 @@ fn headless_plan(app: &App, profile: Option<&str>) -> (Vec<StowJob>, usize) {
             std::process::exit(1);
         }
     };
-    let jobs = yolo::profile_plan(config, &app.ctx.config_dir, &app.ctx.home_dir, &resolved);
-    (jobs, 0)
+    yolo::profile_plan(config, &app.ctx.config_dir, &app.ctx.home_dir, &resolved)
 }
 
 /// Exits 2 when `--profile` names no profile, listing the ones there are.
@@ -394,8 +397,17 @@ fn try_main() -> Result<()> {
     }
 
     if args.yolo {
-        let (jobs, skipped) = headless_plan(&app, args.profile.as_deref());
-        return run_yolo(&app, &jobs, skipped);
+        let config = &app.ctx.core.config;
+        // Interim: a `groups:` config has its folders, so it is not "no packages folder".
+        if config.packages.is_none() && config.groups.is_empty() {
+            eprintln!(
+                "no packages folder: set `packages:` in {}",
+                config_path.display()
+            );
+            std::process::exit(1);
+        }
+        let plan = headless_plan(&app, args.profile.as_deref());
+        return run_yolo(&app, &plan);
     }
 
     let rt = tokio::runtime::Runtime::new()?;
@@ -670,5 +682,24 @@ mod cli_tests {
         let a = parse(s(&["--debug", "-c", "c.yml", "--yolo"])).unwrap();
         assert!(a.debug && a.yolo);
         assert_eq!(a.config.unwrap(), PathBuf::from("c.yml"));
+    }
+}
+
+#[cfg(test)]
+mod yolo_output_tests {
+    use super::one_line;
+
+    #[test]
+    fn one_line_joins_stow_error_lines_and_drops_blank_ones() {
+        let stow = "Stow failed: WARNING! conflicts:\n  * cannot stow over .bashrc\nAll operations aborted.\n\n";
+        assert_eq!(
+            one_line(stow),
+            "Stow failed: WARNING! conflicts: * cannot stow over .bashrc All operations aborted."
+        );
+    }
+
+    #[test]
+    fn one_line_keeps_a_single_line_message() {
+        assert_eq!(one_line("Stow failed: x"), "Stow failed: x");
     }
 }

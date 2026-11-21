@@ -16,7 +16,9 @@ use crate::stow::{execute_stow, linkable_files};
 /// A single package link operation. All fields the engines need to plan/apply.
 #[derive(Debug, Clone)]
 pub struct LinkOp {
-    pub group: String,
+    /// The package's name as the UI and logs show it: `nvim` (interim: `home/nvim` for a
+    /// `groups:` config).
+    pub name: String,
     pub package: String,
     pub source: PathBuf,
     pub target: PathBuf,
@@ -128,7 +130,7 @@ pub struct NativeEngine;
 impl NativeEngine {
     /// Package files that will be linked. Honours the package's ignore list
     /// (`.stow-local-ignore`, else the global list, else GNU's built-in list) and the
-    /// group's `ignores`. See [`crate::stow::linkable_files`].
+    /// config's `ignores`. See [`crate::stow::linkable_files`].
     fn collect(
         source_pkg: &Path,
         ignores: &[String],
@@ -321,7 +323,7 @@ mod tests {
 
     fn op(source: PathBuf, target: PathBuf, action: StowAction) -> LinkOp {
         LinkOp {
-            group: "home".into(),
+            name: "home".into(),
             package: "bash-env".into(),
             source,
             target,
@@ -532,7 +534,7 @@ mod tests {
         // Stow A so target/.bashrc → pkg-a.
         engine
             .apply(&LinkOp {
-                group: "home".into(),
+                name: "home".into(),
                 package: "pkg-a".into(),
                 source: source.clone(),
                 target: target.clone(),
@@ -555,7 +557,7 @@ mod tests {
         // Unstow B must NOT remove A's link (ownership).
         engine
             .apply(&LinkOp {
-                group: "home".into(),
+                name: "home".into(),
                 package: "pkg-b".into(),
                 source: source.clone(),
                 target: target.clone(),
@@ -580,7 +582,7 @@ mod tests {
         // Stow B over A's link must conflict, not steal.
         let err = engine
             .apply(&LinkOp {
-                group: "home".into(),
+                name: "home".into(),
                 package: "pkg-b".into(),
                 source,
                 target,
@@ -636,7 +638,7 @@ mod tests {
 
     fn stow_op(source: PathBuf, target: PathBuf) -> LinkOp {
         LinkOp {
-            group: "home".into(),
+            name: "home".into(),
             package: "bash-env".into(),
             source,
             target,

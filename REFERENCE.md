@@ -187,12 +187,21 @@ andre
 | `--config-folder <dir>` | Config folder holding `andre.yml` and `profiles/` (default: auto-discovery). Cannot be combined with `--config` |
 | `--onboard` | Create an empty config at `--config` or `--config-folder` if none exists, then open the setup screen |
 | `--profile <name>` | Work on one profile. With `--yolo`, stow only its packages; alone, open the TUI on its screen. An unknown name exits 2 and lists the profiles |
-| `--yolo` | Headless mode: auto-stow all packages without interaction (only the `--profile` packages when one is given) |
+| `--yolo` | Headless mode: auto-stow every package without interaction (only the `--profile` packages when one is given). Exits 1 when `packages:` is not set |
 | `--help` | Show usage information |
 
 ```bash
 andre --yolo --profile work     # stow exactly the packages of profiles/work.yml
 andre --profile work            # open the TUI on the work profile
+```
+
+`--yolo` prints one line per package, then the totals. `ok` lines go to stdout and `FAIL` lines to stderr:
+
+```text
+ok    git
+ok    shell
+FAIL  kitty  (engine=native): Stow failed: target already exists and is not a symlink: /home/u/.config/kitty/kitty.conf
+2 succeeded, 1 failed (total: 3)
 ```
 
 <a name="main-menu"></a>
@@ -271,7 +280,8 @@ links `~/.config/andre` to the repo, and plain `andre` finds the config from the
 andre offers this when the loaded config folder is not `~/.config/andre`, that path does
 not exist (a broken link counts as existing), and some group's package holds the config
 folder at the path that would link to it. It is offered only when plain `andre` would
-read `~/.config/andre`, i.e. `$XDG_CONFIG_HOME` is unset or points at `~/.config`. The offer is the first main-menu item,
+read `~/.config/andre`, i.e. `$XDG_CONFIG_HOME` is unset or points at `~/.config`. A flat
+package (`packages:`, no group) is not offered yet: the review still takes grouped names. The offer is the first main-menu item,
 `set up this machine` (`0`). Enter opens the review for exactly that package with the
 action `stow`, whatever the global action is; the global action is not changed. Once
 `~/.config/andre` exists the item is gone.

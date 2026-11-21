@@ -27,7 +27,7 @@ pub struct ExecuteComponent {
     /// The action the run applies, named in the progress chip.
     action: &'static str,
     /// The packages the run applies, in order. Empty when the run was not planned.
-    planned: Vec<(String, String)>,
+    planned: Vec<String>,
     /// How many of `results` came before the run, the skips. They precede the planned
     /// packages, so the one in flight is `planned[results - initial]`.
     initial: usize,
@@ -71,20 +71,20 @@ impl ExecuteComponent {
     }
 
     /// Names the run's action and lists the packages it will apply, in order.
-    pub fn for_run(mut self, action: &'static str, planned: Vec<(String, String)>) -> Self {
+    pub fn for_run(mut self, action: &'static str, planned: Vec<String>) -> Self {
         self.action = action;
         self.planned = planned;
         self
     }
 
-    /// The package in flight, as `group/package`. `None` once the run has finished.
+    /// The package in flight, by name. `None` once the run has finished.
     fn in_flight_label(&self) -> Option<String> {
         if self.state != ExecutionState::Running {
             return None;
         }
         let next = self.results.len().saturating_sub(self.initial);
         Some(match self.planned.get(next) {
-            Some((group, package)) => format!("{group}/{package}"),
+            Some(name) => name.clone(),
             None => "running\u{2026}".to_string(),
         })
     }
@@ -131,7 +131,7 @@ impl ExecuteComponent {
 
     fn detail_title(&self) -> String {
         match self.results.get(self.list.cursor) {
-            Some(result) => format!("{}/{}", result.group, result.package),
+            Some(result) => result.name.clone(),
             None => self.in_flight_label().unwrap_or_default(),
         }
     }
@@ -198,10 +198,7 @@ impl Component for ExecuteComponent {
                     }
                     ExecutionUpdate::Result(result) => {
                         ctx.log(LogLevel::Exec, || {
-                            format!(
-                                "Result: {} {} success={}",
-                                result.group, result.package, result.success
-                            )
+                            format!("Result: {} success={}", result.name, result.success)
                         });
                         self.results.push(result);
                     }
@@ -326,8 +323,7 @@ mod tests {
 
     fn result(package: &str, success: bool) -> ExecutionResult {
         ExecutionResult {
-            group: "home".into(),
-            package: package.into(),
+            name: format!("home/{package}"),
             success,
             error_message: (!success).then(|| "boom".to_string()),
         }
@@ -405,16 +401,13 @@ mod tests {
     fn the_package_in_flight_is_the_next_planned_one_after_the_skips() {
         let (_tx, rx) = tokio::sync::mpsc::channel(1);
         let skipped = vec![ExecutionResult {
-            group: "home".into(),
-            package: "gone".into(),
+            name: "home/gone".into(),
             success: false,
             error_message: Some("Skipped: source directory not found".into()),
         }];
         // The skip is not planned: only the packages the engine runs are.
-        let comp = ExecuteComponent::new(rx, 3, skipped).for_run(
-            "stow",
-            vec![("home".into(), "a".into()), ("home".into(), "b".into())],
-        );
+        let comp = ExecuteComponent::new(rx, 3, skipped)
+            .for_run("stow", vec!["home/a".into(), "home/b".into()]);
         assert_eq!(comp.in_flight_label().as_deref(), Some("home/a"));
     }
 
@@ -429,8 +422,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         ExecutionResult {
-            group: "home".into(),
-            package: "shell".into(),
+            name: "home/shell".into(),
             success: false,
             error_message: Some(message),
         }

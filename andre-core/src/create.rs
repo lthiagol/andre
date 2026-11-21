@@ -20,13 +20,14 @@ use crate::error::{Error, Result};
 use crate::ignore::{IgnoreFile, IgnoreRules, RuleSource};
 use crate::profile::{Profile, ProfileError, ProfileSet};
 use crate::state::{StowAction, StowFlags};
-use crate::stow::{collect_package_files, ignored_by_group};
+use crate::stow::{collect_package_files, ignored_by_config};
 
-/// What to create. The group supplies both folders: `source_root` holds the packages,
-/// `target_root` is where live files sit.
+/// What to create. `source_root` holds the packages, `target_root` is where live files sit.
 #[derive(Debug, Clone, Default)]
 pub struct NewPackage {
-    pub group: String,
+    /// The profile ref the package is written as: `nvim` for a flat config, `home/nvim`
+    /// for an interim `groups:` config. Must end in `package`; `plan_package` refuses others.
+    pub package_ref: String,
     pub source_root: PathBuf,
     pub target_root: PathBuf,
     pub package: String,
@@ -41,13 +42,13 @@ pub struct NewPackage {
     /// Write `.stow-local-ignore` with GNU's built-in list. The file replaces the
     /// built-in list, so the template copies it in.
     pub stow_local_ignore: bool,
-    /// Profiles to add the package to. Each gets the ref `group/package`.
+    /// Profiles to add the package to. Each gets `package_ref`.
     pub profiles: Vec<String>,
     /// Engine for the link-back step.
     pub engine: EngineKind,
     /// Pass `--no-folding` to GNU stow for the link-back (the native engine never folds).
     pub no_folding: bool,
-    /// Group config ignores (substring match), applied to the link-back.
+    /// Config ignores (substring match), applied to the link-back.
     pub ignores: Vec<String>,
     /// The `.stow-global-ignore` to read when the package has no list of its own. The
     /// caller resolves it (see [`crate::ignore::global_ignore_in`]); `None` means none.
@@ -72,7 +73,8 @@ pub struct ProfileEdit {
 /// What [`execute_package`] will do. Built by [`plan_package`] without touching disk.
 #[derive(Debug, Clone)]
 pub struct PackagePlan {
-    pub group: String,
+    /// The profile ref the package is written as (see [`NewPackage::package_ref`]).
+    pub package_ref: String,
     pub package: String,
     pub package_dir: PathBuf,
     /// The package folder already exists. Its files stay; the new ones are added.
@@ -113,6 +115,15 @@ pub fn is_valid_package_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
+/// A profile ref for `package`: the bare name, or `<group>/<name>` for an interim
+/// `groups:` config. Anything else is refused, so a profile never names a path.
+fn valid_package_ref(package_ref: &str, package: &str) -> bool {
+    match package_ref.rsplit_once('/') {
+        None => package_ref == package,
+        Some((group, name)) => name == package && !group.is_empty() && !group.contains('/'),
+    }
+}
+
 /// Checks the request and works out every change. Nothing on disk is touched.
 pub fn plan_package(req: &NewPackage, profiles: &ProfileSet) -> Result<PackagePlan> {
     if !is_valid_package_name(&req.package) {
@@ -121,10 +132,10 @@ pub fn plan_package(req: &NewPackage, profiles: &ProfileSet) -> Result<PackagePl
             req.package
         )));
     }
-    if req.group.is_empty() || req.group.contains('/') {
+    if !valid_package_ref(&req.package_ref, &req.package) {
         return Err(Error::Package(format!(
-            "invalid group name '{}'",
-            req.group
+            "invalid package ref '{}' for package '{}'",
+            req.package_ref, req.package
         )));
     }
     if !req.source_root.is_dir() {
@@ -218,7 +229,7 @@ pub fn plan_package(req: &NewPackage, profiles: &ProfileSet) -> Result<PackagePl
     }
 
     Ok(PackagePlan {
-        group: req.group.clone(),
+        package_ref: req.package_ref.clone(),
         package: req.package.clone(),
         package_dir,
         package_exists,
@@ -263,7 +274,7 @@ pub fn execute_package(plan: &PackagePlan, profiles: &mut ProfileSet) -> Result<
 }
 
 fn plan_profile_edits(req: &NewPackage, profiles: &ProfileSet) -> Result<Vec<ProfileEdit>> {
-    let package_ref = format!("{}/{}", req.group, req.package);
+    let package_ref = &req.package_ref;
     let mut seen = BTreeSet::new();
     let mut edits = Vec::new();
     for name in &req.profiles {
@@ -276,7 +287,7 @@ fn plan_profile_edits(req: &NewPackage, profiles: &ProfileSet) -> Result<Vec<Pro
         edits.push(ProfileEdit {
             profile: name.clone(),
             package_ref: package_ref.clone(),
-            already_member: profile.packages.contains(&package_ref),
+            already_member: profile.packages.contains(package_ref),
         });
     }
     Ok(edits)
@@ -400,7 +411,7 @@ fn refuse_if_stow_links_more(
         .filter(|rel| !rules.excludes(rel));
     let extra = existing
         .chain(written)
-        .filter(|rel| !ignored_by_group(rel, &req.ignores))
+        .filter(|rel| !ignored_by_config(rel, &req.ignores))
         .find(|rel| fs::symlink_metadata(req.target_root.join(rel)).is_err());
     match extra {
         None => Ok(()),
@@ -411,7 +422,7 @@ fn refuse_if_stow_links_more(
     }
 }
 
-/// Pushes every live path under `live` that `rules` or the group's `ignores` exclude.
+/// Pushes every live path under `live` that `rules` or the config's `ignores` exclude.
 /// `rel` is the path of `live` relative to the package. An excluded folder is reported
 /// whole, not entered.
 fn collect_excluded(
@@ -421,7 +432,7 @@ fn collect_excluded(
     ignores: &[String],
     out: &mut Vec<PathBuf>,
 ) {
-    if rules.excludes(rel) || ignored_by_group(rel, ignores) {
+    if rules.excludes(rel) || ignored_by_config(rel, ignores) {
         out.push(live.to_path_buf());
         return;
     }
@@ -483,7 +494,7 @@ fn apply(plan: &PackagePlan, profiles: &mut ProfileSet, log: &mut Vec<Undo>) -> 
     if !plan.moves.is_empty() {
         step()?;
         let op = LinkOp {
-            group: plan.group.clone(),
+            name: plan.package_ref.clone(),
             package: plan.package.clone(),
             source: plan.source_root.clone(),
             target: plan.target_root.clone(),
@@ -670,7 +681,7 @@ mod tests {
 
         fn req(&self, package: &str) -> NewPackage {
             NewPackage {
-                group: "home".into(),
+                package_ref: format!("home/{package}"),
                 source_root: self.source.clone(),
                 target_root: self.target.clone(),
                 package: package.into(),
@@ -872,6 +883,35 @@ mod tests {
     }
 
     #[test]
+    fn flat_package_ref_is_the_profile_ref() {
+        let mut fx = Fixture::new();
+        let rc = fx.live(".bashrc", "rc");
+        let mut req = fx.req("shell");
+        req.package_ref = "shell".into();
+        req.files = vec![rc.clone()];
+        req.profiles = vec!["base".into()];
+        let plan = plan_package(&req, &fx.profiles).unwrap();
+        assert_eq!(plan.profile_edits[0].package_ref, "shell");
+        execute_package(&plan, &mut fx.profiles).unwrap();
+        assert_eq!(
+            fx.profiles.get("base").unwrap().packages,
+            vec!["other/pkg", "shell"]
+        );
+        assert!(rc.is_symlink());
+    }
+
+    #[test]
+    fn valid_package_ref_is_a_name_or_one_group_then_the_name() {
+        assert!(valid_package_ref("nvim", "nvim"));
+        assert!(valid_package_ref("home/nvim", "nvim"));
+        assert!(!valid_package_ref("", "nvim"));
+        assert!(!valid_package_ref("/nvim", "nvim"));
+        assert!(!valid_package_ref("a/b/nvim", "nvim"));
+        assert!(!valid_package_ref("home/git", "nvim"));
+        assert!(!valid_package_ref("nvim", "git"));
+    }
+
+    #[test]
     fn unknown_profile_is_refused_before_any_change() {
         let fx = Fixture::new();
         let rc = fx.live(".bashrc", "rc");
@@ -902,6 +942,7 @@ mod tests {
                 "bad name",
                 NewPackage {
                     package: "a/b".into(),
+                    package_ref: "home/a/b".into(),
                     ..fx.req("x")
                 },
             ),
@@ -909,6 +950,7 @@ mod tests {
                 "taken",
                 NewPackage {
                     package: "taken".into(),
+                    package_ref: "home/taken".into(),
                     ..fx.req("x")
                 },
             ),
@@ -916,6 +958,7 @@ mod tests {
                 "file path",
                 NewPackage {
                     package: "taken-file".into(),
+                    package_ref: "home/taken-file".into(),
                     ..fx.req("x")
                 },
             ),
@@ -965,9 +1008,16 @@ mod tests {
                 },
             ),
             (
-                "bad group",
+                "bad package ref",
                 NewPackage {
-                    group: "a/b".into(),
+                    package_ref: "a/b/p".into(),
+                    ..fx.req("p")
+                },
+            ),
+            (
+                "ref not ending in the package",
+                NewPackage {
+                    package_ref: "home/other".into(),
                     ..fx.req("p")
                 },
             ),
@@ -991,7 +1041,7 @@ mod tests {
         let profiles = ProfileSet::new(tmp.path().join("profiles"));
         // The target folder contains the packages folder, so the file is under both.
         let req = NewPackage {
-            group: "home".into(),
+            package_ref: "home/new".into(),
             source_root: source.clone(),
             target_root: packages,
             package: "new".into(),
@@ -1158,7 +1208,7 @@ mod tests {
     }
 
     #[test]
-    fn group_ignore_is_previewed_and_applied_the_same_way() {
+    fn config_ignore_is_previewed_and_applied_the_same_way() {
         let mut fx = Fixture::new();
         let env_local = fx.live(".env.local", "TOKEN=1");
         let mut req = fx.req("shell");
