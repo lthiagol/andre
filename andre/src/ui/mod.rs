@@ -19,7 +19,7 @@ pub mod widgets;
 pub use adopt_confirm::render_adopt_confirm;
 pub use adopt_name::render_adopt_name;
 pub use adopt_preview::render_adopt_preview;
-pub use banner::render_banner;
+pub use banner::{render_banner, render_compact_banner};
 pub use block::themed_panel;
 pub use confirm::{render_confirm, ConfirmRow};
 pub use execute::{execute_list_len, render_execute, GAUGE_ROWS};
@@ -35,12 +35,18 @@ pub use unstow_confirm::{render_unstow_confirm, UnstowLink};
 use crate::app::App;
 use crate::theme::ThemeColors;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Margin},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+
+/// Rows of the full banner on the main menu. Every other screen gets a one-row title.
+const BIG_BANNER_ROWS: u16 = 7;
+const COMPACT_BANNER_ROWS: u16 = 1;
+/// Widest a screen's content grows. Wider frames centre the content.
+const MAX_CONTENT_WIDTH: u16 = 120;
 
 pub fn render(app: &mut App, frame: &mut Frame) {
     let (cols, rows) = app.ctx.terminal_size;
@@ -57,10 +63,18 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     let inner = frame.area().inner(Margin::new(1, 1));
 
+    let stack_ids: Vec<&'static str> = app.component_stack.iter().map(|c| c.id()).collect();
+    let screen_id = stack_ids.last().copied().unwrap_or("");
+    let banner_rows = if screen_id == "MainMenu" {
+        BIG_BANNER_ROWS
+    } else {
+        COMPACT_BANNER_ROWS
+    };
+
     let v = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Max(7),
+            Constraint::Max(banner_rows),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
@@ -77,9 +91,6 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         frame.render_widget(&sep, v[i]);
     }
 
-    render_banner(frame, v[0], &colors);
-    let stack_ids: Vec<&'static str> = app.component_stack.iter().map(|c| c.id()).collect();
-    let screen_id = stack_ids.last().copied().unwrap_or("");
     // Refresh the breadcrumb only when the stack actually changes — the
     // rendered chrome stays correct on every frame and `format_breadcrumb`
     // doesn't allocate a fresh Vec + String on the ~10 fps redraw path.
@@ -87,6 +98,16 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         app.ctx.breadcrumb = format_breadcrumb(&stack_ids);
         app.ctx.breadcrumb_cache.clear();
         app.ctx.breadcrumb_cache.extend(stack_ids.iter().copied());
+    }
+    if screen_id == "MainMenu" {
+        render_banner(frame, v[0], &colors);
+    } else {
+        render_compact_banner(
+            frame,
+            v[0].inner(Margin::new(1, 0)),
+            &colors,
+            &app.ctx.breadcrumb,
+        );
     }
     // The bars keep one column of air on each side, like the content below.
     render_status_bar(
@@ -98,19 +119,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         app.ctx.debug,
     );
 
-    let h = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(15),
-            Constraint::Percentage(70),
-            Constraint::Percentage(15),
-        ])
-        .split(v[4]);
-
+    let content = centred(v[4].inner(Margin::new(1, 0)), MAX_CONTENT_WIDTH);
     if let Some(component) = app.component_stack.last_mut() {
         // Layout/viewport bookkeeping runs in `prepare`, not inside `render`.
-        component.prepare(h[1]);
-        component.render(frame, h[1], &app.ctx);
+        component.prepare(content);
+        component.render(frame, content, &app.ctx);
     }
 
     render_footer(
@@ -124,6 +137,16 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     if let Some(ref toast) = app.ctx.toast {
         // Overlay above chrome; Clear inside render_toast avoids ghosting.
         render_toast(frame, inner, &colors, toast);
+    }
+}
+
+/// `area` narrowed to `max_width` columns, centred horizontally.
+fn centred(area: Rect, max_width: u16) -> Rect {
+    let width = area.width.min(max_width);
+    Rect {
+        x: area.x + (area.width - width) / 2,
+        width,
+        ..area
     }
 }
 

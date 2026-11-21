@@ -13,6 +13,8 @@ pub struct ThemeColors {
     pub muted: Color,
     pub highlight: Color,
     pub indicator: Color,
+    /// Fill of the selected menu row. Chosen per theme so the label and icon read on it.
+    pub selection: Color,
 }
 
 impl ThemeColors {
@@ -29,6 +31,7 @@ impl ThemeColors {
                 muted: Color::Rgb(140, 140, 140),
                 highlight: Color::Rgb(255, 215, 0),
                 indicator: Color::Rgb(0, 212, 170),
+                selection: Color::Rgb(60, 60, 60),
             },
             Theme::Dracula => Self {
                 background: Color::Rgb(40, 42, 54),
@@ -41,6 +44,7 @@ impl ThemeColors {
                 muted: Color::Rgb(98, 114, 164),
                 highlight: Color::Rgb(255, 121, 198),
                 indicator: Color::Rgb(139, 233, 253),
+                selection: Color::Rgb(68, 71, 90),
             },
             Theme::CatppuccinMocha => Self {
                 background: Color::Rgb(30, 30, 46),
@@ -53,6 +57,7 @@ impl ThemeColors {
                 muted: Color::Rgb(108, 112, 134),
                 highlight: Color::Rgb(250, 179, 135),
                 indicator: Color::Rgb(137, 220, 235),
+                selection: Color::Rgb(69, 71, 90),
             },
             Theme::CatppuccinLatte => Self {
                 background: Color::Rgb(239, 241, 245),
@@ -65,6 +70,7 @@ impl ThemeColors {
                 muted: Color::Rgb(156, 160, 176),
                 highlight: Color::Rgb(254, 100, 11),
                 indicator: Color::Rgb(4, 165, 229),
+                selection: Color::Rgb(205, 209, 219),
             },
             Theme::CatppuccinFrappe => Self {
                 background: Color::Rgb(48, 52, 70),
@@ -77,6 +83,7 @@ impl ThemeColors {
                 muted: Color::Rgb(115, 121, 148),
                 highlight: Color::Rgb(239, 159, 118),
                 indicator: Color::Rgb(153, 209, 219),
+                selection: Color::Rgb(81, 87, 109),
             },
             Theme::CatppuccinMacchiato => Self {
                 background: Color::Rgb(36, 39, 58),
@@ -89,6 +96,7 @@ impl ThemeColors {
                 muted: Color::Rgb(110, 115, 141),
                 highlight: Color::Rgb(245, 169, 127),
                 indicator: Color::Rgb(145, 215, 227),
+                selection: Color::Rgb(73, 77, 100),
             },
             Theme::Nord => Self {
                 background: Color::Rgb(46, 52, 64),
@@ -101,6 +109,7 @@ impl ThemeColors {
                 muted: Color::Rgb(97, 110, 136),
                 highlight: Color::Rgb(129, 161, 193),
                 indicator: Color::Rgb(180, 142, 173),
+                selection: Color::Rgb(76, 86, 106),
             },
             Theme::Gruvbox => Self {
                 background: Color::Rgb(40, 40, 40),
@@ -113,6 +122,7 @@ impl ThemeColors {
                 muted: Color::Rgb(146, 131, 116),
                 highlight: Color::Rgb(177, 98, 134),
                 indicator: Color::Rgb(69, 133, 136),
+                selection: Color::Rgb(80, 73, 69),
             },
         }
     }

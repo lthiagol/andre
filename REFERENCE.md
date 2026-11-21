@@ -63,7 +63,7 @@ andre
 
 ### Navigation Flow
 
-1. **Main Menu** — Choose an action (stow, unstow, restow, status, etc.)
+1. **Main Menu** — Choose an action (stow packages, adopt files, unstow, verify status, etc.)
 2. **Group Selection** — Pick which config groups to operate on
 3. **Package Selection** — Pick individual packages within each group
 4. **Confirmation** — Review the stow commands before execution
@@ -188,16 +188,23 @@ andre
 <a name="main-menu"></a>
 ## 🗺️ Main Menu
 
-| Option | What it does |
-|--------|-------------|
-| **Stow packages** | Select groups and packages, then stow to targets |
-| **Unstow packages** | Remove symlinks for selected packages |
-| **Restow packages** | Remove and re-create symlinks (after package changes) |
-| **Status** | View stow status across all groups |
-| **Adopt files** | Move existing target files into a package |
-| **Unstow individual links** | Remove specific symlinks one by one |
-| **Settings** | Edit config, add/remove/edit groups, change global options |
-| **Quit** | Exit andre |
+The main menu is a list on the left and a detail panel on the right. The detail
+panel describes the selected action and shows its facts: group and package
+counts, the stowed count (`–` until every package's status has been checked),
+and the target directories. Keys: `↑`/`↓` (or `j`/`k`) move, `1`–`7` jump to and
+open an item, `Enter` opens the selected item, `q` quits. The full banner shows
+on the main menu only; every other screen has a one-row `andre` title with the
+breadcrumb. Content is capped at 120 columns and centred on wider terminals.
+
+| Option | Icon (nerd / unicode) | What it does |
+|--------|------|-------------|
+| **stow packages** | link / `⇢` | Select groups and packages, then run the current action (stow, restow or unstow) |
+| **adopt files** | import / `⇣` | Move existing target files into a package |
+| **unstow** | unlink / `≠` | Remove symlinks interactively, one link at a time |
+| **verify status** | check / `✓` | View stow status across all groups |
+| **settings** | gear / `≡` | Edit config, add/remove/edit groups, change global options |
+| **help** | question / `?` | Keyboard reference |
+| **quit** | power / `×` | Exit andre |
 
 <a name="full-configuration-reference"></a>
 ## ⚙️ Full Configuration Reference

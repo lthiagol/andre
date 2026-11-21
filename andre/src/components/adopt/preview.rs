@@ -76,6 +76,8 @@ impl Component for AdoptPreviewComponent {
                     &ctx.core.flags,
                     &ctx.core.config.effective_ignores(&self.group_name),
                 );
+                // Adoption can add a package and move links, so cached statuses are stale.
+                ctx.status_cache.borrow_mut().invalidate_all();
                 self.execution_result = Some(match &result {
                     Ok(()) => "Adoption completed successfully.".to_string(),
                     Err(e) => format!("Adoption failed: {}", e),
@@ -115,5 +117,48 @@ impl Component for AdoptPreviewComponent {
             self.cached_plan.as_ref(),
             self.execution_result.as_deref(),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use andre_core::config::Config;
+    use andre_core::StowStatus;
+    use crossterm::event::KeyModifiers;
+
+    /// Adopting a file moves it into the package and leaves a link, so cached stow statuses must go.
+    #[test]
+    fn successful_adoption_invalidates_the_status_cache() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_path = tmp.path().join("andre.yml");
+        std::fs::write(
+            &config_path,
+            "global: {}\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(tmp.path().join("dotfiles/home")).unwrap();
+        std::fs::write(tmp.path().join(".bashrc"), "alias l='ls -la'").unwrap();
+
+        let config = Config::load(&config_path).unwrap();
+        let mut ctx = AppContext::for_tests(config, tmp.path());
+        ctx.status_cache
+            .borrow_mut()
+            .insert(("home".to_string(), "bash".to_string()), StowStatus::Stowed);
+
+        let mut preview = AdoptPreviewComponent::new(
+            "home".to_string(),
+            "bash".to_string(),
+            vec![tmp.path().join(".bashrc")],
+        );
+        preview.update(&mut ctx);
+        let yes = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+        preview.handle_key(yes, &mut ctx);
+
+        assert_eq!(
+            preview.execution_result.as_deref(),
+            Some("Adoption completed successfully.")
+        );
+        assert!(ctx.status_cache.borrow().is_empty());
     }
 }

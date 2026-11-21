@@ -40,7 +40,7 @@ impl Component for UnstowConfirmComponent {
         self
     }
 
-    fn handle_key(&mut self, key: KeyEvent, _ctx: &mut AppContext) -> Transition {
+    fn handle_key(&mut self, key: KeyEvent, ctx: &mut AppContext) -> Transition {
         if self.unlink_success || self.unlink_error.is_some() {
             match key.code {
                 KeyCode::Enter | KeyCode::Esc => return Transition::PopAll,
@@ -53,6 +53,7 @@ impl Component for UnstowConfirmComponent {
                 match andre_core::unlink_stowed_symlink(&link.path) {
                     Ok(true) => {
                         self.unlink_success = true;
+                        ctx.status_cache.borrow_mut().invalidate_all();
                     }
                     Ok(false) => {
                         self.unlink_error = Some("Not a symlink, nothing to remove.".to_string());
@@ -112,5 +113,33 @@ mod tests {
         let component = UnstowConfirmComponent::with_path(tmp.path().join("absent"));
         let recorded = component.link.as_ref().expect("link recorded");
         assert_eq!(recorded.target, "(unresolvable)");
+    }
+
+    /// Removing a stowed link changes the tree, so cached stow statuses must go.
+    #[test]
+    fn successful_unlink_invalidates_the_status_cache() {
+        use andre_core::config::Config;
+        use andre_core::StowStatus;
+        use crossterm::event::KeyModifiers;
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let source = tmp.path().join("source.txt");
+        std::fs::write(&source, "").unwrap();
+        let link = tmp.path().join("link.txt");
+        std::os::unix::fs::symlink(&source, &link).unwrap();
+
+        let mut ctx = AppContext::for_tests(Config::default_empty(), tmp.path());
+        ctx.status_cache.borrow_mut().insert(
+            ("home".to_string(), "link.txt".to_string()),
+            StowStatus::Stowed,
+        );
+
+        let mut component = UnstowConfirmComponent::with_path(link.clone());
+        let yes = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);
+        component.handle_key(yes, &mut ctx);
+
+        assert!(component.unlink_success);
+        assert!(!link.is_symlink());
+        assert!(ctx.status_cache.borrow().is_empty());
     }
 }

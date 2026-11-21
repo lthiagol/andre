@@ -6,7 +6,7 @@ use ratatui::Terminal;
 use andre::app::App;
 use andre::theme::ThemeColors;
 use andre::ui::icons::NERD;
-use andre_core::{IconSet, StowAction, Theme};
+use andre_core::{IconSet, StowAction, StowStatus, Theme};
 
 mod helpers;
 use helpers::{make_empty_app, make_test_app};
@@ -32,18 +32,25 @@ fn line_contains(buf: &Buffer, fragment: &str) -> bool {
     false
 }
 
-/// The top bar's row: the frame border, the one-row margin, the 7-row banner
-/// and a separator come first.
-const TOP_BAR_ROW: u16 = 9;
-
 fn row_text(buf: &Buffer, y: u16) -> String {
     (0..buf.area().width)
         .map(|x| buf[(x, y)].symbol())
         .collect()
 }
 
+/// The top bar's row: the first full-width separator (the one under the banner)
+/// plus one. Found from the drawn rows, because the banner is seven rows on the
+/// main menu and one row everywhere else.
+fn top_bar_row(buf: &Buffer) -> u16 {
+    let width = buf.area().width;
+    (1..buf.area().height)
+        .find(|&y| (1..width - 1).all(|x| buf[(x, y)].symbol() == "\u{2500}"))
+        .expect("banner separator missing")
+        + 1
+}
+
 fn top_bar_contains(buf: &Buffer, fragment: &str) -> bool {
-    row_text(buf, TOP_BAR_ROW).contains(fragment)
+    row_text(buf, top_bar_row(buf)).contains(fragment)
 }
 
 /// The bottom bar's row: the last row inside the frame border.
@@ -232,8 +239,8 @@ fn test_top_bar_uses_unicode_icons_when_configured() {
 fn test_menu_has_items() {
     let (mut app, _) = make_test_app();
     let buf = render_app(&mut app, 80, 24);
-    assert!(line_contains(&buf, "Config"), "Config not in menu");
-    assert!(line_contains(&buf, "Help"), "Help not in menu");
+    assert!(line_contains(&buf, "settings"), "settings not in menu");
+    assert!(line_contains(&buf, "help"), "help not in menu");
 }
 
 #[test]
@@ -678,12 +685,16 @@ fn test_footer_context_hints_per_screen_family() {
 }
 
 #[test]
-fn test_breadcrumb_shows_root() {
+fn test_main_menu_list_is_titled_actions() {
     let (mut app, _) = make_test_app();
     let buf = render_app(&mut app, 120, 24);
     assert!(
-        line_contains(&buf, "Main > Main Menu"),
-        "root breadcrumb segment missing from panel title"
+        line_contains(&buf, " actions "),
+        "main menu list panel title missing"
+    );
+    assert!(
+        !line_contains(&buf, "Main > Main Menu"),
+        "the old breadcrumb panel title is back"
     );
 }
 
@@ -693,7 +704,7 @@ fn test_breadcrumb_updates_on_stack_push() {
     push_screen(&mut app, "Settings");
     let buf = render_app(&mut app, 120, 24);
     assert!(
-        line_contains(&buf, "Main > Config"),
+        line_contains(&buf, "Main > Settings"),
         "breadcrumb did not reflect MainMenu > Settings stack"
     );
 }
@@ -715,10 +726,10 @@ fn test_status_toggles_still_live_with_breadcrumb() {
     app.ctx.core.flags.verbosity = 2;
     app.ctx.core.flags.dry_run = true;
     let buf = render_app(&mut app, 140, 24);
-    // Breadcrumb now lives in the panel title; toggles still live in the top bar.
+    // The main menu's list panel is titled `actions`; toggles still live in the top bar.
     assert!(
-        line_contains(&buf, "Main > Main Menu"),
-        "breadcrumb missing from panel title"
+        line_contains(&buf, " actions "),
+        "list panel title missing on the main menu"
     );
     assert!(
         top_bar_contains(&buf, "verbose 2"),
@@ -765,7 +776,7 @@ fn test_top_bar_and_footer_fit_80_columns_on_one_row_each() {
     app.ctx.core.flags.action = StowAction::Unstow;
     app.ctx.debug = true;
     let buf = render_app(&mut app, 80, 24);
-    let top = row_text(&buf, TOP_BAR_ROW);
+    let top = row_text(&buf, top_bar_row(&buf));
     assert!(top.contains("debug"), "debug chip must still fit: {top:?}");
     assert!(top.contains("unstow"), "action pill missing: {top:?}");
     assert!(top.contains("verbose 5"), "full labels expected: {top:?}");
@@ -798,7 +809,7 @@ fn test_top_bar_has_full_labels_and_no_theme_for_every_theme_at_80_columns() {
         app.ctx.core.flags.dotfiles = true;
         app.ctx.debug = true;
         let buf = render_app(&mut app, 80, 24);
-        let top = row_text(&buf, TOP_BAR_ROW);
+        let top = row_text(&buf, top_bar_row(&buf));
         for label in [
             "restow",
             "verbose 3",
@@ -880,7 +891,7 @@ fn test_chrome_renders_across_themes() {
         push_screen(&mut app, "Settings");
         let buf = render_app(&mut app, 120, 24);
         assert!(
-            line_contains(&buf, "Main > Config"),
+            line_contains(&buf, "Main > Settings"),
             "breadcrumb missing under theme {:?}",
             theme.name()
         );
@@ -1021,5 +1032,296 @@ fn test_confirm_preview_is_engine_aware_native_default() {
     assert!(
         !line_contains(&buf, "stow -d"),
         "confirm preview must not show a stow command under the native default"
+    );
+}
+
+/// Like `render_app`, after one update pass. The main menu builds its detail
+/// facts in `update`, so this is how a frame gets them.
+fn render_updated(app: &mut App, width: u16, height: u16) -> Buffer {
+    app.update_components();
+    render_app(app, width, height)
+}
+
+fn menu_mut(app: &mut App) -> &mut andre::components::MainMenuComponent {
+    app.component_stack
+        .last_mut()
+        .unwrap()
+        .as_any_mut()
+        .downcast_mut()
+        .unwrap()
+}
+
+/// Position of the selected row's accent bar.
+fn accent_cell(buf: &Buffer) -> (u16, u16) {
+    (0..buf.area().height)
+        .flat_map(|y| (0..buf.area().width).map(move |x| (x, y)))
+        .find(|&(x, y)| buf[(x, y)].symbol() == "\u{258c}")
+        .expect("no selected-row accent")
+}
+
+/// WCAG contrast ratio between two RGB colours.
+fn contrast(a: Color, b: Color) -> f64 {
+    fn luminance(c: Color) -> f64 {
+        let Color::Rgb(r, g, b) = c else {
+            panic!("theme colours are RGB: {c:?}")
+        };
+        let linear = |v: u8| {
+            let v = v as f64 / 255.0;
+            if v <= 0.03928 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+    }
+    let (la, lb) = (luminance(a), luminance(b));
+    let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+#[test]
+fn test_menu_selected_row_is_filled_with_selection_colour() {
+    let (mut app, _) = make_test_app();
+    menu_mut(&mut app).index = 2;
+    let buf = render_app(&mut app, 80, 24);
+    let colors = ThemeColors::from_theme(Theme::Default);
+
+    let (x0, y) = accent_cell(&buf);
+    assert_eq!(
+        buf[(x0, y)].fg,
+        colors.primary,
+        "accent bar must use the primary colour"
+    );
+    assert_eq!(
+        buf[(x0, y)].bg,
+        colors.background,
+        "accent bar sits on the normal background, not the selection fill"
+    );
+    let right_border = (x0..buf.area().width)
+        .find(|&x| buf[(x, y)].symbol() == "\u{2502}")
+        .expect("list panel right border");
+    for x in x0 + 1..right_border {
+        assert_eq!(
+            buf[(x, y)].bg,
+            colors.selection,
+            "selected row not filled at column {x}"
+        );
+    }
+    assert_ne!(
+        buf[(x0 + 1, y + 1)].bg,
+        colors.selection,
+        "only the selected row is filled"
+    );
+}
+
+/// The background the accent bar sits on. `Reset` (Default theme) means the terminal's
+/// own background, which this test cannot see. It is taken as black, the dark terminal
+/// the Default theme is built for, so the accent check does not cover light terminals.
+fn painted_background(colors: &ThemeColors) -> Color {
+    match colors.background {
+        Color::Reset => Color::Rgb(0, 0, 0),
+        other => other,
+    }
+}
+
+/// Every theme keeps the selected row readable. The label is normal text, so it must
+/// reach WCAG AA 4.5:1 on the selection fill. The icon and the accent bar are
+/// non-text, so they need 3:1 (WCAG 1.4.11).
+#[test]
+fn test_selected_row_text_is_readable_in_every_theme() {
+    for theme in Theme::ALL {
+        let colors = ThemeColors::from_theme(theme);
+        let (mut app, _) = make_test_app();
+        app.ctx.core.theme = theme;
+        for index in 0..7 {
+            menu_mut(&mut app).index = index;
+            let buf = render_app(&mut app, 80, 24);
+            let (x0, y) = accent_cell(&buf);
+            let accent = &buf[(x0, y)];
+            let icon = &buf[(x0 + 1, y)];
+            // The label starts after the accent, the icon and two spaces.
+            let label = &buf[(x0 + 4, y)];
+            assert_eq!(
+                label.bg,
+                colors.selection,
+                "{}: selected row not filled with the selection colour",
+                theme.name()
+            );
+            assert_eq!(
+                accent.bg,
+                colors.background,
+                "{}: accent bar is filled",
+                theme.name()
+            );
+
+            let label_ratio = contrast(label.fg, label.bg);
+            assert!(
+                label_ratio >= 4.5,
+                "{}: selected label contrast {label_ratio:.2} < 4.5 for item {index}",
+                theme.name()
+            );
+            let icon_ratio = contrast(icon.fg, icon.bg);
+            assert!(
+                icon_ratio >= 3.0,
+                "{}: selected icon contrast {icon_ratio:.2} < 3.0 for item {index}",
+                theme.name()
+            );
+            let accent_ratio = contrast(accent.fg, painted_background(&colors));
+            assert!(
+                accent_ratio >= 3.0,
+                "{}: accent contrast {accent_ratio:.2} < 3.0 for item {index}",
+                theme.name()
+            );
+        }
+    }
+}
+
+#[test]
+fn test_main_menu_keeps_the_big_banner_and_other_screens_get_one_row() {
+    let (mut app, _) = make_test_app();
+    let buf = render_app(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "\u{2551} A. \u{2551}"),
+        "big banner missing on the main menu"
+    );
+    assert_eq!(
+        top_bar_row(&buf),
+        9,
+        "main menu top bar sits under the seven-row banner"
+    );
+
+    for name in screen_names().into_iter().filter(|n| *n != "MainMenu") {
+        let (mut app, _) = make_test_app();
+        push_screen(&mut app, name);
+        let buf = render_app(&mut app, 80, 24);
+        assert!(
+            !line_contains(&buf, "\u{2551} A. \u{2551}"),
+            "{name}: the big banner belongs to the main menu only"
+        );
+        assert!(
+            row_text(&buf, 1).contains("andre"),
+            "{name}: compact title missing: {:?}",
+            row_text(&buf, 1)
+        );
+        assert_eq!(
+            top_bar_row(&buf),
+            3,
+            "{name}: top bar should follow the one-row title"
+        );
+    }
+}
+
+#[test]
+fn test_compact_title_shows_the_breadcrumb() {
+    let (mut app, _) = make_test_app();
+    push_screen(&mut app, "GroupSelect");
+    let buf = render_app(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  Main > Groups"),
+        "compact title lost the breadcrumb: {:?}",
+        row_text(&buf, 1)
+    );
+}
+
+#[test]
+fn test_content_is_capped_at_120_columns_and_centred() {
+    // Left and right corners of the main menu's content, from the drawn borders.
+    fn content_span(buf: &Buffer) -> (u16, u16) {
+        let y = (0..buf.area().height)
+            .find(|&y| row_text(buf, y).contains(" actions "))
+            .expect("list panel title");
+        let left = (0..buf.area().width)
+            .find(|&x| buf[(x, y)].symbol() == "\u{256d}")
+            .expect("list panel corner");
+        let right = (0..buf.area().width)
+            .rev()
+            .find(|&x| buf[(x, y)].symbol() == "\u{256e}")
+            .expect("detail panel corner");
+        (left, right)
+    }
+
+    let (mut app, _) = make_test_app();
+    let buf = render_app(&mut app, 80, 24);
+    assert_eq!(content_span(&buf), (2, 77), "80 columns use the full width");
+
+    // The bars span columns 2..=197 here; a 120-column content area sits in the middle.
+    let buf = render_app(&mut app, 200, 50);
+    assert_eq!(
+        content_span(&buf),
+        (40, 159),
+        "wide content must be centred"
+    );
+}
+
+#[test]
+fn test_detail_facts_are_built_in_update_not_render() {
+    let (mut app, _tmp) = make_test_app();
+    let buf = render_updated(&mut app, 120, 24);
+    assert!(
+        row_containing(&buf, "stowed")
+            .expect("stowed fact missing")
+            .contains('\u{2013}'),
+        "no cached status yet, so the count is unknown"
+    );
+
+    app.ctx
+        .status_cache
+        .borrow_mut()
+        .insert(("home".to_string(), "test".to_string()), StowStatus::Stowed);
+
+    // Render alone does not read the cache again.
+    let buf = render_app(&mut app, 120, 24);
+    assert!(
+        row_containing(&buf, "stowed")
+            .expect("stowed fact missing")
+            .contains('\u{2013}'),
+        "render must not rebuild the facts"
+    );
+
+    // The next update notices the new cache generation.
+    let buf = render_updated(&mut app, 120, 24);
+    assert!(
+        row_containing(&buf, "stowed")
+            .expect("stowed fact missing")
+            .contains("1 of 1"),
+        "update must refresh the facts after a status change"
+    );
+}
+
+#[test]
+fn test_detail_panel_describes_the_selected_item() {
+    let (mut app, _tmp) = make_test_app();
+    menu_mut(&mut app).index = 1;
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "Import files"),
+        "adopt description missing"
+    );
+    assert!(
+        row_containing(&buf, "targets")
+            .expect("adopt targets fact missing")
+            .contains('~'),
+        "targets should be shown relative to home"
+    );
+}
+
+#[test]
+fn test_detail_text_is_inset_from_the_panel_border() {
+    let (mut app, _tmp) = make_test_app();
+    let buf = render_updated(&mut app, 80, 24);
+    let y = (0..buf.area().height)
+        .find(|&y| row_text(&buf, y).contains("Pick groups"))
+        .expect("stow description missing from the detail panel");
+    let x = column_of(&buf, y, "Pick groups").expect("description column");
+    assert_eq!(
+        buf[(x - 2, y)].symbol(),
+        "\u{2502}",
+        "detail panel left border"
+    );
+    assert_eq!(
+        buf[(x - 1, y)].symbol(),
+        " ",
+        "description must not touch the border"
     );
 }

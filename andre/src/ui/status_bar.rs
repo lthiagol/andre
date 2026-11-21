@@ -30,7 +30,7 @@ pub fn breadcrumb_label(id: &str) -> &str {
         "MainMenu" => "Main",
         "GroupSelect" => "Groups",
         "PackageSelect" => "Packages",
-        "Settings" => "Config",
+        "Settings" => "Settings",
         "Status" => "Status",
         "Help" => "Help",
         "Confirm" => "Confirm",
@@ -47,7 +47,7 @@ pub fn breadcrumb_label(id: &str) -> &str {
     }
 }
 
-/// Join stack ids into a breadcrumb string (`Main > Config`).
+/// Join stack ids into a breadcrumb string (`Main > Settings`).
 pub fn format_breadcrumb(stack_ids: &[&str]) -> String {
     stack_ids
         .iter()
@@ -280,7 +280,7 @@ mod tests {
     fn test_format_breadcrumb_stack() {
         assert_eq!(
             format_breadcrumb(&["MainMenu", "Settings"]),
-            "Main > Config"
+            "Main > Settings"
         );
     }
 

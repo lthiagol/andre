@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::Paragraph,
     Frame,
@@ -21,6 +21,9 @@ const BIG_COLORS: [Color; 5] = [
 const LETTERS: [char; 5] = ['A', 'N', 'D', 'R', 'E'];
 
 const TAGLINE: &str = "Another Neat Dotfile Repository Engine";
+
+/// The name on the one-row title of screens other than the main menu.
+const COMPACT_NAME: &str = "andre";
 
 /// Built once per process. The banner content is fully static — rebuilding
 /// it on every render frame was pure waste (5 `format!()` calls + Vec
@@ -73,6 +76,31 @@ fn big_title() -> &'static [Line<'static>] {
         }
         lines
     })
+}
+
+/// One-row title for every screen except the main menu: the name in the
+/// banner's colours, then the breadcrumb.
+pub fn render_compact_banner(
+    frame: &mut Frame,
+    area: Rect,
+    colors: &ThemeColors,
+    breadcrumb: &str,
+) {
+    let mut spans: Vec<Span> = COMPACT_NAME
+        .chars()
+        .zip(BIG_COLORS)
+        .map(|(letter, color)| {
+            Span::styled(
+                letter.to_string(),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            )
+        })
+        .collect();
+    spans.push(Span::styled(
+        format!("  {breadcrumb}"),
+        Style::default().fg(colors.secondary),
+    ));
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 pub fn render_banner(frame: &mut Frame, area: Rect, colors: &ThemeColors) {

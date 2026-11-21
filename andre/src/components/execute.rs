@@ -84,6 +84,8 @@ impl Component for ExecuteComponent {
                     ExecutionUpdate::Complete => {
                         self.rx = None;
                         self.state = ExecutionState::Completed;
+                        // The links changed on disk, so every cached stow status is stale.
+                        ctx.status_cache.borrow_mut().invalidate_all();
                         ctx.log(LogLevel::Exec, || "Execution complete".into());
                         break;
                     }
@@ -171,5 +173,28 @@ mod tests {
             comp.viewport_height, 21,
             "prepare must set viewport_height = area.height - 2 - GAUGE_ROWS"
         );
+    }
+
+    /// A finished execution changes links on disk, so cached stow statuses must go.
+    #[test]
+    fn completion_invalidates_the_status_cache() {
+        use andre_core::StowStatus;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
+        let mut comp = ExecuteComponent::new(rx, 1, Vec::new());
+        let mut ctx = make_ctx();
+        ctx.status_cache
+            .borrow_mut()
+            .insert(("home".to_string(), "bash".to_string()), StowStatus::Stowed);
+
+        comp.update(&mut ctx);
+        assert!(
+            !ctx.status_cache.borrow().is_empty(),
+            "no completion yet, so the cache stays"
+        );
+
+        tx.try_send(ExecutionUpdate::Complete).unwrap();
+        comp.update(&mut ctx);
+        assert!(ctx.status_cache.borrow().is_empty());
     }
 }

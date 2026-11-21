@@ -19,6 +19,13 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
       macOS during development, so a macOS CI gate was judged not worth the
       runner minutes.
 
+## TUI
+
+- Drop the breadcrumb prefix from panel titles that repeat the compact title
+  (`" {} > Review Commands "`, `" {} > Execution "`, `" {} > Stow Status "`,
+  group/package select, etc.) and lowercase them. The Settings panel title
+  still hard-codes `Config`; it should read `settings`. Batch R4.
+
 ## Documentation
 
 - (nothing open) — `global.engine` and the native-engine default are documented

@@ -20,6 +20,35 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- Main menu is a list and a detail panel. The list on the left shows each action
+  with an icon, its label and a jump digit (`1`–`7`) at the right edge. The
+  selected row is filled edge to edge with a new `selection` theme colour and
+  marked with a `▌` accent in the primary colour on the normal background; the
+  `>>` marker is gone. The list panel is titled `actions`. The Settings
+  breadcrumb reads `Settings` (was `Config`). The first item is
+  `stow packages` and follows the current action. The labels are `adopt files`,
+  `unstow`, `verify status`, `settings`, `help` and `quit`. The detail panel on
+  the right is titled with the selected label and shows a description plus
+  facts: groups and packages, the stowed count (`–` until every package's status
+  is cached; the status cache is read, never refreshed, by the menu, and a
+  stow/restow/unstow run, an adoption or an unlink clears it), target
+  directories, the config path, engine and theme, or the key reminder. The facts
+  are built in `MainMenuComponent::update` and rebuilt only when the selection,
+  the action, the theme, the config or the status cache changes. Render only
+  reads them. The menu's icons come from `ui::icons`, which follows
+  `global.icons`. Tests: `components::menu` unit tests (facts, rebuild rule,
+  label per action) and `andre/tests/render.rs` (selected-row fill, readable
+  label contrast in all eight themes, detail facts after a cache change).
+  The `selection` colour is picked per theme so the selected label reads at
+  4.5:1 or better, and the selected icon and accent bar at 3:1 or better. The
+  detail text is inset one column from the panel border.
+- Layout: the 15/70/15 horizontal squeeze is gone. Every screen uses the full
+  content width minus one column of margin on each side, capped at 120 columns
+  and centred on wider terminals. Screens get the vertical space the banner
+  used to take: the full seven-row banner shows on the main menu only, and every
+  other screen shows a one-row `andre` title with the breadcrumb
+  (`ui::banner::render_compact_banner`). The top bar's row is no longer fixed;
+  the render tests find it from the drawn banner separator.
 - Top bar redesigned as one flat, lowercase row: the current action as a pill
   on the left (`stow`, `restow`, `unstow`) and a chip per toggle (`● verbose 1`,
   `○ dry-run`, `○ no-fold`, `○ adopt`, `○ dotfiles`). Each chip's hotkey letter

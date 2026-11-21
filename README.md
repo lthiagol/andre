@@ -127,15 +127,22 @@ Select your group, pick packages, and stow them.
 <a name="main-menu"></a>
 ## 🗺️ Main Menu
 
+The main menu lists the actions on the left. The panel on the right describes
+the selected one and shows what it touches: group and package counts, how many
+packages are stowed once their status has been checked (`–` until then), and
+the target directories. Move with `↑`/`↓`, or press `1`–`7` to jump to an
+action. Every other screen shows a one-row title with its breadcrumb instead of
+the full banner.
+
 | Option | What it does |
 |--------|-------------|
-| **Stow packages** | Select groups and packages, then stow to targets |
-| **Guided adoption** | Import existing target files into a new package |
-| **Interactive unstow** | Remove symlinks interactively |
-| **Verify status** | View stow status across all groups |
-| **Config & Settings** | Edit config, add/remove groups, change options |
-| **Help** | Keyboard reference |
-| **Quit** | Exit andre |
+| **stow packages** | Select groups and packages, then run the current action (stow, restow or unstow) |
+| **adopt files** | Import existing target files into a new package |
+| **unstow** | Remove symlinks interactively |
+| **verify status** | View stow status across all groups |
+| **settings** | Edit config, add/remove groups, change options |
+| **help** | Keyboard reference |
+| **quit** | Exit andre |
 
 <a name="key-bindings"></a>
 ## ⌨️ Key Bindings
