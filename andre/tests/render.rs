@@ -1238,7 +1238,7 @@ fn contrast(a: Color, b: Color) -> f64 {
 #[test]
 fn test_menu_selected_row_is_filled_with_selection_colour() {
     let (mut app, _) = make_test_app();
-    menu_mut(&mut app).index = 2;
+    menu_mut(&mut app).list.cursor = 2;
     let buf = render_app(&mut app, 80, 24);
     let colors = ThemeColors::from_theme(Theme::Default);
 
@@ -1290,7 +1290,7 @@ fn test_selected_row_text_is_readable_in_every_theme() {
         let (mut app, _) = make_test_app();
         app.ctx.core.theme = theme;
         for index in 0..7 {
-            menu_mut(&mut app).index = index;
+            menu_mut(&mut app).list.cursor = index;
             let buf = render_app(&mut app, 80, 24);
             let (x0, y) = accent_cell(&buf);
             let accent = &buf[(x0, y)];
@@ -1447,7 +1447,7 @@ fn test_detail_facts_are_built_in_update_not_render() {
 #[test]
 fn test_detail_panel_describes_the_selected_item() {
     let (mut app, _tmp) = make_test_app();
-    menu_mut(&mut app).index = 1;
+    menu_mut(&mut app).list.cursor = 1;
     let buf = render_updated(&mut app, 80, 24);
     assert!(
         line_contains(&buf, "Import files"),
@@ -2344,6 +2344,38 @@ fn test_package_detail_needs_two_columns_of_room() {
                 !text.contains('('),
                 "width {width}: the detail is drawn with no room for it"
             ),
+        }
+    }
+}
+
+/// Every screen that shares the footer, the main menu panes or the layout helpers draws
+/// at the large sizes without panicking, and keeps `q quit` on its footer row.
+#[test]
+fn test_touched_screens_render_at_120x40_and_200x50_without_panic() {
+    let screens = [
+        "MainMenu",
+        "GroupSelect",
+        "Settings",
+        "Status",
+        "Help",
+        "Confirm",
+        "Execute",
+        "AdoptTargetSelect",
+        "UnstowTargetSelect",
+        "AdoptFileSelect",
+        "UnstowBrowse",
+    ];
+    for (width, height) in [(120, 40), (200, 50)] {
+        for name in screens {
+            let (mut app, _tmp) = make_test_app();
+            if name != "MainMenu" {
+                push_screen(&mut app, name);
+            }
+            let buf = render_updated(&mut app, width, height);
+            assert!(
+                row_containing(&buf, "q quit").is_some(),
+                "{name} at {width}x{height}: footer missing"
+            );
         }
     }
 }

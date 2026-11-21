@@ -50,9 +50,9 @@ fn settings(app: &App) -> &andre::components::settings::SettingsComponent {
 #[test]
 fn test_menu_up_wraps() {
     let (mut app, _) = make_test_app();
-    assert_eq!(menu(&app).index, 0);
+    assert_eq!(menu(&app).list.cursor, 0);
     app.component_dispatch(up_key());
-    assert_eq!(menu(&app).index, 6);
+    assert_eq!(menu(&app).list.cursor, 6);
 }
 
 #[test]
@@ -61,21 +61,21 @@ fn test_menu_down_wraps() {
     for _ in 0..7 {
         app.component_dispatch(down_key());
     }
-    assert_eq!(menu(&app).index, 0);
+    assert_eq!(menu(&app).list.cursor, 0);
 }
 
 #[test]
 fn test_menu_j_down() {
     let (mut app, _) = make_test_app();
     app.component_dispatch(key_char('j'));
-    assert_eq!(menu(&app).index, 1);
+    assert_eq!(menu(&app).list.cursor, 1);
 }
 
 #[test]
 fn test_menu_k_up() {
     let (mut app, _) = make_test_app();
     app.component_dispatch(key_char('k'));
-    assert_eq!(menu(&app).index, 6);
+    assert_eq!(menu(&app).list.cursor, 6);
 }
 
 // --- Screen Transitions ---
@@ -177,10 +177,10 @@ fn test_digit_key_out_of_range_is_ignored() {
     // or change the highlighted index.
     for c in ['0', '8', '9'] {
         let (mut app, _) = make_test_app();
-        let before = menu(&app).index;
+        let before = menu(&app).list.cursor;
         app.component_dispatch(key_char(c));
         assert_eq!(
-            menu(&app).index,
+            menu(&app).list.cursor,
             before,
             "digit '{c}' should not move the cursor"
         );

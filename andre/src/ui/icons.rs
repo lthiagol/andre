@@ -11,6 +11,12 @@ pub struct Icons {
     pub meter_empty: &'static str,
     pub checkbox_on: &'static str,
     pub checkbox_off: &'static str,
+    /// A group header whose packages are only partly marked.
+    pub checkbox_some: &'static str,
+    pub radio_on: &'static str,
+    pub radio_off: &'static str,
+    pub fold_open: &'static str,
+    pub fold_closed: &'static str,
     pub stowed: &'static str,
     pub unstowed: &'static str,
     pub partial: &'static str,
@@ -25,6 +31,11 @@ pub struct Icons {
     pub gear: &'static str,
     pub question: &'static str,
     pub power: &'static str,
+    /// A package whose status has not been read yet.
+    pub unknown: &'static str,
+    pub menu_profiles: &'static str,
+    pub menu_new_package: &'static str,
+    pub menu_setup: &'static str,
 }
 
 /// Nerd Font codepoints (Font Awesome block).
@@ -35,6 +46,11 @@ pub static NERD: Icons = Icons {
     meter_empty: "▱",
     checkbox_on: "\u{f14a}",
     checkbox_off: "\u{f096}",
+    checkbox_some: "\u{f147}",
+    radio_on: "\u{f192}",
+    radio_off: "\u{f10c}",
+    fold_open: "\u{f0d7}",
+    fold_closed: "\u{f0da}",
     stowed: "\u{f00c}",
     unstowed: "\u{f061}",
     partial: "\u{f192}",
@@ -49,6 +65,10 @@ pub static NERD: Icons = Icons {
     gear: "\u{f013}",
     question: "\u{f059}",
     power: "\u{f011}",
+    unknown: "\u{f141}",
+    menu_profiles: "\u{f0e8}",
+    menu_new_package: "\u{f067}",
+    menu_setup: "\u{f108}",
 };
 
 /// Common Unicode symbols from long-established blocks (Latin-1, Arrows,
@@ -60,6 +80,11 @@ pub static UNICODE: Icons = Icons {
     meter_empty: "▱",
     checkbox_on: "■",
     checkbox_off: "□",
+    checkbox_some: "▣",
+    radio_on: "●",
+    radio_off: "○",
+    fold_open: "▾",
+    fold_closed: "▸",
     stowed: "✓",
     unstowed: "→",
     partial: "◐",
@@ -74,6 +99,10 @@ pub static UNICODE: Icons = Icons {
     gear: "≡",
     question: "?",
     power: "×",
+    unknown: "·",
+    menu_profiles: "◈",
+    menu_new_package: "+",
+    menu_setup: "⌂",
 };
 
 impl Icons {
@@ -121,6 +150,11 @@ mod tests {
             icons.meter_empty,
             icons.checkbox_on,
             icons.checkbox_off,
+            icons.checkbox_some,
+            icons.radio_on,
+            icons.radio_off,
+            icons.fold_open,
+            icons.fold_closed,
             icons.stowed,
             icons.unstowed,
             icons.partial,
@@ -135,6 +169,10 @@ mod tests {
             icons.gear,
             icons.question,
             icons.power,
+            icons.unknown,
+            icons.menu_profiles,
+            icons.menu_new_package,
+            icons.menu_setup,
         ]
     }
 
@@ -233,6 +271,8 @@ mod tests {
         // Latin-1, Arrows, Mathematical Operators, Geometric Shapes, Dingbats.
         // Emoji-presentation and Supplemental symbols are missing from many
         // monospace fonts or widen to two columns under an emoji fallback.
+        // The Miscellaneous Technical block is mostly emoji, so only its house
+        // (U+2302, text presentation, one column) is allowed, by name.
         let blocks = [
             ('\u{0000}', '\u{00ff}'),
             ('\u{2190}', '\u{21ff}'),
@@ -240,10 +280,12 @@ mod tests {
             ('\u{25a0}', '\u{25ff}'),
             ('\u{2700}', '\u{27bf}'),
         ];
+        let allowed_alone = ['\u{2302}'];
         for glyph in all_glyphs(&UNICODE) {
             for c in glyph.chars() {
                 assert!(
-                    blocks.iter().any(|(lo, hi)| (*lo..=*hi).contains(&c)),
+                    allowed_alone.contains(&c)
+                        || blocks.iter().any(|(lo, hi)| (*lo..=*hi).contains(&c)),
                     "unicode glyph {glyph:?} (U+{:04X}) is outside the well-covered blocks",
                     c as u32
                 );

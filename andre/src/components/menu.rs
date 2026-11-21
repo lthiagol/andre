@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
@@ -6,10 +7,9 @@ use std::path::Path;
 use andre_core::{discover_packages, EngineKind, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Margin, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Wrap},
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -22,13 +22,11 @@ use crate::components::target_select::TargetSelectComponent;
 use crate::components::{AppContext, Component, Transition};
 use crate::input;
 use crate::theme::ThemeColors;
+use crate::ui::detail::{render_detail, Detail};
 use crate::ui::icons::Icons;
+use crate::ui::layout::{screen_rects, Shape};
+use crate::ui::list_panel::{self, render_list_panel, ListView};
 use crate::ui::selection;
-
-/// Width of the action list. The detail panel takes the rest of the content area.
-const LIST_WIDTH: u16 = 34;
-/// Columns between the list and the detail panel.
-const GUTTER: u16 = 1;
 
 /// The seven rows of the main menu, in jump-digit order (`1`..`7`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,17 +89,11 @@ impl MenuItem {
     }
 }
 
-/// What the detail panel shows for the selected item. Built by
-/// `MainMenuComponent::update`, never while painting.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Detail {
-    pub description: &'static str,
-    pub facts: Vec<(&'static str, String)>,
-}
-
 #[derive(Default)]
 pub struct MainMenuComponent {
-    pub index: usize,
+    /// The cursor and the window over the seven items.
+    pub list: ListView,
+    /// Built by `update`, read while painting.
     detail: Detail,
     /// Fingerprint of everything `detail` was built from. `None` until the first update.
     detail_key: Option<u64>,
@@ -124,15 +116,15 @@ impl Component for MainMenuComponent {
         let items_len = MenuItem::ALL.len();
 
         if input::Input::is_up(&key) {
-            self.index = (self.index + items_len - 1) % items_len;
+            self.list.step(false, items_len);
         } else if input::Input::is_down(&key) {
-            self.index = (self.index + 1) % items_len;
+            self.list.step(true, items_len);
         } else if input::Input::is_quit_key(&key) {
             // q and Ctrl+C: checked before the Char arm so the digit
             // dispatcher never swallows Ctrl+C / Ctrl+1 / etc.
             return Transition::Quit;
         } else if key.code == KeyCode::Enter {
-            return Self::activate(MenuItem::ALL[self.index]);
+            return Self::activate(MenuItem::ALL[self.list.cursor]);
         } else if let KeyCode::Char(c) = key.code {
             // Unmodified digit keys 1..=7 jump to and activate the Nth menu
             // item, matching the labels rendered in `render`. '0' and '8'..='9'
@@ -141,7 +133,7 @@ impl Component for MainMenuComponent {
                 if let Some(d) = c.to_digit(10) {
                     if (1..=items_len as u32).contains(&d) {
                         let idx = (d - 1) as usize;
-                        self.index = idx;
+                        self.list.cursor = idx;
                         return Self::activate(MenuItem::ALL[idx]);
                     }
                 }
@@ -154,31 +146,25 @@ impl Component for MainMenuComponent {
     fn update(&mut self, ctx: &mut AppContext) -> Transition {
         let key = self.fingerprint(ctx);
         if self.detail_key != Some(key) {
-            self.detail = build_detail(MenuItem::ALL[self.index], ctx);
+            self.detail = build_detail(MenuItem::ALL[self.list.cursor], ctx);
             self.detail_key = Some(key);
         }
         Transition::None
+    }
+
+    fn prepare(&mut self, area: Rect) {
+        let rects = screen_rects(area, Shape::TwoPane);
+        self.list.prepare(rects.list, MenuItem::ALL.len());
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
         let icons = Icons::for_set(ctx.core.icons);
         let action = ctx.core.flags.action.as_str();
-        let selected = MenuItem::ALL[self.index];
+        let selected = MenuItem::ALL[self.list.cursor];
+        let rects = screen_rects(area, Shape::TwoPane);
 
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(LIST_WIDTH),
-                Constraint::Length(GUTTER),
-                Constraint::Min(1),
-            ])
-            .split(area);
-        let (list_area, detail_area) = (columns[0], columns[2]);
-
-        let list_block = crate::ui::themed_panel(&colors).title(" actions ");
-        let list_inner = list_block.inner(list_area);
-        frame.render_widget(list_block, list_area);
+        let width = list_panel::inner(rects.list).width;
         let rows: Vec<Line> = MenuItem::ALL
             .iter()
             .enumerate()
@@ -186,36 +172,23 @@ impl Component for MainMenuComponent {
                 list_row(
                     *item,
                     i,
-                    i == self.index,
+                    i == self.list.cursor,
                     action,
                     icons,
                     &colors,
-                    list_inner.width,
+                    width,
                 )
             })
             .collect();
-        frame.render_widget(Paragraph::new(rows), list_inner);
-
-        let detail_block =
-            crate::ui::themed_panel(&colors).title(format!(" {} ", selected.label(action)));
-        let detail_inner = detail_block.inner(detail_area);
-        frame.render_widget(detail_block, detail_area);
-        let mut lines = vec![Line::from(Span::styled(
-            self.detail.description,
-            Style::default().fg(colors.text),
-        ))];
-        if !self.detail.facts.is_empty() {
-            lines.push(Line::raw(""));
-        }
-        for (label, value) in &self.detail.facts {
-            lines.push(Line::from(vec![
-                Span::styled(format!("{label:<10}"), Style::default().fg(colors.text_dim)),
-                Span::styled(value.clone(), Style::default().fg(colors.value)),
-            ]));
-        }
-        frame.render_widget(
-            Paragraph::new(lines).wrap(Wrap { trim: false }),
-            detail_inner.inner(Margin::new(1, 0)),
+        render_list_panel(
+            frame, rects.list, &colors, "actions", rows, &self.list, None,
+        );
+        render_detail(
+            frame,
+            rects.detail,
+            &colors,
+            &selected.label(action),
+            &self.detail,
         );
     }
 }
@@ -230,7 +203,7 @@ impl MainMenuComponent {
     /// means the facts are rebuilt on the next update.
     fn fingerprint(&self, ctx: &AppContext) -> u64 {
         let mut hasher = DefaultHasher::new();
-        self.index.hash(&mut hasher);
+        self.list.cursor.hash(&mut hasher);
         ctx.status_cache.borrow().generation().hash(&mut hasher);
         ctx.core.flags.action.as_str().hash(&mut hasher);
         ctx.core.theme.name().hash(&mut hasher);
@@ -379,7 +352,8 @@ fn targets(ctx: &AppContext) -> String {
 }
 
 fn build_detail(item: MenuItem, ctx: &AppContext) -> Detail {
-    let facts = match item {
+    let colors = ThemeColors::from_theme(ctx.core.theme);
+    let facts: Vec<(&'static str, String)> = match item {
         MenuItem::Stow | MenuItem::Status => {
             let t = tally(ctx);
             let mut facts = Vec::new();
@@ -410,8 +384,15 @@ fn build_detail(item: MenuItem, ctx: &AppContext) -> Detail {
         MenuItem::Quit => Vec::new(),
     };
     Detail {
-        description: item.description(),
-        facts,
+        headline: vec![Line::styled(
+            item.description(),
+            Style::default().fg(colors.text),
+        )],
+        facts: facts
+            .into_iter()
+            .map(|(label, value)| (Cow::Borrowed(label), value))
+            .collect(),
+        sections: Vec::new(),
     }
 }
 
@@ -458,10 +439,8 @@ mod tests {
 
     fn detail_of(item: MenuItem, ctx: &mut AppContext) -> Detail {
         let index = MenuItem::ALL.iter().position(|i| *i == item).unwrap();
-        let mut menu = MainMenuComponent {
-            index,
-            ..MainMenuComponent::default()
-        };
+        let mut menu = MainMenuComponent::default();
+        menu.list.cursor = index;
         menu.update(ctx);
         menu.detail().clone()
     }
@@ -473,6 +452,20 @@ mod tests {
             .find(|(l, _)| *l == label)
             .map(|(_, v)| v.as_str())
             .unwrap_or_else(|| panic!("no {label:?} fact in {detail:?}"))
+    }
+
+    fn headline(detail: &Detail) -> String {
+        detail
+            .headline
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
@@ -546,7 +539,7 @@ mod tests {
         assert!(fact(&help, "keys").contains("Enter open"));
         let quit = detail_of(MenuItem::Quit, &mut ctx);
         assert!(quit.facts.is_empty());
-        assert!(!quit.description.is_empty());
+        assert!(!headline(&quit).is_empty());
     }
 
     #[test]
@@ -560,10 +553,10 @@ mod tests {
         menu.update(&mut ctx);
         assert_eq!(menu.detail_key, first, "an unchanged state keeps its key");
 
-        menu.index = 1;
+        menu.list.cursor = 1;
         menu.update(&mut ctx);
         assert_ne!(menu.detail_key, first, "selection is part of the key");
-        assert_eq!(menu.detail().description, MenuItem::Adopt.description());
+        assert_eq!(headline(menu.detail()), MenuItem::Adopt.description());
     }
 
     #[test]

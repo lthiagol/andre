@@ -54,6 +54,17 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **UI pattern kit (no screen change at 80x24).** Shared building blocks for the
+  screen redesign, in `andre/src/ui/`: `layout.rs` (one split for every screen:
+  list pane `clamp(width * 2 / 5, 34, 48)`, detail the rest), `list_panel.rs`
+  (`ListView` cursor and window, `row_at` for mouse, empty state, scrollbar),
+  `detail.rs` (headline, facts, sections), `dialog.rs` (overlay dialog and action
+  bar with `Button`s), `step_bar.rs`, `text_field.rs` (one-line input), `chips.rs`
+  (filter row). The main menu is ported onto `ListView` and `Detail`; its cursor is
+  now `list.cursor`. Footer hints are data (`Hint`, with a priority); a narrow row
+  drops the lowest-priority hint whole. New `Icons` fields for the redesign
+  (`checkbox_some`, `radio_on/off`, `fold_open/closed`, `unknown`, menu icons).
+  At 120+ columns the main menu's list pane widens from 34 to 48 columns.
 - **Native engine: built-in ignore list.** A package without `.stow-local-ignore`
   (and without `~/.stow-global-ignore`) now skips GNU's built-in list, as `stow`
   does: `RCS`, `CVS`, `.svn`, `_darcs`, `.hg`, `.git`, `.gitignore`, `.gitmodules`,

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -5,16 +7,88 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
 
 use crate::theme::ThemeColors;
 
 /// Columns between the hints and the right-hand side, and between the theme
 /// chip and `q quit`.
 const GAP: usize = 2;
+/// Columns between two hints.
+const HINT_GAP: usize = 2;
+
+/// Priorities for [`Hint::prio`]. When the row is too narrow the lowest go first.
+const PRIO_NAV: u8 = 1;
+const PRIO_BACK: u8 = 2;
+const PRIO_JUMP: u8 = 2;
+const PRIO_VERB: u8 = 3;
+const PRIO_PRIMARY: u8 = 4;
+
+/// One key hint on the footer: the key as shown, what it does, and how much it matters
+/// when the row is narrow. The footer drops the lowest-priority hints whole, never a
+/// part of one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hint {
+    /// The key as drawn: `y`, `Enter`, `↑↓`, `1–7`. A key name, not a `KeyEvent`, since
+    /// a hint can stand for several keys.
+    pub key: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+    pub prio: u8,
+}
+
+impl Hint {
+    fn new(key: &'static str, label: &'static str, prio: u8) -> Self {
+        Self {
+            key: Cow::Borrowed(key),
+            label: Cow::Borrowed(label),
+            prio,
+        }
+    }
+
+    /// Columns the hint takes: the key, a space, the label.
+    fn width(&self) -> usize {
+        self.key.width() + 1 + self.label.width()
+    }
+}
+
+/// Columns the hints take together, gaps included.
+fn hints_width(hints: &[Hint]) -> usize {
+    let text: usize = hints.iter().map(Hint::width).sum();
+    text + HINT_GAP * hints.len().saturating_sub(1)
+}
+
+/// The hints that fit in `room` columns. The lowest-priority hint goes first, whole; among
+/// equal priorities the later one goes first. Order is kept.
+fn fit(mut hints: Vec<Hint>, room: usize) -> Vec<Hint> {
+    while !hints.is_empty() && hints_width(&hints) > room {
+        let (drop, _) = hints
+            .iter()
+            .enumerate()
+            .min_by_key(|(i, h)| (h.prio, std::cmp::Reverse(*i)))
+            .expect("hints is not empty");
+        hints.remove(drop);
+    }
+    hints
+}
 
 fn key_span(s: &str, colors: &ThemeColors) -> Span<'static> {
     Span::styled(s.to_string(), Style::default().fg(colors.key))
+}
+
+/// The hints as spans: each key in `key`, each label in `text_dim`, two columns between.
+fn hint_spans(hints: &[Hint], colors: &ThemeColors) -> Vec<Span<'static>> {
+    let mut spans = Vec::with_capacity(hints.len() * 3);
+    for (i, hint) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw(" ".repeat(HINT_GAP)));
+        }
+        spans.push(key_span(&hint.key, colors));
+        spans.push(Span::styled(
+            format!(" {}", hint.label),
+            Style::default().fg(colors.text_dim),
+        ));
+    }
+    spans
 }
 
 /// The bottom bar: the current screen's key hints on the left, then the theme
@@ -39,33 +113,34 @@ pub fn render_footer(
 
 /// The bottom bar as one line, `width` columns wide. The theme chip shows its
 /// full name when the hints leave room for it, then just `theme`, and is
-/// dropped when not even that fits. `q quit` is always kept: the hints are
-/// clipped to make room for it.
+/// dropped when not even that fits. Then the lowest-priority hints are dropped
+/// whole. `q quit` is always kept.
 pub fn footer_line(
     colors: &ThemeColors,
     screen_id: &str,
     theme_name: &str,
     width: usize,
 ) -> Line<'static> {
-    let hints = screen_hints(screen_id, colors);
+    let hints = screen_hints(screen_id);
     let quit = quit_spans(colors);
-    let hints_width = spans_width(&hints);
+    let hints_len = hints_width(&hints);
 
     for theme in [
         theme_chip(colors, Some(theme_name)),
         theme_chip(colors, None),
     ] {
         let right_width = spans_width(&theme) + GAP + spans_width(&quit);
-        if hints_width + GAP + right_width <= width {
+        if hints_len + GAP + right_width <= width {
             let mut right = theme;
             right.push(Span::raw(" ".repeat(GAP)));
             right.extend(quit);
-            return join(hints, right, width);
+            return join(hint_spans(&hints, colors), right, width);
         }
     }
 
     let room = width.saturating_sub(GAP + spans_width(&quit));
-    join(clip(hints, room), quit, width)
+    let kept = fit(hints, room);
+    join(hint_spans(&kept, colors), quit, width)
 }
 
 /// `left`, then spaces, then `right`, filling `width` columns.
@@ -110,118 +185,60 @@ fn spans_width(spans: &[Span<'static>]) -> usize {
         .sum()
 }
 
-/// The leading `max` columns of `spans`, cutting the span that crosses the edge.
-fn clip(spans: Vec<Span<'static>>, max: usize) -> Vec<Span<'static>> {
-    let mut out = Vec::new();
-    let mut used = 0;
-    for span in spans {
-        let width = UnicodeWidthStr::width(span.content.as_ref());
-        if used + width <= max {
-            used += width;
-            out.push(span);
-            continue;
-        }
-        let mut kept = String::new();
-        for c in span.content.chars() {
-            let char_width = UnicodeWidthChar::width(c).unwrap_or(0);
-            if used + char_width > max {
-                break;
-            }
-            used += char_width;
-            kept.push(c);
-        }
-        if !kept.is_empty() {
-            out.push(Span::styled(kept, span.style));
-        }
-        break;
-    }
-    out
-}
-
-/// Key hints for one screen, as spans. Keys are drawn in the `key` colour.
-pub fn screen_hints(screen_id: &str, colors: &ThemeColors) -> Vec<Span<'static>> {
-    let arrows = key_span("\u{2191}\u{2193}", colors);
-    let enter = key_span("Enter", colors);
-    let space = key_span("Space", colors);
-    let esc = key_span("Esc", colors);
-    let ky = key_span("y", colors);
-    let kn = key_span("n", colors);
+/// Key hints for one screen. Empty for a screen with none.
+pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
+    let arrows = |label| Hint::new("\u{2191}\u{2193}", label, PRIO_NAV);
+    let enter = |label| Hint::new("Enter", label, PRIO_PRIMARY);
+    let space = |label| Hint::new("Space", label, PRIO_VERB);
+    let esc = |label| Hint::new("Esc", label, PRIO_BACK);
+    let ky = |label| Hint::new("y", label, PRIO_PRIMARY);
+    let kn = |label| Hint::new("n", label, PRIO_BACK);
 
     match screen_id {
         "MainMenu" => vec![
-            arrows,
-            Span::raw(" navigate  "),
-            key_span("1\u{2013}7", colors),
-            Span::raw(" jump  "),
-            enter,
-            Span::raw(" select"),
+            arrows("navigate"),
+            Hint::new("1\u{2013}7", "jump", PRIO_JUMP),
+            enter("select"),
         ],
         "GroupSelect" | "PackageSelect" => vec![
-            arrows,
-            Span::raw(" navigate  "),
-            space,
-            Span::raw(" toggle  "),
-            enter,
-            Span::raw(" confirm  "),
-            esc,
-            Span::raw(" cancel"),
+            arrows("navigate"),
+            space("toggle"),
+            enter("confirm"),
+            esc("cancel"),
         ],
-        "Status" | "Execute" => vec![enter, Span::raw(" continue")],
-        "Help" => vec![esc, Span::raw(" back")],
-        "Settings" => vec![
-            arrows,
-            Span::raw(" navigate  "),
-            enter,
-            Span::raw(" group menu  "),
-            esc,
-            Span::raw(" back"),
-        ],
-        "Confirm" => vec![ky, Span::raw(" confirm  "), kn, Span::raw(" cancel")],
-        "AdoptTargetSelect" | "UnstowTargetSelect" => vec![
-            arrows,
-            Span::raw(" navigate  "),
-            enter,
-            Span::raw(" select  "),
-            esc,
-            Span::raw(" back"),
-        ],
+        "Status" | "Execute" => vec![enter("continue")],
+        "Help" => vec![esc("back")],
+        "Settings" => vec![arrows("navigate"), enter("group menu"), esc("back")],
+        "Confirm" => vec![ky("confirm"), kn("cancel")],
+        "AdoptTargetSelect" | "UnstowTargetSelect" => {
+            vec![arrows("navigate"), enter("select"), esc("back")]
+        }
         "AdoptFileSelect" => vec![
-            arrows,
-            Span::raw(" navigate  "),
-            space,
-            Span::raw(" toggle  "),
-            key_span("\u{2192}", colors),
-            Span::raw(" into  "),
-            enter,
-            Span::raw(" confirm  "),
-            key_span("\u{2190}", colors),
-            Span::raw(" up  "),
-            esc,
-            Span::raw(" back"),
+            arrows("navigate"),
+            space("toggle"),
+            Hint::new("\u{2192}", "into", PRIO_VERB),
+            enter("confirm"),
+            Hint::new("\u{2190}", "up", PRIO_VERB),
+            esc("back"),
         ],
-        "AdoptConfirm" => vec![ky, Span::raw(" proceed  "), kn, Span::raw(" back")],
-        "AdoptNamePrompt" => vec![enter, Span::raw(" confirm  "), esc, Span::raw(" back")],
-        "AdoptPreview" => vec![ky, Span::raw(" execute  "), kn, Span::raw(" cancel")],
+        "AdoptConfirm" => vec![ky("proceed"), kn("back")],
+        "AdoptNamePrompt" => vec![enter("confirm"), esc("back")],
+        "AdoptPreview" => vec![ky("execute"), kn("cancel")],
         "UnstowBrowse" => vec![
-            arrows,
-            Span::raw(" navigate  "),
-            key_span("\u{2192}", colors),
-            Span::raw(" into  "),
-            enter,
-            Span::raw(" unlink  "),
-            key_span("\u{2190}", colors),
-            Span::raw(" up  "),
-            esc,
-            Span::raw(" back"),
+            arrows("navigate"),
+            Hint::new("\u{2192}", "into", PRIO_VERB),
+            enter("unlink"),
+            Hint::new("\u{2190}", "up", PRIO_VERB),
+            esc("back"),
         ],
-        "UnstowConfirm" => vec![ky, Span::raw(" remove  "), kn, Span::raw(" cancel")],
-        _ => vec![Span::raw("")],
+        "UnstowConfirm" => vec![ky("remove"), kn("cancel")],
+        _ => Vec::new(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{footer_line, screen_hints};
+    use super::{fit, footer_line, hint_spans, hints_width as hint_row_width, screen_hints, Hint};
     use crate::theme::ThemeColors;
     use andre_core::Theme;
     use ratatui::{
@@ -279,9 +296,18 @@ mod tests {
             .unwrap_or_else(|| panic!("no span {content:?} in {:?}", line_text(line)))
     }
 
+    /// The hints as they read on the row: `key label`, two columns apart.
+    fn hint_text(hints: &[Hint]) -> String {
+        hints
+            .iter()
+            .map(|h| format!("{} {}", h.key, h.label))
+            .collect::<Vec<_>>()
+            .join("  ")
+    }
+
     /// Columns the hints take on `screen`.
     fn hints_width(screen: &str) -> usize {
-        text(&screen_hints(screen, &colors())).width()
+        hint_text(&screen_hints(screen)).width()
     }
 
     /// Smallest width at which the full `theme <name>` chip fits on `screen`.
@@ -297,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_main_menu_hints_mention_jump_and_select() {
-        let hints = text(&screen_hints("MainMenu", &colors()));
+        let hints = hint_text(&screen_hints("MainMenu"));
         assert_eq!(
             hints,
             "\u{2191}\u{2193} navigate  1\u{2013}7 jump  Enter select"
@@ -306,9 +332,21 @@ mod tests {
 
     #[test]
     fn test_key_names_use_key_colour() {
-        let spans = screen_hints("Settings", &colors());
+        let spans = hint_spans(&screen_hints("Settings"), &colors());
         let enter = spans.iter().find(|s| s.content == "Enter").unwrap();
         assert_eq!(enter.style.fg, Some(colors().key));
+    }
+
+    #[test]
+    fn test_each_hint_is_its_key_then_its_label_in_text_dim() {
+        let hints = [Hint::new("y", "confirm", 4), Hint::new("n", "cancel", 2)];
+        let spans = hint_spans(&hints, &colors());
+        assert_eq!(text(&spans), "y confirm  n cancel");
+        assert_eq!(
+            span(&Line::from(spans.clone()), " confirm").style.fg,
+            Some(colors().text_dim)
+        );
+        assert_eq!(span(&Line::from(spans), "n").style.fg, Some(colors().key));
     }
 
     #[test]
@@ -326,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_unknown_screen_has_no_hints() {
-        assert_eq!(text(&screen_hints("Nowhere", &colors())), "");
+        assert_eq!(hint_text(&screen_hints("Nowhere")), "");
     }
 
     #[test]
@@ -466,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn test_footer_clips_hints_so_quit_is_still_shown_when_very_narrow() {
+    fn test_footer_drops_hints_so_quit_is_still_shown_when_very_narrow() {
         for width in [0, 1, 5, 6, 8, 20, 30] {
             let line = footer_line(&colors(), "AdoptFileSelect", "default", width);
             assert!(
@@ -480,5 +518,60 @@ mod tests {
         assert!(t.ends_with("q quit"), "{t:?}");
         assert_eq!(line_width(&line), 30);
         assert!(!t.contains("theme"), "no room for the chip: {t:?}");
+    }
+
+    #[test]
+    fn test_narrow_footer_drops_the_lowest_priority_hint_whole() {
+        // At 60 columns the row has 52 columns for hints after `q quit`. `navigate` is the
+        // lowest priority and is dropped whole; the rest keep their order and wording.
+        let line = footer_line(&colors(), "AdoptFileSelect", "default", 60);
+        let t = line_text(&line);
+        assert!(
+            t.starts_with("Space toggle  \u{2192} into  Enter confirm"),
+            "{t:?}"
+        );
+        assert!(!t.contains("navigate"), "{t:?}");
+        assert!(!t.contains("navi"), "no partial word: {t:?}");
+        assert_eq!(line_width(&line), 60);
+    }
+
+    #[test]
+    fn test_fit_drops_lowest_priority_first_and_keeps_order() {
+        let hints = screen_hints("AdoptFileSelect");
+        // Room for the hints without `navigate` (11 columns and a gap) but not with it.
+        let room = hint_row_width(&hints) - 13;
+        let kept = fit(hints.clone(), room);
+        assert_eq!(
+            kept.iter().map(|h| h.label.as_ref()).collect::<Vec<_>>(),
+            ["toggle", "into", "confirm", "up", "back"]
+        );
+    }
+
+    #[test]
+    fn test_fit_never_keeps_a_hint_under_one_it_outranks_when_dropping() {
+        // Every room, every screen: a dropped hint never outranks a kept one, the kept
+        // hints fit the room, and they keep their order.
+        for screen in SCREENS {
+            let hints = screen_hints(screen);
+            for room in 0..=INNER_WIDTH {
+                let kept = fit(hints.clone(), room);
+                assert!(hint_row_width(&kept) <= room, "{screen} room {room}");
+                let mut rest = hints.iter();
+                for k in &kept {
+                    assert!(rest.any(|h| h == k), "{screen} room {room}: order changed");
+                }
+                for d in &hints {
+                    if kept.contains(d) {
+                        continue;
+                    }
+                    for k in &kept {
+                        assert!(
+                            d.prio <= k.prio,
+                            "{screen} room {room}: dropped {d:?} over {k:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
