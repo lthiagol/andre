@@ -72,7 +72,10 @@ andre
 On the packages screen, `Space` marks a package (on a group row, every package of the group),
 `Enter` runs the marks, or the cursor's package or group, `←` on a package moves to its group's header, `←` on a header folds the group, `→` unfolds it, and `p` opens
 the profile membership dialog for the cursor's package. In that dialog `Space` ticks a profile
-and `Enter` saves; `Esc` cancels.
+and `Enter` saves; `Esc` cancels. `i` opens the ignore editor for the cursor's package: `Tab`
+switches between `.gitignore` and `.stow-local-ignore`, `+` adds a line, `Enter` or `e` edits
+the cursor's line, `x` deletes it and `w` writes the changed files. `Esc` with unsaved edits
+asks whether to save.
 
 Global shortcuts (`v`/`d`/`t`/`n`/`a`/`o`/`Ctrl+C`) work from any screen. The
 top bar shows their state (a green mark when on, a red one when off; verbosity

@@ -2,11 +2,9 @@
 //! includes, resolved facts) and the leave dialog. Everything here draws from the state it
 //! is given. Nothing reads the disk.
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use andre_core::profile::{split_package_ref, Origin, Profile, ProfileSet, ResolvedProfile};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Margin, Rect},
     style::Style,
@@ -17,7 +15,6 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::theme::ThemeColors;
-use crate::ui::dialog::{Button, Dialog};
 use crate::ui::focus_panel;
 use crate::ui::icons::Icons;
 use crate::ui::selection::row_with_glyphs;
@@ -229,34 +226,6 @@ fn names_fact(names: &[String]) -> String {
     }
 }
 
-/// The dialog that asks what to do with unsaved edits. Primary is `y save`, on the right.
-pub fn leave_dialog(name: &str, colors: &ThemeColors) -> Dialog {
-    Dialog {
-        title: "unsaved changes".to_string(),
-        body: vec![
-            Line::raw(""),
-            Line::styled(
-                format!("Save changes to profile `{name}`?"),
-                Style::default().fg(colors.text),
-            ),
-            Line::raw(""),
-        ],
-        buttons: vec![
-            button(KeyCode::Esc, "stay", false),
-            button(KeyCode::Char('n'), "discard", false),
-            button(KeyCode::Char('y'), "save", true),
-        ],
-    }
-}
-
-fn button(code: KeyCode, label: &'static str, primary: bool) -> Button {
-    Button {
-        key: KeyEvent::new(code, KeyModifiers::NONE),
-        label: Cow::Borrowed(label),
-        primary,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,7 +324,7 @@ mod tests {
     #[test]
     fn test_leave_dialog_puts_save_on_the_right_as_the_primary_button() {
         let colors = ThemeColors::from_theme(andre_core::Theme::Default);
-        let dialog = leave_dialog("personal", &colors);
+        let dialog = crate::ui::dialog::leave_dialog("profile `personal`", &colors);
         let labels: Vec<&str> = dialog.buttons.iter().map(|b| b.label.as_ref()).collect();
         assert_eq!(labels, vec!["stay", "discard", "save"]);
         assert!(dialog.buttons.last().unwrap().primary);

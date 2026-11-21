@@ -263,6 +263,16 @@ pub fn remove_line(path: &Path, line: &str) -> Result<bool> {
     Ok(true)
 }
 
+/// Writes `lines` as the whole ignore file at `path`, creating it when missing. A
+/// `.stow-local-ignore` whose patterns do not compile is refused and the file is left alone.
+pub fn save_lines(path: &Path, kind: IgnoreFile, lines: &[String]) -> Result<()> {
+    if kind == IgnoreFile::StowLocal {
+        let origin = path.display().to_string();
+        IgnoreRules::from_text(&lines.join("\n"), RuleSource::Local, &origin)?;
+    }
+    write_lines(path, lines)
+}
+
 /// Creates the ignore file in `package_dir` with `content`. Fails if it exists.
 pub fn create_file(package_dir: &Path, kind: IgnoreFile, content: &str) -> Result<PathBuf> {
     use std::io::Write;
@@ -538,6 +548,30 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "b\na\n");
         assert!(!remove_line(&path, "zzz").unwrap());
         assert!(!remove_line(&tmp.path().join("nope"), "a").unwrap());
+    }
+
+    #[test]
+    fn save_lines_writes_whole_file_and_refuses_bad_stow_pattern() {
+        let tmp = TempDir::new().unwrap();
+        let path = IgnoreFile::StowLocal.path_in(tmp.path());
+        let lines = vec!["# mine".to_string(), "foo".to_string()];
+        save_lines(&path, IgnoreFile::StowLocal, &lines).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "# mine\nfoo\n");
+
+        let bad = vec!["foo".to_string(), "bad(".to_string()];
+        let err = save_lines(&path, IgnoreFile::StowLocal, &bad).unwrap_err();
+        assert!(err.to_string().contains("bad("), "{err}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "# mine\nfoo\n");
+    }
+
+    #[test]
+    fn save_lines_takes_any_gitignore_line_and_empty_list_is_empty_file() {
+        let tmp = TempDir::new().unwrap();
+        let path = IgnoreFile::GitIgnore.path_in(tmp.path());
+        save_lines(&path, IgnoreFile::GitIgnore, &["bad(".to_string()]).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "bad(\n");
+        save_lines(&path, IgnoreFile::GitIgnore, &[]).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "");
     }
 
     #[test]

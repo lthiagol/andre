@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -207,6 +207,35 @@ pub fn render_dialog(frame: &mut Frame, rect: Rect, colors: &ThemeColors, d: &Di
         body,
     );
     render_action_bar(frame, button_row(inner), colors, &d.buttons);
+}
+
+/// The dialog that asks what to do with unsaved edits to `subject`, e.g. the profile
+/// `work`. Primary is `y save`, on the right.
+pub fn leave_dialog(subject: &str, colors: &ThemeColors) -> Dialog {
+    Dialog {
+        title: "unsaved changes".to_string(),
+        body: vec![
+            Line::raw(""),
+            Line::styled(
+                format!("Save changes to {subject}?"),
+                Style::default().fg(colors.text),
+            ),
+            Line::raw(""),
+        ],
+        buttons: vec![
+            leave_button(KeyCode::Esc, "stay", false),
+            leave_button(KeyCode::Char('n'), "discard", false),
+            leave_button(KeyCode::Char('y'), "save", true),
+        ],
+    }
+}
+
+fn leave_button(code: KeyCode, label: &'static str, primary: bool) -> Button {
+    Button {
+        key: KeyEvent::new(code, KeyModifiers::NONE),
+        label: Cow::Borrowed(label),
+        primary,
+    }
 }
 
 #[cfg(test)]

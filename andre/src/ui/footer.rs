@@ -299,7 +299,7 @@ pub fn leave_dialog_hints() -> Vec<Hint> {
 
 /// Hints for the packages browser. `run` is the Enter label (`stow 3`), or `None` when Enter
 /// does nothing. `on_row` says there is a row to mark and fold; `on_package` that the cursor
-/// is on a package, which has profiles to edit.
+/// is on a package, which has profiles and ignore files to edit.
 pub fn packages_hints(run: Option<String>, on_row: bool, on_package: bool) -> Vec<Hint> {
     let mut hints = Vec::new();
     if let Some(label) = run {
@@ -309,6 +309,7 @@ pub fn packages_hints(run: Option<String>, on_row: bool, on_package: bool) -> Ve
         hints.push(Hint::new("Space", "mark", PRIO_VERB));
     }
     if on_package {
+        hints.push(Hint::new("i", "ignore", PRIO_VERB));
         hints.push(Hint::new("p", "profiles", PRIO_VERB));
     }
     if on_row {
@@ -316,6 +317,30 @@ pub fn packages_hints(run: Option<String>, on_row: bool, on_package: bool) -> Ve
     }
     hints.push(Hint::new("Esc", "back", PRIO_BACK));
     hints
+}
+
+/// Hints for the ignore editor's list. `on_line` says the cursor is on a line (so `e` and `x`
+/// act on it); `Tab` switches between the package's two ignore files.
+pub fn ignore_hints(on_line: bool) -> Vec<Hint> {
+    let mut hints = vec![
+        Hint::new("Tab", "file", PRIO_NAV),
+        Hint::new("+", "add", PRIO_VERB),
+    ];
+    if on_line {
+        hints.push(Hint::new("e", "edit", PRIO_VERB));
+        hints.push(Hint::new("x", "delete", PRIO_VERB));
+    }
+    hints.push(Hint::new("w", "save", PRIO_VERB));
+    hints.push(Hint::new("Esc", "back", PRIO_BACK));
+    hints
+}
+
+/// Hints while an ignore line is being typed: Enter keeps it, Esc drops the change.
+pub fn ignore_edit_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("Enter", "done", PRIO_PRIMARY),
+        Hint::new("Esc", "cancel", PRIO_BACK),
+    ]
 }
 
 /// Hints for the profile membership dialog.

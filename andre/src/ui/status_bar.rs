@@ -40,6 +40,7 @@ pub fn breadcrumb_label(id: &str) -> &str {
         "Confirm" => "Confirm",
         "Profiles" => "Profiles",
         "ProfileEdit" => "Edit",
+        "IgnoreEdit" => "Ignore",
         "Execute" => "Execute",
         "AdoptTargetSelect" => "Adopt",
         "AdoptFileSelect" => "Files",

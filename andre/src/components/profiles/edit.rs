@@ -16,7 +16,7 @@ use super::edit_view;
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::Input;
 use crate::theme::ThemeColors;
-use crate::ui::dialog::{dialog_rect, render_dialog};
+use crate::ui::dialog::{dialog_rect, leave_dialog, render_dialog};
 use crate::ui::footer::{field_edit_hints, leave_dialog_hints, profile_edit_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
@@ -468,7 +468,7 @@ impl Component for ProfileEditComponent {
         edit_view::render_form(frame, rects.detail, &colors, icons, &form);
 
         if self.leaving {
-            let dialog = edit_view::leave_dialog(&self.draft.name, &colors);
+            let dialog = leave_dialog(&format!("profile `{}`", self.draft.name), &colors);
             render_dialog(frame, dialog_rect(area, &dialog), &colors, &dialog);
         }
     }

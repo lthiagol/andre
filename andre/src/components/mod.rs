@@ -47,6 +47,7 @@ pub mod browser;
 pub mod confirm;
 pub mod execute;
 pub mod help;
+pub mod ignore;
 pub mod menu;
 pub mod packages;
 pub mod profiles;

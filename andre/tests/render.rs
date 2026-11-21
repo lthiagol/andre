@@ -11,7 +11,9 @@ use andre::ui::status_style::{status_color, status_word};
 use andre_core::{IconSet, StowAction, StowStatus, Theme};
 
 mod helpers;
-use helpers::{down_key, enter_key, esc_key, key_char, make_empty_app, make_test_app, space_key};
+use helpers::{
+    down_key, enter_key, esc_key, key_char, make_empty_app, make_test_app, space_key, up_key,
+};
 
 fn render_app(app: &mut App, width: u16, height: u16) -> Buffer {
     app.set_terminal_size(width, height);
@@ -3003,5 +3005,189 @@ fn test_profiles_render_at_120x40_and_200x50_with_a_dialog_open() {
             line_contains(&buf, "Delete profile `base`?"),
             "dialog at {width}x{height}"
         );
+    }
+}
+
+/// The ignore editor for `home/test`, opened from the packages screen with `i`.
+fn open_ignore_render(app: &mut App) {
+    app.component_dispatch(key_char('2'));
+    app.update_components();
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('i'));
+    app.update_components();
+}
+
+/// Writes one of the package's ignore files, `home/test`, before the editor opens.
+fn write_package_ignore(app: &App, name: &str, text: &str) {
+    let dir = app.ctx.home_dir.join("dotfiles/home/test");
+    std::fs::write(dir.join(name), text).unwrap();
+}
+
+#[test]
+fn test_ignore_editor_at_80x24_shows_the_file_tabs_the_lines_and_the_detail() {
+    let (mut app, _tmp) = make_test_app();
+    write_package_ignore(&app, ".gitignore", "# secrets\n*.env\n.env*\n");
+    open_ignore_render(&mut app);
+    app.component_dispatch(down_key()); // *.env, a pattern: the detail has its facts
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "[.gitignore 2]"), "active file tab");
+    assert!(
+        line_contains(&buf, ".stow-local-ignore (none)"),
+        "missing file tab"
+    );
+    assert!(
+        line_contains(&buf, "Main > Packages > Ignore"),
+        "the breadcrumb names the screen"
+    );
+    assert!(line_contains(&buf, "*.env"), "the lines are listed");
+    assert!(
+        line_contains(&buf, "pattern"),
+        "the detail has the pattern fact"
+    );
+    assert!(
+        line_contains(&buf, "matches"),
+        "the detail has the match count"
+    );
+    assert!(
+        line_contains(&buf, "decides for itself"),
+        "the glob preview says so"
+    );
+    assert!(row_containing(&buf, "q quit").is_some());
+}
+
+#[test]
+fn test_stow_local_ignore_detail_warns_that_it_replaces_the_defaults() {
+    let (mut app, _tmp) = make_test_app();
+    write_package_ignore(&app, ".stow-local-ignore", "^/README.*\n");
+    open_ignore_render(&mut app);
+    app.component_dispatch(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "[.stow-local-ignore 1]"));
+    assert!(line_contains(&buf, "REPLACES"), "the replace warning shows");
+    assert!(
+        line_contains(&buf, "^/README.*"),
+        "the cursor line is the detail title"
+    );
+}
+
+#[test]
+fn test_ignore_editor_missing_file_offers_to_create_it() {
+    let (mut app, _tmp) = make_test_app();
+    open_ignore_render(&mut app);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "no .gitignore yet"));
+    assert!(line_contains(&buf, "create it"));
+    assert!(
+        line_contains(&buf, "no file yet"),
+        "the detail says the file is missing"
+    );
+}
+
+#[test]
+fn test_ignore_editor_unsaved_lines_are_marked_and_footer_names_the_keys() {
+    let (mut app, _tmp) = make_test_app();
+    write_package_ignore(&app, ".gitignore", "*.env\n");
+    open_ignore_render(&mut app);
+    app.component_dispatch(key_char('x'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "unsaved \u{25cf}"),
+        "list title is marked"
+    );
+    let footer = footer_row(&buf);
+    for hint in ["Tab file", "+ add", "w save", "Esc back"] {
+        assert!(footer.contains(hint), "{hint} in {footer}");
+    }
+}
+
+#[test]
+fn test_ignore_editor_leave_dialog_names_the_package() {
+    let (mut app, _tmp) = make_test_app();
+    write_package_ignore(&app, ".gitignore", "*.env\n");
+    open_ignore_render(&mut app);
+    app.component_dispatch(key_char('x'));
+    app.component_dispatch(esc_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(
+        &buf,
+        "Save changes to the ignore files of home/test?"
+    ));
+    for label in ["stay", "discard", "save"] {
+        assert!(line_contains(&buf, label), "{label} button");
+    }
+}
+
+#[test]
+fn test_packages_footer_offers_i_for_ignore_on_a_package_only() {
+    let (mut app, _tmp) = make_test_app();
+    app.component_dispatch(key_char('2'));
+    app.update_components();
+    let on_group = render_updated(&mut app, 80, 24);
+    assert!(!footer_row(&on_group).contains("i ignore"));
+
+    app.component_dispatch(down_key());
+    let on_package = render_updated(&mut app, 80, 24);
+    let footer = footer_row(&on_package);
+    assert!(footer.contains("i ignore"), "{footer}");
+    assert!(
+        footer.find("i ignore").unwrap() < footer.find("p profiles").unwrap(),
+        "screen verbs run i then p (SCREENS.md 1.4): {footer}"
+    );
+}
+
+#[test]
+fn test_ignore_editor_explains_a_stow_line_that_does_not_compile_in_one_line() {
+    let (mut app, _tmp) = make_test_app();
+    open_ignore_render(&mut app);
+    app.component_dispatch(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    app.component_dispatch(key_char('+'));
+    type_text_render(&mut app, "bad(");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "invalid pattern: unclosed group"),
+        "the regex's own reason is the headline"
+    );
+    assert!(!line_contains(&buf, "this line"), "no internal origin");
+    assert!(!line_contains(&buf, "(?:"), "no internal wrapper");
+}
+
+#[test]
+fn test_ignore_editor_renders_at_120x40_and_200x50_in_each_state() {
+    let (mut app, _tmp) = make_test_app();
+    write_package_ignore(&app, ".gitignore", "# secrets\n*.env\n");
+    open_ignore_render(&mut app);
+    for (width, height) in [(120, 40), (200, 50)] {
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            row_containing(&buf, "q quit").is_some(),
+            "footer at {width}x{height}"
+        );
+        assert!(
+            line_contains(&buf, "[.gitignore 1]"),
+            "chip at {width}x{height}"
+        );
+    }
+    app.component_dispatch(key_char('+'));
+    type_text_render(&mut app, "bad");
+    for (width, height) in [(120, 40), (200, 50)] {
+        let buf = render_updated(&mut app, width, height);
+        assert!(line_contains(&buf, "bad"), "typed line at {width}x{height}");
+    }
+    app.component_dispatch(esc_key());
+    app.component_dispatch(up_key());
+    app.component_dispatch(key_char('x'));
+    app.component_dispatch(esc_key());
+    for (width, height) in [(120, 40), (200, 50)] {
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            line_contains(&buf, "Save changes to the ignore files"),
+            "leave dialog at {width}x{height}"
+        );
+    }
+}
+
+fn type_text_render(app: &mut App, text: &str) {
+    for c in text.chars() {
+        app.component_dispatch(key_char(c));
     }
 }

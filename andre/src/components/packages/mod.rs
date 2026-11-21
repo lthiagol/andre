@@ -1,6 +1,7 @@
 //! The packages browser. Groups are rows with their packages folded under them. Space marks
 //! packages to run, and Enter runs the marks, or else the cursor's package or group, through
-//! the confirm screen. `p` opens the profile membership dialog for the cursor's package.
+//! the confirm screen. `p` opens the profile membership dialog for the cursor's package, and
+//! `i` its ignore editor.
 
 mod view;
 
@@ -15,6 +16,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{layout::Rect, text::Line, Frame};
 
 use crate::components::confirm::ConfirmComponent;
+use crate::components::ignore::IgnoreEditComponent;
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::Input;
 use crate::theme::ThemeColors;
@@ -142,6 +144,7 @@ impl Component for PackagesComponent {
                     self.popup = Some(Membership::open(package, &ctx.core.profiles));
                 }
             }
+            KeyCode::Char('i') => return self.open_ignore(ctx),
             KeyCode::Enter => return self.run(ctx),
             KeyCode::Esc => return Transition::Pop,
             _ => return Transition::None,
@@ -267,6 +270,31 @@ impl PackagesComponent {
                 .map(|package| (name.clone(), package.clone()))
                 .collect(),
             None => Vec::new(),
+        }
+    }
+
+    /// Opens the ignore editor on the cursor's package. A package without a folder says so.
+    fn open_ignore(&self, ctx: &mut AppContext) -> Transition {
+        let Some((group, package)) = self.selected_package() else {
+            return Transition::Handled;
+        };
+        let source = ctx
+            .core
+            .config
+            .get_group_source(&group, &ctx.config_dir, &ctx.home_dir);
+        let Some(dir) = source
+            .map(|source| source.join(&package))
+            .filter(|dir| dir.is_dir())
+        else {
+            ctx.show_error_toast(format!("{group}/{package} has no folder"));
+            return Transition::Handled;
+        };
+        match IgnoreEditComponent::open(format!("{group}/{package}"), dir, ctx.core.theme) {
+            Ok(editor) => Transition::Push(Box::new(editor)),
+            Err(err) => {
+                ctx.show_error_toast(err.to_string());
+                Transition::Handled
+            }
         }
     }
 

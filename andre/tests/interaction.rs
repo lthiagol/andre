@@ -2005,3 +2005,243 @@ fn test_enter_on_a_profile_with_no_packages_says_so_and_stays() {
         .expect("a toast explains the refusal");
     assert!(toast.message.contains("no packages"), "{}", toast.message);
 }
+
+fn ignore_editor(app: &App) -> &andre::components::ignore::IgnoreEditComponent {
+    app.component_stack
+        .last()
+        .unwrap()
+        .as_any()
+        .downcast_ref()
+        .unwrap()
+}
+
+/// Opens the ignore editor on `home/test`, the package in `make_test_app`.
+fn open_ignore_on_test_package(app: &mut App) {
+    open_packages(app);
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('i'));
+}
+
+fn package_file(tmp: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
+    tmp.path().join("dotfiles/home/test").join(name)
+}
+
+#[test]
+fn test_i_opens_the_ignore_editor_on_the_cursor_package_with_no_files_yet() {
+    let (mut app, _tmp) = make_test_app();
+    open_ignore_on_test_package(&mut app);
+    assert_eq!(component_id(&app), "IgnoreEdit");
+    let editor = ignore_editor(&app);
+    assert!(editor.files().iter().all(|draft| !draft.present()));
+    assert!(!editor.is_dirty());
+}
+
+#[test]
+fn test_i_on_a_group_header_does_nothing() {
+    let (mut app, _tmp) = make_test_app();
+    open_packages(&mut app);
+    app.component_dispatch(key_char('i'));
+    assert_eq!(component_id(&app), "Packages");
+}
+
+#[test]
+fn test_plus_creates_the_gitignore_from_its_starter_lines_and_w_writes_it() {
+    let (mut app, tmp) = make_test_app();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(key_char('+'));
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::TextInput
+    );
+    type_text(&mut app, "*.env");
+    app.component_dispatch(enter_key());
+    app.component_dispatch(key_char('w'));
+
+    let written = std::fs::read_to_string(package_file(&tmp, ".gitignore")).unwrap();
+    assert!(written.lines().any(|line| line == "*.env"), "{written}");
+    assert!(written.contains("# Written by andre"), "{written}");
+    assert!(!ignore_editor(&app).is_dirty());
+}
+
+#[test]
+fn test_x_deletes_the_cursor_line_and_esc_then_n_discards_the_change() {
+    let (mut app, tmp) = make_test_app();
+    std::fs::write(package_file(&tmp, ".gitignore"), "a\nb\n").unwrap();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(key_char('x'));
+    assert_eq!(ignore_editor(&app).files()[0].lines(), ["b".to_string()]);
+    assert!(ignore_editor(&app).is_dirty());
+
+    app.component_dispatch(esc_key());
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::Modal,
+        "Esc with unsaved lines opens the leave dialog"
+    );
+    app.component_dispatch(key_char('n'));
+    assert_eq!(component_id(&app), "Packages");
+    assert_eq!(
+        std::fs::read_to_string(package_file(&tmp, ".gitignore")).unwrap(),
+        "a\nb\n"
+    );
+}
+
+#[test]
+fn test_esc_then_y_in_the_leave_dialog_saves_and_returns() {
+    let (mut app, tmp) = make_test_app();
+    std::fs::write(package_file(&tmp, ".gitignore"), "a\nb\n").unwrap();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(key_char('x'));
+    app.component_dispatch(esc_key());
+    app.component_dispatch(key_char('y'));
+    assert_eq!(component_id(&app), "Packages");
+    assert_eq!(
+        std::fs::read_to_string(package_file(&tmp, ".gitignore")).unwrap(),
+        "b\n"
+    );
+}
+
+#[test]
+fn test_esc_on_an_unchanged_editor_goes_back_without_asking() {
+    let (mut app, _tmp) = make_test_app();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(esc_key());
+    assert_eq!(component_id(&app), "Packages");
+}
+
+#[test]
+fn test_tab_switches_files_and_a_stow_line_that_does_not_compile_stays_open() {
+    let (mut app, tmp) = make_test_app();
+    std::fs::write(package_file(&tmp, ".stow-local-ignore"), "# mine\n").unwrap();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(ignore_editor(&app).active(), 1);
+
+    app.component_dispatch(key_char('+'));
+    type_text(&mut app, "bad(");
+    app.component_dispatch(enter_key());
+    assert_eq!(ignore_editor(&app).editing_text(), Some("bad("));
+
+    app.component_dispatch(esc_key());
+    assert_eq!(ignore_editor(&app).editing_text(), None);
+    assert!(!ignore_editor(&app).is_dirty());
+    assert_eq!(
+        std::fs::read_to_string(package_file(&tmp, ".stow-local-ignore")).unwrap(),
+        "# mine\n"
+    );
+}
+
+#[test]
+fn test_e_edits_the_cursor_line_and_a_blank_line_removes_it() {
+    let (mut app, tmp) = make_test_app();
+    std::fs::write(package_file(&tmp, ".gitignore"), "a\nb\n").unwrap();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('e'));
+    assert_eq!(ignore_editor(&app).editing_text(), Some("b"));
+    app.component_dispatch(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    type_text(&mut app, "c");
+    app.component_dispatch(enter_key());
+    assert_eq!(ignore_editor(&app).files()[0].lines(), ["a", "c"]);
+
+    app.component_dispatch(up_key());
+    app.component_dispatch(key_char('e'));
+    for _ in 0..3 {
+        app.component_dispatch(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    }
+    app.component_dispatch(enter_key());
+    assert_eq!(ignore_editor(&app).files()[0].lines(), ["c"]);
+}
+
+#[test]
+fn test_enter_on_the_add_row_adds_a_line_and_esc_drops_an_empty_one() {
+    let (mut app, tmp) = make_test_app();
+    std::fs::write(package_file(&tmp, ".gitignore"), "a\n").unwrap();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(down_key()); // the add row
+    app.component_dispatch(enter_key());
+    app.component_dispatch(esc_key());
+    assert_eq!(ignore_editor(&app).files()[0].lines(), ["a"]);
+    assert!(!ignore_editor(&app).is_dirty());
+}
+
+#[test]
+fn test_global_keys_still_work_in_the_ignore_editor() {
+    let (mut app, _tmp) = make_test_app();
+    open_ignore_on_test_package(&mut app);
+    let before = app.ctx.core.theme;
+    app.component_dispatch(key_char('t'));
+    assert_ne!(app.ctx.core.theme, before);
+    assert_eq!(component_id(&app), "IgnoreEdit");
+}
+
+#[test]
+fn test_plus_then_esc_on_a_missing_file_leaves_no_file_and_no_dialog() {
+    let (mut app, tmp) = make_test_app();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(key_char('+'));
+    app.component_dispatch(esc_key());
+    assert!(!ignore_editor(&app).files()[0].present());
+    assert!(!ignore_editor(&app).is_dirty());
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::Normal,
+        "Esc cancels the line; it does not open the leave dialog"
+    );
+
+    app.component_dispatch(esc_key());
+    assert_eq!(component_id(&app), "Packages");
+    assert!(!package_file(&tmp, ".gitignore").exists());
+}
+
+#[test]
+fn test_plus_then_blank_enter_on_a_missing_file_leaves_no_file() {
+    let (mut app, tmp) = make_test_app();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(key_char('+'));
+    app.component_dispatch(enter_key());
+    assert!(!ignore_editor(&app).files()[0].present());
+    assert!(!ignore_editor(&app).is_dirty());
+    assert!(!package_file(&tmp, ".gitignore").exists());
+}
+
+#[test]
+fn test_stow_local_ignore_line_added_in_the_editor_is_written_on_w() {
+    let (mut app, tmp) = make_test_app();
+    open_ignore_on_test_package(&mut app);
+    app.component_dispatch(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    app.component_dispatch(key_char('+'));
+    type_text(&mut app, "^/README.*");
+    app.component_dispatch(enter_key());
+    app.component_dispatch(key_char('w'));
+
+    let written = std::fs::read_to_string(package_file(&tmp, ".stow-local-ignore")).unwrap();
+    assert!(
+        written.lines().any(|line| line == "^/README.*"),
+        "{written}"
+    );
+    assert!(!ignore_editor(&app).is_dirty());
+}
+
+#[test]
+fn test_saving_the_ignore_files_invalidates_the_status_cache() {
+    let (mut app, _tmp) = make_test_app();
+    open_ignore_on_test_package(&mut app);
+    app.ctx.status_cache.borrow_mut().insert(
+        ("home".to_string(), "test".to_string()),
+        andre_core::StowStatus::Stowed,
+    );
+    app.component_dispatch(key_char('+'));
+    type_text(&mut app, "*.env");
+    app.component_dispatch(enter_key());
+    assert!(
+        app.ctx.status_cache.borrow().get("home", "test").is_some(),
+        "the cache is untouched until a save"
+    );
+
+    app.component_dispatch(key_char('w'));
+    assert!(
+        app.ctx.status_cache.borrow().get("home", "test").is_none(),
+        "a save makes the packages screen read statuses again"
+    );
+}

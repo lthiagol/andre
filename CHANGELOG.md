@@ -11,6 +11,21 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- **Ignore editor (`i`).** On the packages screen, `i` opens the two ignore files of the
+  cursor's package: `.gitignore` (kept out of git) and `.stow-local-ignore` (never
+  linked). `Tab` switches file; the tabs show how many patterns each holds, or `(none)`.
+  `+` adds a line (Enter or `e` edits the cursor's line, `x` deletes it, a blank line
+  removes it). A missing file starts from its starter lines when a line is first added:
+  the secrets list for `.gitignore`, the built-in stow list for `.stow-local-ignore`
+  (which replaces stow's defaults, so the detail says so). A `.stow-local-ignore` line
+  that does not compile is refused and kept open with the reason. `w` writes the changed
+  files; `Esc` with unsaved edits asks: `y` save, `n` discard, `Esc` stay. The detail shows
+  what the cursor's line matches in the package: stow lines use the engine's own rules;
+  `.gitignore` lines use a simple glob preview, which says so, because git decides for itself.
+- `ignore::save_lines` (`andre-core`): writes a whole ignore file, refusing a
+  `.stow-local-ignore` whose patterns do not compile.
+- `ui::dialog::leave_dialog` is shared by the profile editor and the ignore editor.
+
 - **Profile membership (`p`).** On the packages screen, `p` opens a dialog listing every
   profile with a checkbox for the cursor's package. `Space` toggles one, `Enter` writes
   the profile files that changed (a package is added at the end of the list, or removed),

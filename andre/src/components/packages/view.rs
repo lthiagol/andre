@@ -450,13 +450,13 @@ mod tests {
     }
 
     #[test]
-    fn test_packages_hints_name_the_run_and_offer_p_only_on_a_package() {
+    fn test_packages_hints_name_the_run_and_offer_p_and_i_only_on_a_package() {
         let keys =
             |hints: &[Hint]| -> Vec<String> { hints.iter().map(|h| h.key.to_string()).collect() };
         let on_package = packages_hints(Some("stow 2".into()), true, true);
         assert_eq!(
             keys(&on_package),
-            ["Enter", "Space", "p", "\u{2190}\u{2192}", "Esc"]
+            ["Enter", "Space", "i", "p", "\u{2190}\u{2192}", "Esc"]
         );
         assert_eq!(on_package[0].label, "stow 2");
 
