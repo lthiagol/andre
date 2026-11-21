@@ -47,9 +47,9 @@ test-unit:
 test-tui:
 	@echo "Using runner: $(TEST_RUNNER) (filter: test-tui)"
 	@if [ -n "$(NEXTTEST)" ]; then \
-		$(TEST_RUNNER) --workspace --all-features -E 'binary(/^(interaction|render|status_cache|config_discovery|config_persistence|smoke)/)'; \
+		$(TEST_RUNNER) --workspace --all-features -E 'binary(/^(interaction|mouse|render|status_cache|config_discovery|config_persistence|smoke)/)'; \
 	else \
-		$(TEST_RUNNER) --test interaction --test render --test status_cache --test config_discovery --test config_persistence --test smoke --all-features; \
+		$(TEST_RUNNER) --test interaction --test mouse --test render --test status_cache --test config_discovery --test config_persistence --test smoke --all-features; \
 	fi
 
 test-e2e:

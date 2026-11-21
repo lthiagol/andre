@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 
+use crossterm::event::KeyCode;
 use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
@@ -17,6 +18,7 @@ use andre_core::StowStatus;
 use crate::theme::ThemeColors;
 use crate::ui::elide;
 use crate::ui::icons::Icons;
+use crate::ui::list_panel::ListClick;
 use crate::ui::selection;
 use crate::ui::status_style::{status_color, status_word, STATUS_WORD_WIDTH};
 
@@ -326,6 +328,54 @@ pub fn tree_line_without_checkboxes(
     width: u16,
 ) -> Line<'static> {
     tree_row(row, selected, icons, colors, width, false)
+}
+
+/// Column of a group row's fold triangle and of its checkbox, counted from the row's first
+/// column (the gutter is column 0). A package row's checkbox sits at `PACKAGE_MARK_COL`.
+const GROUP_FOLD_COL: u16 = 1;
+const GROUP_MARK_COL: u16 = 3;
+const PACKAGE_MARK_COL: u16 = 5;
+
+/// A clickable glyph in a tree row: the fold triangle of a group or a checkbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Glyph {
+    Fold,
+    Mark,
+}
+
+/// The key a click on `row` stands for, as the keyboard has it. A fold triangle folds (Left)
+/// or unfolds (Right) its group. A checkbox sends Space. A click on the row the cursor already
+/// rests on sends `primary`, if the list has one. Any other click only selects, so it sends
+/// nothing.
+pub fn click_key(
+    row: &TreeRow,
+    click: ListClick,
+    checkboxes: bool,
+    primary: Option<KeyCode>,
+) -> Option<KeyCode> {
+    match glyph_at(row, click.col, checkboxes) {
+        Some(Glyph::Fold) => match row {
+            TreeRow::Group { folded: true, .. } => Some(KeyCode::Right),
+            _ => Some(KeyCode::Left),
+        },
+        Some(Glyph::Mark) => Some(KeyCode::Char(' ')),
+        None if click.activate => primary,
+        None => None,
+    }
+}
+
+/// The glyph drawn at column `col` of `row`, or `None` for text and spaces. `checkboxes` says
+/// whether the list draws checkboxes, as `tree_line` does and `tree_line_without_checkboxes`
+/// does not.
+pub fn glyph_at(row: &TreeRow, col: u16, checkboxes: bool) -> Option<Glyph> {
+    match row {
+        TreeRow::Group { .. } => match col {
+            GROUP_FOLD_COL => Some(Glyph::Fold),
+            GROUP_MARK_COL if checkboxes => Some(Glyph::Mark),
+            _ => None,
+        },
+        TreeRow::Package { .. } => (checkboxes && col == PACKAGE_MARK_COL).then_some(Glyph::Mark),
+    }
 }
 
 fn tree_row(
@@ -937,5 +987,92 @@ mod tests {
             assert_eq!(buf.area().width, width);
             assert_eq!(buf.area().height, height);
         }
+    }
+
+    /// The symbol drawn at each column of `row`, as `tree_line` paints it at 24 columns.
+    fn painted_symbols(row: &TreeRow, checkboxes: bool) -> Vec<String> {
+        let line = if checkboxes {
+            tree_line(row, false, &UNICODE, &colors(), 24)
+        } else {
+            tree_line_without_checkboxes(row, false, &UNICODE, &colors(), 24)
+        };
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        // Column 0 is the gutter; each glyph is one column wide.
+        text.chars().map(|c| c.to_string()).collect()
+    }
+
+    #[test]
+    fn test_glyph_at_finds_the_fold_and_checkbox_cells_of_every_row() {
+        let tree = Tree::new(vec![home()]);
+        let rows = tree.rows();
+        for checkboxes in [true, false] {
+            let symbols = painted_symbols(&rows[0], checkboxes);
+            assert_eq!(
+                glyph_at(&rows[0], 1, checkboxes),
+                Some(Glyph::Fold),
+                "fold cell, checkboxes={checkboxes}"
+            );
+            assert_eq!(symbols[1], UNICODE.fold_open);
+            let mark = glyph_at(&rows[0], 3, checkboxes);
+            assert_eq!(mark.is_some(), checkboxes, "group mark cell");
+            if checkboxes {
+                // A group with some packages marked shows the "some" box.
+                assert_eq!(symbols[3], UNICODE.checkbox_some);
+            }
+            let package = painted_symbols(&rows[1], checkboxes);
+            let mark = glyph_at(&rows[1], 5, checkboxes);
+            assert_eq!(mark.is_some(), checkboxes, "package mark cell");
+            if checkboxes {
+                assert_eq!(package[5], UNICODE.checkbox_on);
+            }
+        }
+    }
+
+    #[test]
+    fn test_glyph_at_is_none_on_text_and_gutter() {
+        let tree = Tree::new(vec![home()]);
+        let rows = tree.rows();
+        for col in [0, 2, 4, 6, 9, 20] {
+            assert_eq!(glyph_at(&rows[0], col, true), None, "group col {col}");
+        }
+        for col in [0, 1, 2, 3, 4, 6, 7, 9, 20] {
+            assert_eq!(glyph_at(&rows[1], col, true), None, "package col {col}");
+        }
+    }
+
+    #[test]
+    fn test_click_key_sends_the_key_each_glyph_or_row_stands_for() {
+        let mut tree = Tree::new(vec![home()]);
+        let click = |col, activate| ListClick {
+            row: 0,
+            col,
+            activate,
+        };
+        let rows = tree.rows();
+        assert_eq!(
+            click_key(&rows[0], click(1, false), true, None),
+            Some(KeyCode::Left)
+        );
+        assert_eq!(
+            click_key(&rows[0], click(3, false), true, Some(KeyCode::Enter)),
+            Some(KeyCode::Char(' ')),
+            "the group's checkbox"
+        );
+        assert_eq!(
+            click_key(&rows[0], click(6, true), true, Some(KeyCode::Enter)),
+            Some(KeyCode::Enter),
+            "a click on the selected row sends the primary key"
+        );
+        assert_eq!(
+            click_key(&rows[0], click(6, false), true, Some(KeyCode::Enter)),
+            None,
+            "a click that only selects sends nothing"
+        );
+        tree.fold(0, true);
+        let rows = tree.rows();
+        assert_eq!(
+            click_key(&rows[0], click(1, false), true, None),
+            Some(KeyCode::Right)
+        );
     }
 }

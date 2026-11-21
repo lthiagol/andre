@@ -418,6 +418,21 @@ groups:
 | `Space` | Toggle selection |
 | `Escape` | Back / Cancel |
 
+### Mouse
+
+Mouse capture is always on. Hold Shift to select text in the terminal.
+
+| Click | Action |
+|:---|:---|
+| List row | Select it. Clicking the selected row runs its primary key: open, or Space to mark on package lists |
+| `■` / `□` checkbox | Mark or unmark that row |
+| `▾` / `▸` fold | Fold or unfold the group |
+| Top-bar chip | Its key: the action pill cycles, `verbose` and each flag toggle |
+| Footer hint | Its key, such as `Esc back` |
+
+The wheel over a list moves the cursor one row per notch. Clicks outside an open dialog or
+text field do nothing. The new-package name list takes clicks while its name field has focus.
+
 ### Profiles
 
 Main menu item `profiles` lists the profiles on the left (name and resolved package
@@ -529,6 +544,7 @@ andre/
 │   ├── src/                     # Unit tests (e.g., execute.rs)
 │   └── tests/
 │       ├── interaction.rs       # Keyboard dispatch through components
+│       ├── mouse.rs             # Clicks and wheel through App::mouse_dispatch
 │       ├── render.rs            # Terminal rendering snapshots
 │       ├── config_discovery.rs  # Config file search paths
 │       ├── config_persistence.rs# Save/load/edit round-trips

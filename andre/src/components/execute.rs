@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, text::Line, widgets::Paragraph, Frame};
 
 use crate::components::{AppContext, Component, LogLevel, Transition};
@@ -13,7 +13,7 @@ use crate::ui::execute::{
 };
 use crate::ui::footer::{execute_hints, Hint};
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, Empty, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
 
 pub struct ExecuteComponent {
     rx: Option<tokio::sync::mpsc::Receiver<ExecutionUpdate>>,
@@ -226,6 +226,14 @@ impl Component for ExecuteComponent {
 
     fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
         execute_hints(self.state == ExecutionState::Completed)
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+        let len = self.rows_len();
+        match click_list(&mut self.list, ev, len) {
+            Some(_) => Transition::Handled,
+            None => Transition::None,
+        }
     }
 
     fn prepare(&mut self, area: Rect) {

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -10,6 +11,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::theme::ThemeColors;
+use crate::ui::hits::{flatten, hit_rects, pieces_width, Piece};
 
 /// Columns between the hints and the right-hand side, and between the theme
 /// chip and `q quit`.
@@ -88,26 +90,60 @@ fn key_span(s: &str, colors: &ThemeColors) -> Span<'static> {
 }
 
 /// The hints as spans: each key in `key`, each label in `text_dim`, two columns between.
+#[cfg(test)]
 fn hint_spans(hints: &[Hint], colors: &ThemeColors) -> Vec<Span<'static>> {
-    let mut spans = Vec::with_capacity(hints.len() * 3);
+    flatten(hint_pieces(hints, colors))
+}
+
+/// The hints as pieces, two columns apart. A hint is clickable with the key it shows.
+fn hint_pieces(hints: &[Hint], colors: &ThemeColors) -> Vec<Piece> {
+    let mut pieces = Vec::with_capacity(hints.len() * 2);
     for (i, hint) in hints.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::raw(" ".repeat(HINT_GAP)));
+            pieces.push(Piece::plain(vec![Span::raw(" ".repeat(HINT_GAP))]));
         }
-        if hint.key.is_empty() {
-            spans.push(Span::styled(
-                hint.label.to_string(),
-                Style::default().fg(colors.text_dim),
-            ));
-            continue;
-        }
-        spans.push(key_span(&hint.key, colors));
-        spans.push(Span::styled(
+        pieces.push(hint_piece(hint, colors));
+    }
+    pieces
+}
+
+fn hint_piece(hint: &Hint, colors: &ThemeColors) -> Piece {
+    if hint.key.is_empty() {
+        let spans = vec![Span::styled(
+            hint.label.to_string(),
+            Style::default().fg(colors.text_dim),
+        )];
+        return Piece::plain(spans);
+    }
+    let spans = vec![
+        key_span(&hint.key, colors),
+        Span::styled(
             format!(" {}", hint.label),
             Style::default().fg(colors.text_dim),
-        ));
+        ),
+    ];
+    match key_for_hint(&hint.key) {
+        Some(code) => Piece::keyed(spans, code),
+        None => Piece::plain(spans),
     }
-    spans
+}
+
+/// The key a hint shows, as a click sends it. A hint that names several keys (`↑↓`, `1–8`)
+/// has none.
+fn key_for_hint(key: &str) -> Option<KeyCode> {
+    match key {
+        "Enter" => Some(KeyCode::Enter),
+        "Esc" => Some(KeyCode::Esc),
+        "Tab" => Some(KeyCode::Tab),
+        "Space" => Some(KeyCode::Char(' ')),
+        _ => {
+            let mut chars = key.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) if c.is_ascii_graphic() => Some(KeyCode::Char(c)),
+                _ => None,
+            }
+        }
+    }
 }
 
 /// The bottom bar: the current screen's key hints on the left, then the theme
@@ -140,25 +176,54 @@ pub fn footer_line(
     theme_name: &str,
     width: usize,
 ) -> Line<'static> {
-    let quit = quit_spans(colors);
+    let (left, right) = footer_pieces(colors, hints, theme_name, width);
+    join(flatten(left), flatten(right), width)
+}
+
+/// The footer's clickable parts, each as its rect in `area` and the key a click sends.
+pub fn footer_hits(
+    area: Rect,
+    colors: &ThemeColors,
+    hints: &[Hint],
+    theme_name: &str,
+) -> Vec<(Rect, KeyEvent)> {
+    let width = usize::from(area.width);
+    let (left, right) = footer_pieces(colors, hints, theme_name, width);
+    // `join` puts the right group at the edge; with no room left it follows the left group.
+    let left_width = pieces_width(&left);
+    let right_start = left_width + width.saturating_sub(left_width + pieces_width(&right));
+    let mut hits = hit_rects(area, &left, 0);
+    hits.extend(hit_rects(area, &right, right_start));
+    hits
+}
+
+/// The footer as its left group (hints) and right group (theme chip, `q quit`). The theme
+/// chip shows its full name when the hints leave room, then just `theme`, and is dropped
+/// when not even that fits. Then the lowest-priority hints are dropped whole.
+fn footer_pieces(
+    colors: &ThemeColors,
+    hints: &[Hint],
+    theme_name: &str,
+    width: usize,
+) -> (Vec<Piece>, Vec<Piece>) {
+    let quit = Piece::keyed(quit_spans(colors), KeyCode::Char('q'));
     let hints_len = hints_width(hints);
 
     for theme in [
         theme_chip(colors, Some(theme_name)),
         theme_chip(colors, None),
     ] {
-        let right_width = spans_width(&theme) + GAP + spans_width(&quit);
+        let theme = Piece::keyed(theme, KeyCode::Char('t'));
+        let right_width = theme.width() + GAP + quit.width();
         if hints_len + GAP + right_width <= width {
-            let mut right = theme;
-            right.push(Span::raw(" ".repeat(GAP)));
-            right.extend(quit);
-            return join(hint_spans(hints, colors), right, width);
+            let right = vec![theme, Piece::plain(vec![Span::raw(" ".repeat(GAP))]), quit];
+            return (hint_pieces(hints, colors), right);
         }
     }
 
-    let room = width.saturating_sub(GAP + spans_width(&quit));
+    let room = width.saturating_sub(GAP + quit.width());
     let kept = fit(hints.to_vec(), room);
-    join(hint_spans(&kept, colors), quit, width)
+    (hint_pieces(&kept, colors), vec![quit])
 }
 
 /// `left`, then spaces, then `right`, filling `width` columns.
@@ -523,12 +588,14 @@ pub fn membership_dialog_hints() -> Vec<Hint> {
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_dialog_hints, execute_hints, fit, footer_line, hint_spans,
-        hints_width as hint_row_width, name_dialog_hints, profiles_hints, screen_hints, Hint,
-        PRIO_PRIMARY,
+        delete_dialog_hints, execute_hints, fit, footer_hits, footer_line, hint_spans,
+        hints_width as hint_row_width, key_for_hint, name_dialog_hints, profiles_hints,
+        screen_hints, Hint, PRIO_PRIMARY,
     };
     use crate::theme::ThemeColors;
     use andre_core::Theme;
+    use crossterm::event::KeyCode;
+    use ratatui::layout::Rect;
     use ratatui::{
         style::Modifier,
         text::{Line, Span},
@@ -964,5 +1031,38 @@ mod tests {
             );
             assert_eq!(line_width(&line), INNER_WIDTH);
         }
+    }
+
+    #[test]
+    fn test_key_for_hint_names_the_key_a_click_sends() {
+        assert_eq!(key_for_hint("Enter"), Some(KeyCode::Enter));
+        assert_eq!(key_for_hint("Esc"), Some(KeyCode::Esc));
+        assert_eq!(key_for_hint("Space"), Some(KeyCode::Char(' ')));
+        assert_eq!(key_for_hint("y"), Some(KeyCode::Char('y')));
+        assert_eq!(key_for_hint("+"), Some(KeyCode::Char('+')));
+        assert_eq!(key_for_hint("\u{2191}\u{2193}"), None, "two keys");
+        assert_eq!(key_for_hint("1\u{2013}8"), None, "a range of keys");
+        assert_eq!(key_for_hint("PgUp/PgDn"), None);
+    }
+
+    #[test]
+    fn test_footer_hits_cover_the_hints_the_theme_chip_and_quit() {
+        let area = Rect::new(0, 0, 80, 1);
+        let hits = footer_hits(area, &colors(), &screen_hints("Packages"), "nord");
+        let keys: Vec<KeyCode> = hits.iter().map(|(_, key)| key.code).collect();
+        for code in [
+            KeyCode::Char(' '),
+            KeyCode::Enter,
+            KeyCode::Esc,
+            KeyCode::Char('t'),
+            KeyCode::Char('q'),
+        ] {
+            assert!(keys.contains(&code), "{code:?} in {keys:?}");
+        }
+        let (quit, _) = hits
+            .iter()
+            .find(|(_, key)| key.code == KeyCode::Char('q'))
+            .unwrap();
+        assert_eq!(quit.right(), 80, "quit sits at the right edge");
     }
 }

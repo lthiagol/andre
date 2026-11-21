@@ -12,17 +12,17 @@ use std::path::PathBuf;
 
 use andre_core::ignore::{read_lines, save_lines, IgnoreRules, RuleSource};
 use andre_core::{IgnoreFile, Theme};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, Frame};
 
 use crate::components::{AppContext, Component, InputMode, Transition};
-use crate::input::Input;
+use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::detail::{render_detail, Detail};
 use crate::ui::dialog::{dialog_rect, leave_dialog, render_dialog};
 use crate::ui::footer::{ignore_edit_hints, ignore_hints, leave_dialog_hints, Hint};
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, Empty, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
 use crate::ui::text_field::TextField;
 
 /// The package's ignore files, in tab order.
@@ -129,6 +129,11 @@ impl IgnoreEditComponent {
     /// Whether any file differs from what the disk holds.
     pub fn is_dirty(&self) -> bool {
         self.files.iter().any(IgnoreDraft::is_dirty)
+    }
+
+    /// The title of the cursor's detail: the line's text, or the file's name.
+    pub fn detail_title(&self) -> &str {
+        &self.detail_title
     }
 
     /// The cursor's row. Its index is in the list, so it can be a line, the line being typed
@@ -437,6 +442,18 @@ impl Component for IgnoreEditComponent {
             ignore_edit_hints()
         } else {
             ignore_hints(self.on_line())
+        }
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        let len = self.row_count();
+        match click_list(&mut self.list, ev, len) {
+            Some(click) if click.activate => self.handle_key(input::key(KeyCode::Enter), ctx),
+            Some(_) => {
+                self.refresh_detail(ctx.core.theme);
+                Transition::Handled
+            }
+            None => Transition::None,
         }
     }
 

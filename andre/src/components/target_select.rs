@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -16,13 +16,13 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::components::unstow::UnstowBrowseComponent;
 use crate::components::{AppContext, Component, Transition};
-use crate::input::Input;
+use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::detail::{render_detail, Detail};
 use crate::ui::display_path;
 use crate::ui::elide;
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, Empty, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
 use crate::ui::selection::row_with_glyphs;
 use andre_core::{discover_packages, Theme};
 
@@ -186,6 +186,16 @@ impl Component for TargetSelectComponent {
             },
             KeyCode::Esc => Transition::Pop,
             _ => Transition::None,
+        }
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        self.sync(ctx);
+        let len = self.groups.len();
+        match click_list(&mut self.list, ev, len) {
+            Some(click) if click.activate => self.handle_key(input::key(KeyCode::Enter), ctx),
+            Some(_) => Transition::Handled,
+            None => Transition::None,
         }
     }
 

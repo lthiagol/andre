@@ -1,18 +1,21 @@
 use std::path::PathBuf;
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 
 use andre_core::profile::{ProfileSet, PROFILES_DIR};
 use andre_core::{config::Config, AppState as CoreState, Result};
 
 use crate::components::{AppContext, Component, InputMode, LogLevel, Transition};
 use crate::input::flag_for_key;
+use crate::ui::hits::{key_at, ChromeHits};
 
 pub struct App {
     pub ctx: AppContext,
     pub component_stack: Vec<Box<dyn Component>>,
     pub quitting: bool,
     pub onboard_mode: bool,
+    /// The top bar's and the footer's clickable parts, as drawn by the last frame.
+    pub chrome_hits: ChromeHits,
 }
 
 impl App {
@@ -69,6 +72,7 @@ impl App {
             },
             quitting: false,
             onboard_mode: false,
+            chrome_hits: ChromeHits::default(),
             component_stack: vec![Box::new(crate::components::MainMenuComponent::default())],
         })
     }
@@ -130,7 +134,6 @@ impl App {
 
     /// Handle global keys (q, s, v, d, n, a, o, t). Returns true if handled.
     pub fn handle_global_key(&mut self, key: KeyEvent) -> bool {
-        use crossterm::event::KeyCode;
         if let Some(flag) = flag_for_key(key.code) {
             self.ctx.core.flags.toggle(flag);
             return true;
@@ -150,6 +153,53 @@ impl App {
             }
             _ => false,
         }
+    }
+
+    /// Routes a mouse event. Only a left click and the wheel do anything. A click on the top
+    /// bar or the footer sends the key that part shows: a top-bar chip only when the screen
+    /// takes no text, the same rule as keys. Anything else goes to the screen, unless a dialog
+    /// or a text field is open: those take the input, so clicks outside them change nothing.
+    pub fn mouse_dispatch(&mut self, ev: MouseEvent) {
+        let click = ev.kind == MouseEventKind::Down(MouseButton::Left);
+        let wheel = matches!(
+            ev.kind,
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        );
+        if !click && !wheel {
+            return;
+        }
+        // The bars answer clicks only, so a wheel notch over a chip or a hint does nothing.
+        if click {
+            if let Some(key) = key_at(&self.chrome_hits.top_bar, ev.column, ev.row) {
+                if self.top_mode() == InputMode::Normal {
+                    self.handle_global_key(key);
+                }
+                return;
+            }
+            if let Some(key) = key_at(&self.chrome_hits.footer, ev.column, ev.row) {
+                // `t` and `q` are typed characters in a text field, so their chips do nothing
+                // there, as the top bar's do. The other hints go to the screen.
+                let typed = matches!(key.code, KeyCode::Char('t' | 'q'));
+                if !typed || self.top_mode() == InputMode::Normal {
+                    self.component_dispatch(key);
+                }
+                return;
+            }
+        }
+        if let Some(component) = self.component_stack.last_mut() {
+            if component.mouse_blocked() {
+                return;
+            }
+            let transition = component.handle_mouse(ev, &mut self.ctx);
+            self.process_transition(transition);
+        }
+    }
+
+    /// The input mode of the screen on top, the one that takes keys and clicks.
+    fn top_mode(&self) -> InputMode {
+        self.component_stack
+            .last()
+            .map_or(InputMode::Normal, |c| c.input_mode())
     }
 
     pub fn update_components(&mut self) {

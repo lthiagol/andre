@@ -2,6 +2,7 @@
 //! `ui::selection`; [`ListView`] owns the cursor, the window onto the rows and the mouse
 //! hit test. Its `prepare` runs before paint, so `render_list_panel` only reads it.
 
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     layout::{Alignment, Margin, Rect},
     style::Style,
@@ -9,6 +10,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::input::step_cursor;
 use crate::theme::ThemeColors;
@@ -47,14 +49,15 @@ impl ListView {
         }
     }
 
+    /// Whether a mouse position is inside the rows (the panel's border is not).
+    pub fn contains(&self, x: u16, y: u16) -> bool {
+        x >= self.inner.x && x < self.inner.right() && y >= self.inner.y && y < self.inner.bottom()
+    }
+
     /// The row under a mouse position, or `None` outside the rows.
     pub fn row_at(&self, x: u16, y: u16) -> Option<usize> {
-        let inside = x >= self.inner.x
-            && x < self.inner.right()
-            && y >= self.inner.y
-            && y < self.inner.bottom();
         let row = self.offset + usize::from(y.checked_sub(self.inner.y)?);
-        (inside && row < self.len).then_some(row)
+        (self.contains(x, y) && row < self.len).then_some(row)
     }
 
     /// Moves the cursor one row, wrapping at either end.
@@ -81,6 +84,47 @@ impl ListView {
 /// The rows inside a bordered list panel. Rows are built at this width.
 pub fn inner(panel: Rect) -> Rect {
     panel.inner(Margin::new(1, 1))
+}
+
+/// What one mouse event did to a list. `row` is the row under the pointer; a wheel notch
+/// reports the cursor's new row. `col` counts from the list's first inner column, so a
+/// caller can tell a row's glyph cells apart. `activate` is set when a click landed on the
+/// row the cursor already was on: that is the row's primary verb (D9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListClick {
+    pub row: usize,
+    pub col: u16,
+    pub activate: bool,
+}
+
+/// Applies a left click or a wheel notch to `view`, a list of `len` rows. A click moves the
+/// cursor onto the row under the pointer. A wheel notch moves it one row, as ↑↓ does. Other
+/// events, and points outside the rows, return `None` and leave `view` alone.
+pub fn click_list(view: &mut ListView, ev: MouseEvent, len: usize) -> Option<ListClick> {
+    match ev.kind {
+        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+            if len == 0 || !view.contains(ev.column, ev.row) {
+                return None;
+            }
+            view.cursor = step_cursor(view.cursor, len, ev.kind == MouseEventKind::ScrollDown);
+            Some(ListClick {
+                row: view.cursor,
+                col: 0,
+                activate: false,
+            })
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            let row = view.row_at(ev.column, ev.row).filter(|&row| row < len)?;
+            let activate = row == view.cursor;
+            view.cursor = row;
+            Some(ListClick {
+                row,
+                col: ev.column - view.inner.x,
+                activate,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// What a list shows when it has no rows: a message and an optional key hint, centred.
@@ -168,6 +212,33 @@ pub fn render_titled_list_panel(
     );
 }
 
+/// Rows the empty state takes: the message, and with a hint a blank row and the hint.
+fn empty_rows(empty: &Empty) -> usize {
+    if empty.hint.is_some() {
+        3
+    } else {
+        1
+    }
+}
+
+/// Blank rows above the empty state, which is centred vertically in `height` rows.
+fn empty_top(height: u16, rows: usize) -> usize {
+    usize::from(height).saturating_sub(rows) / 2
+}
+
+/// The row of an empty list's key hint inside `body`, centred as `render_empty` draws it.
+/// `None` when the list has no hint or the row does not fit.
+pub fn empty_hint_rect(body: Rect, empty: &Empty) -> Option<Rect> {
+    let (key, label) = empty.hint?;
+    let row = empty_top(body.height, empty_rows(empty)) + 2;
+    if row >= usize::from(body.height) {
+        return None;
+    }
+    let width = (key.width() + 1 + label.width()).min(usize::from(body.width)) as u16;
+    let x = body.x + (body.width - width) / 2;
+    Some(Rect::new(x, body.y + row as u16, width, 1))
+}
+
 fn render_empty(frame: &mut Frame, area: Rect, colors: &ThemeColors, empty: &Empty) {
     let mut lines = vec![Line::from(Span::styled(
         empty.message.to_string(),
@@ -180,7 +251,7 @@ fn render_empty(frame: &mut Frame, area: Rect, colors: &ThemeColors, empty: &Emp
             Span::styled(format!(" {label}"), Style::default().fg(colors.text_dim)),
         ]));
     }
-    let top = usize::from(area.height).saturating_sub(lines.len()) / 2;
+    let top = empty_top(area.height, lines.len());
     let mut padded = vec![Line::raw(""); top];
     padded.extend(lines);
     frame.render_widget(Paragraph::new(padded).alignment(Alignment::Center), area);
@@ -199,6 +270,7 @@ mod tests {
     use super::*;
     use crate::theme::ThemeColors;
     use andre_core::Theme;
+    use crossterm::event::KeyModifiers;
 
     /// A 76x16 panel at the origin.
     fn panel() -> Rect {
@@ -400,5 +472,98 @@ mod tests {
         let selected = Line::from(Span::styled("picked", Style::default().bg(c.selection)));
         let buf = drawn(vec![selected], &ListView::default(), None);
         assert_eq!(buf[(1, 1)].bg, c.selection);
+    }
+
+    fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn test_click_selects_the_row_under_the_pointer_then_activates_it() {
+        let mut view = ListView::default();
+        view.prepare(panel(), 40);
+        let down = MouseEventKind::Down(MouseButton::Left);
+        // Row y = 3 is the third inner row (inner starts at y = 1); x = 5 is column 4 of it.
+        let first = click_list(&mut view, mouse(down, 5, 3), 40);
+        assert_eq!(
+            first,
+            Some(ListClick {
+                row: 2,
+                col: 4,
+                activate: false
+            })
+        );
+        assert_eq!(view.cursor, 2);
+        let second = click_list(&mut view, mouse(down, 5, 3), 40);
+        assert_eq!(second.map(|c| c.activate), Some(true));
+    }
+
+    #[test]
+    fn test_click_outside_the_rows_leaves_the_list_alone() {
+        let mut view = ListView::default();
+        view.prepare(panel(), 3);
+        let down = MouseEventKind::Down(MouseButton::Left);
+        assert_eq!(
+            click_list(&mut view, mouse(down, 0, 1), 3),
+            None,
+            "left border"
+        );
+        assert_eq!(
+            click_list(&mut view, mouse(down, 1, 0), 3),
+            None,
+            "top border"
+        );
+        assert_eq!(
+            click_list(&mut view, mouse(down, 1, 4), 3),
+            None,
+            "past the last row"
+        );
+        assert_eq!(view.cursor, 0);
+    }
+
+    #[test]
+    fn test_wheel_moves_the_cursor_one_row_and_wraps_like_the_arrows() {
+        let mut view = ListView::default();
+        view.prepare(panel(), 5);
+        let up = MouseEventKind::ScrollUp;
+        let down = MouseEventKind::ScrollDown;
+        let click = click_list(&mut view, mouse(down, 5, 5), 5);
+        assert_eq!(
+            click,
+            Some(ListClick {
+                row: 1,
+                col: 0,
+                activate: false
+            })
+        );
+        assert_eq!(
+            click_list(&mut view, mouse(up, 5, 5), 5).map(|c| c.row),
+            Some(0)
+        );
+        assert_eq!(
+            click_list(&mut view, mouse(up, 5, 5), 5).map(|c| c.row),
+            Some(4)
+        );
+        assert_eq!(
+            click_list(&mut view, mouse(up, 0, 0), 5),
+            None,
+            "outside the panel"
+        );
+    }
+
+    #[test]
+    fn test_other_mouse_events_do_nothing() {
+        let mut view = ListView::default();
+        view.prepare(panel(), 5);
+        let moved = mouse(MouseEventKind::Moved, 5, 2);
+        let right = mouse(MouseEventKind::Down(MouseButton::Right), 5, 2);
+        assert_eq!(click_list(&mut view, moved, 5), None);
+        assert_eq!(click_list(&mut view, right, 5), None);
+        assert_eq!(view.cursor, 0);
     }
 }

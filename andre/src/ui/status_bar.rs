@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -13,6 +14,7 @@ use andre_core::{IconSet, StowFlags, MAX_VERBOSITY};
 
 use super::elide;
 use crate::theme::ThemeColors;
+use crate::ui::hits::{flatten, hit_rects, pieces_width, Piece};
 use crate::ui::icons::Icons;
 
 /// Columns between chips.
@@ -120,18 +122,49 @@ pub fn top_bar_line(
     debug: bool,
     width: usize,
 ) -> Line<'static> {
-    let group = [Labels::Full, Labels::HotkeyOnly]
+    let group = top_bar_group(colors, flags, icons, debug, width);
+    centred(flatten(group), width)
+}
+
+/// The top bar's clickable parts, each as its rect in `area` and the key a click sends: the
+/// action pill (`s`), the verbosity meter (`v`) and each flag chip. The debug chip is not one.
+pub fn top_bar_hits(
+    area: Rect,
+    colors: &ThemeColors,
+    flags: &StowFlags,
+    icons: &Icons,
+    debug: bool,
+) -> Vec<(Rect, KeyEvent)> {
+    let width = usize::from(area.width);
+    let group = top_bar_group(colors, flags, icons, debug, width);
+    hit_rects(area, &group, group_offset(pieces_width(&group), width))
+}
+
+/// The fullest chip labels that fit in `width` columns, as pieces.
+fn top_bar_group(
+    colors: &ThemeColors,
+    flags: &StowFlags,
+    icons: &Icons,
+    debug: bool,
+    width: usize,
+) -> Vec<Piece> {
+    [Labels::Full, Labels::HotkeyOnly]
         .into_iter()
         .map(|labels| left_chips(colors, flags, icons, debug, labels))
-        .find(|group| spans_width(group) <= width)
-        .unwrap_or_else(|| left_chips(colors, flags, icons, debug, Labels::LevelOnly));
-    centred(group, width)
+        .find(|group| pieces_width(group) <= width)
+        .unwrap_or_else(|| left_chips(colors, flags, icons, debug, Labels::LevelOnly))
+}
+
+/// Columns before a group of `group_width` that centres it in `width`. The odd column, if
+/// any, goes on the right.
+fn group_offset(group_width: usize, width: usize) -> usize {
+    width.saturating_sub(group_width) / 2
 }
 
 /// Pads `group` with spaces so it sits in the middle of `width` columns.
 fn centred(group: Vec<Span<'static>>, width: usize) -> Line<'static> {
     let free = width.saturating_sub(spans_width(&group));
-    let left = free / 2;
+    let left = group_offset(spans_width(&group), width);
     let right = free - left;
     let mut spans = Vec::with_capacity(group.len() + 2);
     spans.push(Span::raw(" ".repeat(left)));
@@ -146,7 +179,7 @@ fn left_chips(
     icons: &Icons,
     debug: bool,
     labels: Labels,
-) -> Vec<Span<'static>> {
+) -> Vec<Piece> {
     let mut chips = vec![
         toggle_chip(colors, icons, "dry-run", 0, flags.dry_run, labels),
         toggle_chip(colors, icons, "no-fold", 0, flags.no_folding, labels),
@@ -154,24 +187,35 @@ fn left_chips(
         toggle_chip(colors, icons, "dotfiles", 1, flags.dotfiles, labels),
     ];
     if debug {
-        chips.push(vec![Span::styled(
+        chips.push(Piece::plain(vec![Span::styled(
             "debug",
             Style::default()
                 .fg(colors.warn)
                 .add_modifier(Modifier::BOLD),
-        )]);
+        )]));
     }
 
-    let mut spans = action_pill(colors, flags.action.as_str());
-    spans.push(Span::raw(" "));
-    spans.extend(verbose_chip(colors, icons, flags.verbosity, labels));
-    spans.push(Span::raw(" ".repeat(GAP)));
-    spans.push(Span::styled(DIVIDER, Style::default().fg(colors.border)));
+    let mut pieces = vec![
+        Piece::keyed(
+            action_pill(colors, flags.action.as_str()),
+            KeyCode::Char('s'),
+        ),
+        Piece::plain(vec![Span::raw(" ")]),
+        Piece::keyed(
+            verbose_chip(colors, icons, flags.verbosity, labels),
+            KeyCode::Char('v'),
+        ),
+        Piece::plain(vec![Span::raw(" ".repeat(GAP))]),
+        Piece::plain(vec![Span::styled(
+            DIVIDER,
+            Style::default().fg(colors.border),
+        )]),
+    ];
     for chip in chips {
-        spans.push(Span::raw(" ".repeat(GAP)));
-        spans.extend(chip);
+        pieces.push(Piece::plain(vec![Span::raw(" ".repeat(GAP))]));
+        pieces.push(chip);
     }
-    spans
+    pieces
 }
 
 /// The current action, lowercase, as a filled pill. Its first `s` is the hotkey (`s` cycles
@@ -225,6 +269,7 @@ fn verbose_chip(
     spans
 }
 
+/// A flag chip. Its hotkey letter is the click's key, as the keyboard has it.
 fn toggle_chip(
     colors: &ThemeColors,
     icons: &Icons,
@@ -232,10 +277,10 @@ fn toggle_chip(
     hotkey: usize,
     on: bool,
     labels: Labels,
-) -> Vec<Span<'static>> {
+) -> Piece {
     let mut spans = icon_span(colors, icons, on);
     spans.extend(label_spans(colors, label, hotkey, on, labels));
-    spans
+    Piece::keyed(spans, KeyCode::Char(char::from(label.as_bytes()[hotkey])))
 }
 
 /// A chip's mark: green when on, red when off. The label's own colours are
@@ -295,11 +340,13 @@ fn spans_width(spans: &[Span<'static>]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{breadcrumb_label, fit_breadcrumb, top_bar_line, DIVIDER};
+    use super::{breadcrumb_label, fit_breadcrumb, top_bar_hits, top_bar_line, DIVIDER};
     use crate::theme::ThemeColors;
     use crate::ui::icons::{Icons, NERD, UNICODE};
     use andre_core::{StowAction, StowFlags, Theme, MAX_VERBOSITY};
+    use crossterm::event::KeyCode;
     use ratatui::{
+        layout::Rect,
         style::Modifier,
         text::{Line, Span},
     };
@@ -818,5 +865,30 @@ mod tests {
         for width in 0..=3 {
             let _ = bar(&all_on(StowAction::Unstow), &NERD, true, width);
         }
+    }
+
+    #[test]
+    fn test_top_bar_hits_are_the_pill_the_meter_and_each_flag_chip() {
+        let area = Rect::new(0, 0, 80, 1);
+        let mut flags = all_off();
+        flags.verbosity = 2;
+        let hits = top_bar_hits(area, &colors(), &flags, &NERD, false);
+        let keys: Vec<char> = hits
+            .iter()
+            .filter_map(|(_, key)| match key.code {
+                KeyCode::Char(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys, ['s', 'v', 'd', 'n', 'a', 'o']);
+        for (rect, _) in &hits {
+            assert!(rect.x + rect.width <= 80, "{rect:?} inside the bar");
+        }
+        let debug_hits = top_bar_hits(area, &colors(), &flags, &NERD, true);
+        assert_eq!(
+            debug_hits.len(),
+            hits.len(),
+            "the debug chip is not clickable"
+        );
     }
 }

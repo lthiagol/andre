@@ -4,17 +4,17 @@
 //! removals sit on top of the list (see `overlays`).
 
 use andre_core::{IconSet, StowFlag, Theme};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::{layout::Rect, Frame};
 
 use crate::components::{AppContext, Component, InputMode, Transition};
-use crate::input::{flag_for_key, Input};
+use crate::input::{self, flag_for_key, Input};
 use crate::theme::ThemeColors;
 use crate::ui;
 use crate::ui::detail::{render_detail, Detail};
 use crate::ui::footer::{self, Hint};
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::ListView;
+use crate::ui::list_panel::{click_list, ListView};
 use crate::ui::text_field::TextField;
 
 pub mod build;
@@ -305,6 +305,38 @@ impl Component for SettingsComponent {
                     .is_some_and(|item| matches!(item.row, Row::Group(_)));
                 footer::settings_hints(on_group)
             }
+        }
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        self.ensure(ctx);
+        // A wheel notch moves to the next selectable row, as ↑↓ does, so it never rests on a
+        // header. It works over a header row too.
+        if matches!(
+            ev.kind,
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        ) {
+            if !self.list.contains(ev.column, ev.row) {
+                return Transition::None;
+            }
+            self.step(ev.kind == MouseEventKind::ScrollDown);
+            self.refresh(ctx);
+            return Transition::Handled;
+        }
+        // A click on a header does nothing: the cursor never rests on one.
+        if let Some(row) = self.list.row_at(ev.column, ev.row) {
+            if self.items.get(row).is_none_or(|item| !item.selectable()) {
+                return Transition::None;
+            }
+        }
+        let len = self.items.len();
+        match click_list(&mut self.list, ev, len) {
+            Some(click) if click.activate => self.handle_key(input::key(KeyCode::Enter), ctx),
+            Some(_) => {
+                self.refresh(ctx);
+                Transition::Handled
+            }
+            None => Transition::None,
         }
     }
 

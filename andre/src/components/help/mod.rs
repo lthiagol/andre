@@ -2,7 +2,7 @@ mod topics;
 
 pub use topics::Topic;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -16,7 +16,7 @@ use crate::theme::ThemeColors;
 use crate::ui::detail::{detail_inner, detail_rows, fit_scroll, render_detail_scrolled, Detail};
 use crate::ui::footer::{screen_hints, Hint};
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, ListView};
 use crate::ui::selection;
 use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
 
@@ -83,6 +83,19 @@ impl Component for HelpComponent {
 
     fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
         screen_hints(self.id())
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+        let before = self.list.cursor;
+        match click_list(&mut self.list, ev, Topic::ALL.len()) {
+            Some(_) => {
+                if self.list.cursor != before {
+                    self.scroll = 0;
+                }
+                Transition::Handled
+            }
+            None => Transition::None,
+        }
     }
 
     fn prepare(&mut self, area: Rect) {

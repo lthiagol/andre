@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{self};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -404,12 +404,17 @@ fn try_main() -> Result<()> {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = crossterm::execute!(std::io::stderr(), LeaveAlternateScreen, Show);
+        let _ = crossterm::execute!(
+            std::io::stderr(),
+            DisableMouseCapture,
+            LeaveAlternateScreen,
+            Show
+        );
         default_hook(info);
     }));
 
     enable_raw_mode()?;
-    crossterm::execute!(std::io::stderr(), EnterAlternateScreen)?;
+    crossterm::execute!(std::io::stderr(), EnterAlternateScreen, EnableMouseCapture)?;
     crossterm::execute!(std::io::stderr(), Hide)?;
 
     let result = (|| -> Result<()> {
@@ -462,6 +467,13 @@ fn try_main() -> Result<()> {
                             break;
                         }
                     }
+                    Ok(event::Event::Mouse(mouse)) => {
+                        app.mouse_dispatch(mouse);
+                        app.flush_debug_log();
+                        if app.quitting {
+                            break;
+                        }
+                    }
                     Ok(event::Event::Resize(cols, rows)) => {
                         app.set_terminal_size(cols, rows);
                         terminal.draw(|f| ui::render(&mut app, f))?;
@@ -476,6 +488,7 @@ fn try_main() -> Result<()> {
         Ok(())
     })();
 
+    crossterm::execute!(std::io::stderr(), DisableMouseCapture)?;
     crossterm::execute!(std::io::stderr(), LeaveAlternateScreen)?;
     crossterm::execute!(std::io::stderr(), Show)?;
     disable_raw_mode()?;

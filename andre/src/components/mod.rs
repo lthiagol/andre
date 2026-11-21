@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, Frame};
 
 use andre_core::AppState as CoreState;
@@ -234,6 +234,21 @@ pub trait Component {
     /// inside `render`. Called by `ui::render` immediately before `render`
     /// so paint draws from already-prepared state.
     fn prepare(&mut self, _area: Rect) {}
+
+    /// Handle a mouse click or wheel notch inside the content area. The screen's hit rects
+    /// were stored by `prepare`, so they match what is on screen. Clicks on the top bar and
+    /// the footer never reach here; `App::mouse_dispatch` sends them as keys.
+    fn handle_mouse(&mut self, _ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+        Transition::None
+    }
+
+    /// Whether `App::mouse_dispatch` holds back list clicks and wheel notches. Defaults to any
+    /// non-`Normal` input mode: an open dialog or text field takes the input. A screen whose
+    /// text field is part of the screen, not a dialog, overrides this so its lists still
+    /// take the mouse.
+    fn mouse_blocked(&self) -> bool {
+        self.input_mode() != InputMode::Normal
+    }
 
     /// Render the component.
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext);

@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Component as PathPart, Path, PathBuf};
 
 use andre_core::{TargetEntry, Theme};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -18,15 +18,18 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::components::browser::{all_entries, Browser};
 use crate::components::{AppContext, Component, Transition};
-use crate::input::Input;
+use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::detail::{render_detail, Detail, VALUE_WIDTH};
 use crate::ui::display_path;
 use crate::ui::footer::{unstow_browse_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, Empty, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
 use crate::ui::selection::row_with_glyphs;
+
+/// The column of a link's checkbox: the gutter is column 0.
+const MARK_COL: u16 = 1;
 
 pub struct UnstowBrowseComponent {
     pub group_name: String,
@@ -47,6 +50,11 @@ pub struct UnstowBrowseComponent {
 }
 
 impl UnstowBrowseComponent {
+    /// The links marked for removal, in the order they were marked.
+    pub fn marked(&self) -> &[PathBuf] {
+        &self.marks
+    }
+
     pub fn with_path(group_name: String, browse_path: PathBuf) -> Self {
         Self {
             group_name,
@@ -377,6 +385,27 @@ impl Component for UnstowBrowseComponent {
 
     fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
         unstow_browse_hints(self.marks.len())
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        self.sync(ctx);
+        let len = self.browser.entries().len();
+        let Some(click) = click_list(&mut self.list, ev, len) else {
+            return Transition::None;
+        };
+        // A link is marked by its checkbox or by a click on its row; a folder opens on a click.
+        let entry = &self.browser.entries()[click.row];
+        let key = if entry.is_symlink && (click.col == MARK_COL || click.activate) {
+            Some(KeyCode::Char(' '))
+        } else if click.activate && entry.is_dir {
+            Some(KeyCode::Right)
+        } else {
+            None
+        };
+        match key {
+            Some(code) => self.handle_key(input::key(code), ctx),
+            None => Transition::Handled,
+        }
     }
 
     fn prepare(&mut self, area: Rect) {

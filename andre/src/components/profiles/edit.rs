@@ -10,20 +10,20 @@ use andre_core::profile::{
     known_packages, split_package_ref, Origin, Profile, ProfileError, ResolvedProfile,
 };
 use andre_core::Error;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, Frame};
 
 use super::edit_view;
 use crate::components::{AppContext, Component, InputMode, Transition};
-use crate::input::Input;
+use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::dialog::{dialog_rect, leave_dialog, render_dialog};
 use crate::ui::footer::{field_edit_hints, leave_dialog_hints, profile_edit_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_focused_list_panel, Empty, ListView};
+use crate::ui::list_panel::{self, click_list, render_focused_list_panel, Empty, ListView};
 use crate::ui::text_field::TextField;
-use crate::ui::tree::{tree_line, Mark, Toggle, Tree, TreeGroup, TreePackage, TreeRow};
+use crate::ui::tree::{click_key, tree_line, Mark, Toggle, Tree, TreeGroup, TreePackage, TreeRow};
 
 /// Which pane takes keys. The focused pane has the accent border.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -419,6 +419,21 @@ impl Component for ProfileEditComponent {
         } else {
             let space_toggles = self.pane == Pane::Packages || self.form_cursor > 0;
             profile_edit_hints(space_toggles)
+        }
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        if self.leaving || self.editing.is_some() {
+            return Transition::None;
+        }
+        let len = self.rows.len();
+        let Some(click) = click_list(&mut self.packages, ev, len) else {
+            return Transition::None;
+        };
+        self.pane = Pane::Packages;
+        match click_key(&self.rows[click.row], click, true, Some(KeyCode::Char(' '))) {
+            Some(code) => self.handle_key(input::key(code), ctx),
+            None => Transition::Handled,
         }
     }
 

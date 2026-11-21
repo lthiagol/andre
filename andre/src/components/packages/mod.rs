@@ -12,21 +12,21 @@ use std::hash::{Hash, Hasher};
 use andre_core::discover_packages;
 use andre_core::ignore::global_ignore_in;
 use andre_core::profile::ProfileSet;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, text::Line, Frame};
 
 use crate::components::confirm::ConfirmComponent;
 use crate::components::ignore::IgnoreEditComponent;
 use crate::components::{AppContext, Component, InputMode, Transition};
-use crate::input::Input;
+use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::detail::{render_detail, Detail};
 use crate::ui::footer::{membership_dialog_hints, packages_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, Empty, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
 use crate::ui::plural;
-use crate::ui::tree::{tree_line, Mark, Toggle, Tree, TreeGroup, TreePackage, TreeRow};
+use crate::ui::tree::{click_key, tree_line, Mark, Toggle, Tree, TreeGroup, TreePackage, TreeRow};
 
 /// The profile membership dialog open over the browser.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +170,18 @@ impl Component for PackagesComponent {
                     self.selected_package().is_some(),
                 )
             }
+        }
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        self.sync(ctx);
+        let len = self.rows.len();
+        let Some(click) = click_list(&mut self.list, ev, len) else {
+            return Transition::None;
+        };
+        match click_key(&self.rows[click.row], click, true, Some(KeyCode::Char(' '))) {
+            Some(code) => self.handle_key(input::key(code), ctx),
+            None => Transition::Handled,
         }
     }
 

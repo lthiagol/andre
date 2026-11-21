@@ -6,6 +6,7 @@ pub mod detail;
 pub mod dialog;
 pub mod execute;
 pub mod footer;
+pub mod hits;
 pub mod icons;
 pub mod layout;
 pub mod list_panel;
@@ -22,7 +23,8 @@ pub mod widgets;
 
 pub use banner::{render_banner, render_compact_banner};
 pub use block::{focus_panel, themed_panel};
-pub use footer::render_footer;
+pub use footer::{footer_hits, render_footer};
+pub use status_bar::top_bar_hits;
 pub use status_bar::{breadcrumb_label, render_status_bar};
 pub use toast::render_toast;
 
@@ -31,6 +33,8 @@ use std::borrow::Cow;
 use crate::app::App;
 use crate::components::MainMenuComponent;
 use crate::theme::ThemeColors;
+use crate::ui::hits::ChromeHits;
+use crate::ui::icons::Icons;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Margin, Rect},
@@ -69,6 +73,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     let (cols, rows) = app.ctx.terminal_size;
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
     if cols < MIN_COLS || rows < MIN_ROWS {
+        app.chrome_hits = ChromeHits::default();
         render_too_small_overlay(frame, cols, rows, &colors);
         return;
     }
@@ -131,6 +136,23 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         app.ctx.core.icons,
         app.ctx.debug,
     );
+
+    // Where the bars' clickable parts are drawn this frame, for mouse input.
+    app.chrome_hits = ChromeHits {
+        top_bar: top_bar_hits(
+            v[2].inner(Margin::new(1, 0)),
+            &colors,
+            &app.ctx.core.flags,
+            Icons::for_set(app.ctx.core.icons),
+            app.ctx.debug,
+        ),
+        footer: footer_hits(
+            v[6].inner(Margin::new(1, 0)),
+            &colors,
+            &hints,
+            app.ctx.core.theme.name(),
+        ),
+    };
 
     let content = centred(v[4].inner(Margin::new(1, 0)), MAX_CONTENT_WIDTH);
     if let Some(component) = app.component_stack.last_mut() {

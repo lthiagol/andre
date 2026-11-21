@@ -10,7 +10,7 @@ use std::path::Path;
 use andre_core::ignore::global_ignore_in;
 use andre_core::stow::linkable_files;
 use andre_core::{build_stow_args, engine_for, EngineKind, StowAction, StowFlags};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, style::Style, text::Line, Frame};
 
 use crate::components::execute::ExecuteComponent;
@@ -24,7 +24,7 @@ use crate::ui::dialog::render_action_bar;
 use crate::ui::footer::{review_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, Empty, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
 use crate::ui::tree::{tree_line_without_checkboxes, Tree, TreeGroup, TreePackage, TreeRow};
 use crate::ui::{display_path, plural};
 
@@ -434,6 +434,14 @@ impl Component for ConfirmComponent {
 
     fn hints(&self, ctx: &AppContext) -> Vec<Hint> {
         review_hints(self.flags(ctx).action.as_str())
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+        let len = self.rows.len();
+        match click_list(&mut self.list, ev, len) {
+            Some(_) => Transition::Handled,
+            None => Transition::None,
+        }
     }
 
     fn prepare(&mut self, area: Rect) {

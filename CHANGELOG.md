@@ -132,6 +132,14 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   `andre.yaml`) and `profiles/` from a folder, e.g. inside a freshly cloned dotfiles
   repo. `--onboard` accepts it as the place to create a new config. Help text
   gains a *Config discovery* section.
+- **Mouse on lists and chrome.** Mouse capture is always on. A click selects a list
+  row; a click on the selected row runs its primary key (open, or Space to mark on
+  package lists). Checkboxes mark and fold triangles fold in one click. Top-bar chips
+  and footer hints send their key; the wheel moves the cursor over a list. Clicks
+  outside an open dialog or text field change nothing; the new-package name list is the
+  exception, since its field is part of the step. `t` and `q` footer chips do nothing while
+  a text field has focus. Covered by `andre/tests/mouse.rs`
+  and unit tests for `click_list`, `click_key`, `top_bar_hits` and `footer_hits`.
 
 ### Changed
 

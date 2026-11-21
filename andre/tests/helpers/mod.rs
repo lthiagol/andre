@@ -2,8 +2,10 @@
 
 use std::path::PathBuf;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::{backend::TestBackend, buffer::Buffer, Terminal};
 use tempfile::TempDir;
+use unicode_width::UnicodeWidthChar;
 
 use andre::app::App;
 
@@ -201,4 +203,59 @@ pub fn browse_cursor_to(app: &mut App, name: &str) {
     for _ in 0..(at + len - current) % len {
         app.component_dispatch(down_key());
     }
+}
+
+/// Sends a left click at column `x`, row `y`, as the terminal would.
+pub fn click(app: &mut App, x: u16, y: u16) {
+    mouse(app, MouseEventKind::Down(MouseButton::Left), x, y);
+}
+
+/// Sends one wheel notch at column `x`, row `y`: down when `down`, else up.
+pub fn wheel(app: &mut App, x: u16, y: u16, down: bool) {
+    let kind = if down {
+        MouseEventKind::ScrollDown
+    } else {
+        MouseEventKind::ScrollUp
+    };
+    mouse(app, kind, x, y);
+}
+
+fn mouse(app: &mut App, kind: MouseEventKind, x: u16, y: u16) {
+    app.mouse_dispatch(MouseEvent {
+        kind,
+        column: x,
+        row: y,
+        modifiers: KeyModifiers::NONE,
+    });
+}
+
+/// Draws `app` at `width` x `height` into a test buffer. As in the real loop, the frame is
+/// what stores the screen's hit rects and the chrome's clickable parts.
+pub fn draw(app: &mut App, width: u16, height: u16) -> Buffer {
+    app.set_terminal_size(width, height);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal.draw(|f| andre::ui::render(app, f)).unwrap();
+    terminal.backend().buffer().clone()
+}
+
+/// The text of row `y` of `buf`, one symbol per cell.
+pub fn row_text(buf: &Buffer, y: u16) -> String {
+    (0..buf.area().width)
+        .map(|x| buf[(x, y)].symbol())
+        .collect()
+}
+
+/// The column and row where `text` first starts in `buf`, scanning rows top to bottom.
+pub fn find_text(buf: &Buffer, text: &str) -> Option<(u16, u16)> {
+    for y in 0..buf.area().height {
+        let row = row_text(buf, y);
+        if let Some(byte) = row.find(text) {
+            let column: usize = row[..byte]
+                .chars()
+                .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+                .sum();
+            return Some((column as u16, y));
+        }
+    }
+    None
 }

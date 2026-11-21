@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, text::Line, Frame};
 
 use crate::components::{AppContext, Component, Transition};
@@ -11,7 +11,7 @@ use crate::ui::detail::{render_detail, Detail};
 use crate::ui::dialog::render_action_bar;
 use crate::ui::footer::{unstow_review_hints, Hint};
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, ListView};
 use crate::ui::plural;
 use crate::ui::unstow_confirm::{link_detail, link_row, Outcome, UnstowLink};
 
@@ -156,6 +156,14 @@ impl Component for UnstowConfirmComponent {
 
     fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
         unstow_review_hints(self.finished())
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+        let len = self.links.len();
+        match click_list(&mut self.list, ev, len) {
+            Some(_) => Transition::Handled,
+            None => Transition::None,
+        }
     }
 
     fn prepare(&mut self, area: Rect) {

@@ -16,20 +16,23 @@ use std::collections::BTreeMap;
 
 use andre_core::create::{is_valid_package_name, PackagePlan};
 use andre_core::discover_packages;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, Frame};
 
 use crate::components::{AppContext, Component, InputMode, Transition};
-use crate::input::Input;
+use crate::input::{self, Input};
 use crate::ui::footer::{
     wizard_done_hints, wizard_files_hints, wizard_group_hints, wizard_ignore_hints,
     wizard_name_hints, wizard_profiles_hints, wizard_review_hints, wizard_source_hints, Hint,
 };
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::ListView;
+use crate::ui::list_panel::{click_list, ListView};
 use crate::ui::text_field::TextField;
 use finish::{Done, Gitignore, ProfileCount, ReviewLine, IGNORE_ROWS};
 use picker::FilePicker;
+
+/// The column of a row's checkbox in the file, ignore and profile lists: the gutter is column 0.
+const MARK_COL: u16 = 1;
 
 /// The steps as the step bar names them.
 pub const STEPS: &[&str] = &["group", "name", "source", "ignore", "profiles", "review"];
@@ -146,6 +149,12 @@ impl Component for NewPackageWizard {
         }
     }
 
+    /// The wizard has no dialogs. Its name field is part of the name step, so the step's list
+    /// takes clicks and wheel notches while the field has focus.
+    fn mouse_blocked(&self) -> bool {
+        false
+    }
+
     fn update(&mut self, ctx: &mut AppContext) -> Transition {
         self.load(ctx);
         if let Some(picker) = &mut self.picker {
@@ -187,6 +196,44 @@ impl Component for NewPackageWizard {
         }
     }
 
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        self.load(ctx);
+        let rows = self.step_rows();
+        let Some(view) = self.step_list_mut() else {
+            return Transition::None;
+        };
+        let Some(click) = click_list(view, ev, rows) else {
+            return Transition::None;
+        };
+        let key = match self.step {
+            Step::Group | Step::Name | Step::Source => click.activate.then_some(KeyCode::Enter),
+            Step::Files => {
+                let entry = self
+                    .picker
+                    .as_ref()
+                    .and_then(|p| p.entries().get(click.row));
+                match entry {
+                    Some(entry) if click.col == MARK_COL && entry.is_selectable() => {
+                        Some(KeyCode::Char(' '))
+                    }
+                    Some(entry) if click.activate && entry.is_dir => Some(KeyCode::Right),
+                    Some(entry) if click.activate && entry.is_selectable() => {
+                        Some(KeyCode::Char(' '))
+                    }
+                    _ => None,
+                }
+            }
+            Step::Ignore | Step::Profiles => {
+                (click.col == MARK_COL || click.activate).then_some(KeyCode::Char(' '))
+            }
+            Step::Review => None,
+        };
+        match key {
+            Some(code) => self.handle_key(input::key(code), ctx),
+            None => Transition::Handled,
+        }
+    }
+
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, self.shape());
         match self.step {
@@ -221,6 +268,34 @@ impl Component for NewPackageWizard {
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         view::render(frame, area, ctx, self);
+    }
+}
+
+impl NewPackageWizard {
+    /// The rows of the list the current step shows. The review has none.
+    fn step_rows(&self) -> usize {
+        match self.step {
+            Step::Group => self.groups().len(),
+            Step::Name => self.name_rows().len(),
+            Step::Source => SOURCES.len(),
+            Step::Files => self.picker.as_ref().map_or(0, |p| p.entries().len()),
+            Step::Ignore => IGNORE_ROWS,
+            Step::Profiles => self.profile_names.len(),
+            Step::Review => 0,
+        }
+    }
+
+    /// The list the current step shows, if it has one.
+    fn step_list_mut(&mut self) -> Option<&mut ListView> {
+        match self.step {
+            Step::Group => Some(&mut self.group_list),
+            Step::Name => Some(&mut self.name_list),
+            Step::Source => Some(&mut self.source_list),
+            Step::Files => self.picker.as_mut().map(|p| &mut p.list),
+            Step::Ignore => Some(&mut self.ignore_list),
+            Step::Profiles => Some(&mut self.profile_list),
+            Step::Review => None,
+        }
     }
 }
 

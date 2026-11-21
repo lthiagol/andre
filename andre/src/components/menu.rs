@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 
 use andre_core::bootstrap::{self, Bootstrap};
 use andre_core::{discover_packages, EngineKind, StowStatus};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -29,7 +29,7 @@ use crate::ui::detail::{render_detail, Detail, VALUE_WIDTH};
 use crate::ui::footer::{screen_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
-use crate::ui::list_panel::{self, render_list_panel, ListView};
+use crate::ui::list_panel::{self, click_list, render_list_panel, ListView};
 use crate::ui::selection;
 use crate::ui::{display_path, elide, plural};
 
@@ -197,6 +197,15 @@ impl Component for MainMenuComponent {
             }
         }
         hints
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        let len = self.items().len();
+        match click_list(&mut self.list, ev, len) {
+            Some(click) if click.activate => self.handle_key(input::key(KeyCode::Enter), ctx),
+            Some(_) => Transition::Handled,
+            None => Transition::None,
+        }
     }
 
     fn prepare(&mut self, area: Rect) {

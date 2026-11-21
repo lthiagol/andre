@@ -57,7 +57,7 @@ cargo test -p andre --test interaction
 | Target | Runner | When to use |
 |--------|--------|-------------|
 | `make test-unit` | nextest (filter `kind(lib) | kind(bin)`) or `cargo test --lib --bins --all-features` | Fast feedback loop during development. Lib + bin unit tests only. No filesystem or process side effects beyond temp dirs. |
-| `make test-tui` | nextest (filter `binary(/^(interaction|render|status_cache|config_discovery|config_persistence|smoke)/)`) or `cargo test --test ...` | Component-level TUI behavior (keyboard dispatch, render snapshots, config persistence) plus process-level smoke tests (spawn the `andre` binary). No real stow required. |
+| `make test-tui` | nextest (filter `binary(/^(interaction|mouse|render|status_cache|config_discovery|config_persistence|smoke)/)`) or `cargo test --test ...` | Component-level TUI behavior (keyboard and mouse dispatch, render snapshots, config persistence) plus process-level smoke tests (spawn the `andre` binary). No real stow required. |
 | `make test-e2e` | nextest (filter `binary(/^(tui_e2e|e2e|integration)/)`) or `cargo test --test ...` | Real stow binary + real TUI runtime + andre-core test infrastructure (e.g. `integration` tests that need stow on PATH). Requires GNU `stow` on `PATH`. |
 | `make test` | All three above + lint | Pre-commit / pre-push gate. |
 | `make ci` | Same as `make test` plus `--locked` and `--profile ci` | What CI runs. |

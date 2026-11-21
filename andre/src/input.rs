@@ -1,6 +1,11 @@
 use andre_core::StowFlag;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+/// A key with no modifiers, as a mouse click sends it to the screen it lands on.
+pub fn key(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::NONE)
+}
+
 /// The stow option behind a flag shortcut key (`v`, `d`, `n`, `a`, `o`), if any.
 pub fn flag_for_key(code: KeyCode) -> Option<StowFlag> {
     match code {
