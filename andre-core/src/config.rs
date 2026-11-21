@@ -1,21 +1,46 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::engine::EngineKind;
 use crate::error::{Error, Result};
+use crate::packages::discover_packages;
 use crate::path::resolve_path;
 use crate::state::{IconSet, StowAction, StowFlags, Theme, MAX_VERBOSITY};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// The packages folder, as written. `None` until set (a warning, not an error).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packages: Option<String>,
+    /// Where every package links. `None` = the home folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(default)]
     pub global: GlobalSettings,
+    /// Interim: the grouped model, removed in G10. Cannot be combined with `packages`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub groups: BTreeMap<String, Group>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// One package as every consumer sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageEntry {
+    /// `nvim` (interim: `home/nvim` for a `groups:` config).
+    pub name: String,
+    /// `<packages>/nvim`.
+    pub dir: PathBuf,
+    /// `<packages>`, the folder passed to `stow -d`.
+    pub source: PathBuf,
+    /// The resolved target, passed to `stow -t`.
+    pub target: PathBuf,
+    /// `global.ignore`, plus the group's own list for an interim `groups:` entry.
+    pub ignores: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GlobalSettings {
     /// Link engine: "native" (default, no GNU stow) or "stow" (shells out to GNU stow).
@@ -55,7 +80,7 @@ pub enum ConfigWarning {
     UnknownEngine(String),
     UnknownIcons(String),
     VerbosityOutOfRange(u8),
-    NoGroups,
+    NoPackagesFolder,
 }
 
 impl fmt::Display for ConfigWarning {
@@ -70,7 +95,9 @@ impl fmt::Display for ConfigWarning {
             ConfigWarning::VerbosityOutOfRange(v) => {
                 write!(f, "verbosity {} is out of range (0-{})", v, MAX_VERBOSITY)
             }
-            ConfigWarning::NoGroups => write!(f, "no groups defined in config"),
+            ConfigWarning::NoPackagesFolder => {
+                write!(f, "no packages folder: set `packages:` in andre.yml")
+            }
         }
     }
 }
@@ -78,6 +105,8 @@ impl fmt::Display for ConfigWarning {
 impl Config {
     pub fn default_empty() -> Self {
         Self {
+            packages: None,
+            target: None,
             global: GlobalSettings {
                 engine: None,
                 theme: None,
@@ -92,8 +121,8 @@ impl Config {
     pub fn validate(&self) -> Vec<ConfigWarning> {
         let mut warnings = Vec::new();
 
-        if self.groups.is_empty() {
-            warnings.push(ConfigWarning::NoGroups);
+        if self.packages.is_none() && self.groups.is_empty() {
+            warnings.push(ConfigWarning::NoPackagesFolder);
         }
 
         if let Some(ref theme) = self.global.theme {
@@ -136,11 +165,99 @@ impl Config {
         }
         let content = std::fs::read_to_string(path)?;
         let config: Config = serde_yaml_ng::from_str(&content).map_err(Error::YamlParse)?;
+        if config.packages.is_some() && !config.groups.is_empty() {
+            return Err(Error::InvalidConfig(
+                "set `packages:` or `groups:`, not both".to_string(),
+            ));
+        }
         Ok(config)
     }
 
-    /// Validates that every group's resolved source directory exists on disk.
+    /// The packages folder, resolved. `None` when `packages:` is unset.
+    pub fn packages_dir(&self, config_dir: &Path, home_dir: &Path) -> Option<PathBuf> {
+        self.packages
+            .as_deref()
+            .map(|packages| resolve_path(packages, config_dir, home_dir))
+    }
+
+    /// Where every package links: `target:` resolved, or the home folder when unset.
+    pub fn target_dir(&self, config_dir: &Path, home_dir: &Path) -> PathBuf {
+        match self.target.as_deref() {
+            Some(target) => resolve_path(target, config_dir, home_dir),
+            None => home_dir.to_path_buf(),
+        }
+    }
+
+    /// Every package, sorted by name. Interim: a `groups:` config yields `group/package`
+    /// entries (`packages:` and `groups:` cannot both be set; see `load`).
+    pub fn package_entries(&self, config_dir: &Path, home_dir: &Path) -> Vec<PackageEntry> {
+        let mut entries = Vec::new();
+
+        if let Some(source) = self.packages_dir(config_dir, home_dir) {
+            let target = self.target_dir(config_dir, home_dir);
+            let ignores = self.ignores();
+            for name in discover_packages(&source) {
+                entries.push(PackageEntry {
+                    dir: source.join(&name),
+                    name,
+                    source: source.clone(),
+                    target: target.clone(),
+                    ignores: ignores.clone(),
+                });
+            }
+        }
+
+        for (group_name, group) in &self.groups {
+            let source = resolve_path(&group.source, config_dir, home_dir);
+            let target = resolve_path(&group.target, config_dir, home_dir);
+            let ignores = self.effective_ignores(group_name);
+            for package in discover_packages(&source) {
+                entries.push(PackageEntry {
+                    name: format!("{group_name}/{package}"),
+                    dir: source.join(&package),
+                    source: source.clone(),
+                    target: target.clone(),
+                    ignores: ignores.clone(),
+                });
+            }
+        }
+
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        entries
+    }
+
+    /// The entry called `name`, if that package exists.
+    pub fn package(&self, name: &str, config_dir: &Path, home_dir: &Path) -> Option<PackageEntry> {
+        self.package_entries(config_dir, home_dir)
+            .into_iter()
+            .find(|entry| entry.name == name)
+    }
+
+    /// Ignores that apply to every package: `global.ignore`.
+    pub fn ignores(&self) -> Vec<String> {
+        self.global_ignore()
+    }
+
+    pub fn set_packages(&mut self, packages: Option<String>) {
+        self.packages = packages;
+    }
+
+    /// Validates that the packages folder exists, that the target is not the packages
+    /// folder or inside it, and that every group's resolved source directory exists.
     pub fn validate_sources(&self, config_dir: &Path, home_dir: &Path) -> Result<()> {
+        if let Some(packages) = self.packages_dir(config_dir, home_dir) {
+            if !packages.exists() {
+                return Err(Error::SourceNotFound(packages));
+            }
+            let target = self.target_dir(config_dir, home_dir);
+            if same_or_inside(&target, &packages) {
+                return Err(Error::InvalidConfig(format!(
+                    "target {} is inside the packages folder {}",
+                    target.display(),
+                    packages.display()
+                )));
+            }
+        }
         for group in self.groups.values() {
             let path = resolve_path(&group.source, config_dir, home_dir);
             if !path.exists() {
@@ -365,6 +482,48 @@ impl Config {
                 true
             }
             None => false,
+        }
+    }
+}
+
+/// `target` is `packages` or lies under it. Both sides are resolved through symlinks, so
+/// a path that reaches the packages folder by another route still matches.
+fn same_or_inside(target: &Path, packages: &Path) -> bool {
+    resolve_through_symlinks(target).starts_with(resolve_through_symlinks(packages))
+}
+
+/// Resolves `path` to where it points. A path that exists is canonicalized. For a missing
+/// path (a target not created yet), the nearest existing ancestor is canonicalized and the
+/// missing tail is appended, after `.` and `..` are applied lexically.
+fn resolve_through_symlinks(path: &Path) -> PathBuf {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return canonical;
+    }
+    let mut normal = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                normal.pop();
+            }
+            Component::CurDir => {}
+            other => normal.push(other),
+        }
+    }
+    let mut tail = Vec::new();
+    let mut head = normal.as_path();
+    loop {
+        if let Ok(canonical) = std::fs::canonicalize(head) {
+            return tail
+                .iter()
+                .rev()
+                .fold(canonical, |acc, part| acc.join(part));
+        }
+        match (head.parent(), head.file_name()) {
+            (Some(parent), Some(name)) => {
+                tail.push(name);
+                head = parent;
+            }
+            _ => return normal,
         }
     }
 }
@@ -978,6 +1137,8 @@ groups:
     #[test]
     fn test_validate_clean_config_returns_no_warnings() {
         let config = Config {
+            packages: None,
+            target: None,
             global: GlobalSettings {
                 engine: None,
                 theme: Some("nord".to_string()),
@@ -1016,6 +1177,8 @@ groups:
     #[test]
     fn test_validate_unknown_theme_returns_warning() {
         let config = Config {
+            packages: None,
+            target: None,
             global: GlobalSettings {
                 engine: None,
                 theme: Some("nonexistent-theme".to_string()),
@@ -1044,6 +1207,8 @@ groups:
     #[test]
     fn test_validate_unknown_action_returns_warning() {
         let config = Config {
+            packages: None,
+            target: None,
             global: GlobalSettings {
                 engine: None,
                 theme: None,
@@ -1079,6 +1244,8 @@ groups:
     #[test]
     fn test_validate_verbosity_out_of_range_returns_warning() {
         let config = Config {
+            packages: None,
+            target: None,
             global: GlobalSettings {
                 engine: None,
                 theme: None,
@@ -1112,8 +1279,10 @@ groups:
     }
 
     #[test]
-    fn test_validate_no_groups_returns_warning() {
+    fn test_validate_no_packages_folder_returns_warning() {
         let config = Config {
+            packages: None,
+            target: None,
             global: GlobalSettings {
                 engine: None,
                 theme: None,
@@ -1125,7 +1294,7 @@ groups:
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
-        assert_eq!(warnings[0], ConfigWarning::NoGroups);
+        assert_eq!(warnings[0], ConfigWarning::NoPackagesFolder);
     }
 
     #[test]
@@ -1190,6 +1359,8 @@ groups: {}
     #[test]
     fn test_engine_unknown_value_warns_and_falls_back_to_native() {
         let config = Config {
+            packages: None,
+            target: None,
             global: GlobalSettings {
                 engine: Some("ruby".into()),
                 theme: None,
@@ -1201,7 +1372,7 @@ groups: {}
         };
         let warnings = config.validate();
         assert!(
-            matches!(&warnings[..], [ConfigWarning::NoGroups, ConfigWarning::UnknownEngine(e)] if e == "ruby")
+            matches!(&warnings[..], [ConfigWarning::NoPackagesFolder, ConfigWarning::UnknownEngine(e)] if e == "ruby")
         );
         assert_eq!(config.effective_engine(), EngineKind::Native);
     }
@@ -1209,6 +1380,8 @@ groups: {}
     #[test]
     fn test_icons_unknown_value_warns() {
         let config = Config {
+            packages: None,
+            target: None,
             global: GlobalSettings {
                 engine: None,
                 theme: None,
@@ -1220,7 +1393,7 @@ groups: {}
         };
         let warnings = config.validate();
         assert!(
-            matches!(&warnings[..], [ConfigWarning::NoGroups, ConfigWarning::UnknownIcons(i)] if i == "emoji")
+            matches!(&warnings[..], [ConfigWarning::NoPackagesFolder, ConfigWarning::UnknownIcons(i)] if i == "emoji")
         );
     }
 
@@ -1243,5 +1416,234 @@ groups: {}
         config.save(&path2).unwrap();
         let reloaded = Config::load(&path2).unwrap();
         assert_eq!(reloaded.global.icons.as_deref(), Some("unicode"));
+    }
+
+    #[test]
+    fn test_flat_config_round_trips_in_key_order() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("andre.yml");
+        fs::write(
+            &config_path,
+            "packages: ~/src/dotfiles\ntarget: \"~\"\nglobal:\n  ignore: [.DS_Store]\n",
+        )
+        .unwrap();
+
+        let config = Config::load(&config_path).unwrap();
+        assert_eq!(config.packages.as_deref(), Some("~/src/dotfiles"));
+        assert_eq!(config.target.as_deref(), Some("~"));
+        assert!(config.groups.is_empty());
+
+        let yaml = serde_yaml_ng::to_string(&config).unwrap();
+        let packages = yaml.find("packages:").unwrap();
+        let target = yaml.find("target:").unwrap();
+        let global = yaml.find("global:").unwrap();
+        assert!(packages < target && target < global, "{yaml}");
+        assert!(!yaml.contains("groups"), "{yaml}");
+
+        let reloaded: Config = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(reloaded.packages, config.packages);
+        assert_eq!(reloaded.target, config.target);
+        assert_eq!(reloaded.global_ignore(), [".DS_Store"]);
+    }
+
+    #[test]
+    fn test_global_may_be_omitted() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("andre.yml");
+        fs::write(&config_path, "packages: dotfiles\n").unwrap();
+
+        let config = Config::load(&config_path).unwrap();
+        assert!(config.global_ignore().is_empty());
+        assert_eq!(config.stow_flags(), StowFlags::default());
+    }
+
+    #[test]
+    fn test_target_defaults_to_home_and_resolves_relative_to_config() {
+        let config_dir = Path::new("/cfg");
+        let home = Path::new("/home/u");
+        let mut config = Config::default_empty();
+        assert_eq!(
+            config.target_dir(config_dir, home),
+            PathBuf::from("/home/u")
+        );
+
+        config.target = Some("out".into());
+        assert_eq!(
+            config.target_dir(config_dir, home),
+            PathBuf::from("/cfg/out")
+        );
+
+        config.target = Some("~/links".into());
+        assert_eq!(
+            config.target_dir(config_dir, home),
+            PathBuf::from("/home/u/links")
+        );
+    }
+
+    #[test]
+    fn test_package_entries_lists_flat_packages_in_name_order() {
+        let tmp = TempDir::new().unwrap();
+        let config_dir = tmp.path();
+        let home = tmp.path().join("home");
+        let packages = config_dir.join("dotfiles");
+        fs::create_dir_all(packages.join("nvim")).unwrap();
+        fs::create_dir_all(packages.join("git")).unwrap();
+        fs::create_dir_all(packages.join(".git")).unwrap();
+        fs::write(packages.join("README.md"), "").unwrap();
+
+        let config: Config =
+            serde_yaml_ng::from_str("packages: dotfiles\nglobal:\n  ignore: [.DS_Store]\n")
+                .unwrap();
+        let entries = config.package_entries(config_dir, &home);
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["git", "nvim"]);
+
+        let git = &entries[0];
+        assert_eq!(git.dir, packages.join("git"));
+        assert_eq!(git.source, packages);
+        assert_eq!(git.target, home);
+        assert_eq!(git.ignores, [".DS_Store"]);
+
+        assert_eq!(
+            config.package("nvim", config_dir, &home).unwrap().name,
+            "nvim"
+        );
+        assert_eq!(config.package(".git", config_dir, &home), None);
+        assert_eq!(config.packages_dir(config_dir, &home), Some(packages));
+    }
+
+    #[test]
+    fn test_package_entries_empty_without_packages_folder() {
+        let tmp = TempDir::new().unwrap();
+        let config = Config::default_empty();
+        assert!(config.package_entries(tmp.path(), tmp.path()).is_empty());
+        assert_eq!(config.packages_dir(tmp.path(), tmp.path()), None);
+    }
+
+    #[test]
+    fn test_groups_config_yields_grouped_entries_with_group_ignores() {
+        let tmp = TempDir::new().unwrap();
+        let config_dir = tmp.path();
+        let home = tmp.path().join("home");
+        fs::create_dir_all(config_dir.join("packages/git")).unwrap();
+
+        let yaml = "global:\n  ignore: [.DS_Store]\ngroups:\n  home:\n    source: packages\n    target: \"~\"\n    ignore: [README.md]\n";
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let entries = config.package_entries(config_dir, &home);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "home/git");
+        assert_eq!(entries[0].target, home);
+        assert_eq!(entries[0].ignores, [".DS_Store", "README.md"]);
+    }
+
+    #[test]
+    fn test_load_rejects_packages_and_groups_together() {
+        let tmp = TempDir::new().unwrap();
+        let config_path = tmp.path().join("andre.yml");
+        fs::write(
+            &config_path,
+            "packages: dotfiles\ngroups:\n  home:\n    source: packages\n    target: \"~\"\n",
+        )
+        .unwrap();
+
+        let err = Config::load(&config_path).unwrap_err();
+        assert!(matches!(err, Error::InvalidConfig(_)));
+        assert_eq!(err.to_string(), "set `packages:` or `groups:`, not both");
+    }
+
+    #[test]
+    fn test_validate_sources_accepts_packages_inside_default_target() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path().join("home");
+        fs::create_dir_all(home.join("src/dotfiles/nvim")).unwrap();
+
+        // Packages inside the home folder, linked to the home folder: the normal case.
+        let mut config = Config::default_empty();
+        config.set_packages(Some("~/src/dotfiles".into()));
+        assert!(config.validate_sources(tmp.path(), &home).is_ok());
+    }
+
+    #[test]
+    fn test_validate_sources_rejects_target_equal_to_or_inside_packages() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path().join("home");
+        fs::create_dir_all(home.join("src/dotfiles/nvim")).unwrap();
+
+        let mut config = Config::default_empty();
+        config.set_packages(Some("~/src/dotfiles".into()));
+        config.target = Some("~/src/dotfiles".into());
+        let err = config.validate_sources(tmp.path(), &home).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "target {} is inside the packages folder {}",
+                home.join("src/dotfiles").display(),
+                home.join("src/dotfiles").display()
+            )
+        );
+
+        config.target = Some("~/src/dotfiles/out".into());
+        let err = config.validate_sources(tmp.path(), &home).unwrap_err();
+        assert!(matches!(err, Error::InvalidConfig(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_sources_rejects_missing_target_inside_packages_through_symlink() {
+        let tmp = TempDir::new().unwrap();
+        let real_home = tmp.path().join("real_home");
+        fs::create_dir_all(real_home.join("dots/nvim")).unwrap();
+        // `home` reaches the same folder through a symlink, as `/home` -> `/var/home` does.
+        let home = tmp.path().join("home");
+        std::os::unix::fs::symlink(&real_home, &home).unwrap();
+
+        let mut config = Config::default_empty();
+        config.set_packages(Some("~/dots".into()));
+
+        // The target does not exist yet, so its path stays lexical past the last existing folder.
+        config.target = Some("~/dots/out".into());
+        let err = config.validate_sources(tmp.path(), &home).unwrap_err();
+        assert!(matches!(err, Error::InvalidConfig(_)));
+
+        // `..` in the missing tail is applied before the comparison.
+        config.target = Some("~/dots/missing/../out".into());
+        let err = config.validate_sources(tmp.path(), &home).unwrap_err();
+        assert!(matches!(err, Error::InvalidConfig(_)));
+
+        // A missing target outside the packages folder is still accepted.
+        config.target = Some("~/elsewhere/out".into());
+        assert!(config.validate_sources(tmp.path(), &home).is_ok());
+    }
+
+    #[test]
+    fn test_validate_sources_reports_missing_packages_folder() {
+        let tmp = TempDir::new().unwrap();
+        let mut config = Config::default_empty();
+        config.set_packages(Some("nowhere".into()));
+
+        let err = config
+            .validate_sources(tmp.path(), &tmp.path().join("home"))
+            .unwrap_err();
+        assert!(matches!(&err, Error::SourceNotFound(p) if *p == tmp.path().join("nowhere")));
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "Packages folder not found: {}",
+                tmp.path().join("nowhere").display()
+            )
+        );
+    }
+
+    #[test]
+    fn test_validate_packages_folder_set_has_no_warning() {
+        let mut config = Config::default_empty();
+        assert_eq!(config.validate(), [ConfigWarning::NoPackagesFolder]);
+        assert_eq!(
+            ConfigWarning::NoPackagesFolder.to_string(),
+            "no packages folder: set `packages:` in andre.yml"
+        );
+
+        config.set_packages(Some("dotfiles".into()));
+        assert!(config.validate().is_empty());
     }
 }

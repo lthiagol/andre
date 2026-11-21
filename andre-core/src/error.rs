@@ -25,6 +25,8 @@ pub enum Error {
     Ignore(String),
     /// Package creation refused or rolled back (names the package, path or step).
     Package(String),
+    /// A config that cannot be used as written (names the keys or paths at fault).
+    InvalidConfig(String),
 }
 
 impl fmt::Display for Error {
@@ -33,7 +35,7 @@ impl fmt::Display for Error {
             Error::ConfigNotFound(p) => write!(f, "Config file not found: {}", p.display()),
             Error::YamlParse(e) => write!(f, "Failed to parse YAML: {}", e),
             Error::StowFailed(s) => write!(f, "Stow failed: {}", s),
-            Error::SourceNotFound(p) => write!(f, "Source directory not found: {}", p.display()),
+            Error::SourceNotFound(p) => write!(f, "Packages folder not found: {}", p.display()),
             Error::StowNotFound => write!(f, "GNU Stow binary not found. Is stow installed?"),
             Error::Io(e) => write!(f, "IO error: {}", e),
             Error::Subprocess(code) => write!(f, "Subprocess error: exit code {}", code),
@@ -45,6 +47,7 @@ impl fmt::Display for Error {
             Error::Profile(e) => write!(f, "{}", e),
             Error::Ignore(msg) => write!(f, "ignore list: {}", msg),
             Error::Package(msg) => write!(f, "{}", msg),
+            Error::InvalidConfig(msg) => write!(f, "{}", msg),
         }
     }
 }

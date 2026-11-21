@@ -1,7 +1,8 @@
 //! Profiles: named collections of packages, one YAML file each.
 //!
 //! A profile lives at `<config-folder>/profiles/<name>.yml` and lists package refs
-//! (`group/package`). It may also include other profiles. [`ProfileSet::resolve`]
+//! (package names like `nvim`; `group/package` while a `groups:` config is still
+//! supported). It may also include other profiles. [`ProfileSet::resolve`]
 //! flattens the includes into one ordered, de-duplicated list and records where each
 //! entry came from. Cycles and unknown includes are errors; package refs that point
 //! at nothing are kept and marked `missing`.
@@ -15,8 +16,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
+use crate::create::is_valid_package_name;
 use crate::error::{Error, Result};
-use crate::packages::discover_packages;
 
 /// Folder under the config folder that holds profile files.
 pub const PROFILES_DIR: &str = "profiles";
@@ -32,7 +33,7 @@ pub struct Profile {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub includes: Vec<String>,
-    /// `group/package` refs, in the order the user listed them.
+    /// Package refs, in the order the user listed them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub packages: Vec<String>,
 }
@@ -67,7 +68,7 @@ impl fmt::Display for ProfileError {
                 name
             ),
             ProfileError::InvalidPackageRef(pkg) => {
-                write!(f, "invalid package ref '{}': expected 'group/package'", pkg)
+                write!(f, "invalid package ref '{}': expected a package name like 'nvim'", pkg)
             }
             ProfileError::WrongExtension(file) => {
                 write!(f, "'{}': profile files must use the .yml extension", file)
@@ -311,7 +312,7 @@ impl ProfileSet {
 
     /// Renames a package ref in every profile. Returns the profiles that changed.
     pub fn rename_package(&mut self, old: &str, new: &str) -> Result<Vec<String>> {
-        if split_package_ref(new).is_none() {
+        if !is_valid_ref(new) {
             return Err(ProfileError::InvalidPackageRef(new.to_string()).into());
         }
         self.rewrite_packages(|pkg| {
@@ -347,7 +348,7 @@ impl ProfileSet {
         })
     }
 
-    /// Resolves `name` against the packages that exist (`known`, as `group/package`).
+    /// Resolves `name` against the packages that exist (`known`, as in [`known_packages`]).
     pub fn resolve(&self, name: &str, known: &BTreeSet<String>) -> Result<ResolvedProfile> {
         if !self.profiles.contains_key(name) {
             return Err(ProfileError::NotFound(name.to_string()).into());
@@ -481,18 +482,13 @@ impl ProfileSet {
     }
 }
 
-/// Packages that exist on disk, as `group/package`, for every group in `config`.
-/// Groups whose source folder is missing contribute nothing.
+/// The names of the packages that exist on disk (see [`Config::package_entries`]).
 pub fn known_packages(config: &Config, config_dir: &Path, home_dir: &Path) -> BTreeSet<String> {
-    let mut known = BTreeSet::new();
-    for group in config.groups.keys() {
-        if let Some(source) = config.resolve_group_source(group, config_dir, home_dir) {
-            for package in discover_packages(&source) {
-                known.insert(format!("{group}/{package}"));
-            }
-        }
-    }
-    known
+    config
+        .package_entries(config_dir, home_dir)
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect()
 }
 
 /// `[a-z0-9][a-z0-9_-]*`. The rule for profile file stems.
@@ -506,6 +502,11 @@ pub fn is_valid_name(name: &str) -> bool {
 pub fn split_package_ref(pkg: &str) -> Option<(&str, &str)> {
     let (group, package) = pkg.rsplit_once('/')?;
     (!group.is_empty() && !package.is_empty()).then_some((group, package))
+}
+
+/// A ref is a package name (`nvim`) or, while `groups:` is supported, `group/package`.
+fn is_valid_ref(pkg: &str) -> bool {
+    is_valid_package_name(pkg) || split_package_ref(pkg).is_some()
 }
 
 /// Reads one `*.yml` file. `Ok(None)` for files that are not profiles at all.
@@ -548,7 +549,7 @@ fn check_profile(profile: &Profile) -> Result<()> {
 
 fn check_refs(profile: &Profile) -> Result<()> {
     for pkg in &profile.packages {
-        if split_package_ref(pkg).is_none() {
+        if !is_valid_ref(pkg) {
             return Err(ProfileError::InvalidPackageRef(pkg.clone()).into());
         }
     }
@@ -785,10 +786,10 @@ mod tests {
     fn malformed_package_ref_is_an_issue() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
-        write(&dir, "p.yml", "packages: [justgroup]\n");
+        write(&dir, "p.yml", "packages: [bad name]\n");
         let set = load(&dir);
         assert!(set.get("p").is_none());
-        assert!(set.issues()[0].message.contains("group/package"));
+        assert!(set.issues()[0].message.contains("expected a package name"));
     }
 
     #[test]
@@ -1042,7 +1043,7 @@ mod tests {
             "profile 'p' already exists"
         );
         assert!(set.create(profile("Bad Name", &[], &[])).is_err());
-        assert!(set.create(profile("ok", &[], &["nogroup"])).is_err());
+        assert!(set.create(profile("ok", &[], &["bad name"])).is_err());
         assert!(!dir.join("ok.yml").exists());
     }
 
@@ -1209,7 +1210,7 @@ mod tests {
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
         set.create(profile("a", &[], &["home/git"])).unwrap();
         assert!(matches!(
-            set.rename_package("home/git", "nogroup"),
+            set.rename_package("home/git", "bad name"),
             Err(Error::Profile(ProfileError::InvalidPackageRef(_)))
         ));
         assert_eq!(set.get("a").unwrap().packages, ["home/git"]);
@@ -1261,6 +1262,50 @@ mod tests {
         assert_eq!(set.remove_group("config").unwrap(), ["a", "b"]);
         assert_eq!(set.get("a").unwrap().packages, ["home/git", "home/shell"]);
         assert!(set.get("b").unwrap().packages.is_empty());
+    }
+
+    #[test]
+    fn flat_package_names_are_valid_refs() {
+        let tmp = TempDir::new().unwrap();
+        let mut set = ProfileSet::new(tmp.path().join("profiles"));
+        set.create(profile("p", &[], &["nvim", "home/git"]))
+            .unwrap();
+        assert_eq!(set.get("p").unwrap().packages, ["nvim", "home/git"]);
+        assert!(matches!(
+            set.create(profile("q", &[], &["bad name"])),
+            Err(Error::Profile(ProfileError::InvalidPackageRef(_)))
+        ));
+        assert!(matches!(
+            set.rename_package("nvim", "bad name"),
+            Err(Error::Profile(ProfileError::InvalidPackageRef(_)))
+        ));
+        assert_eq!(
+            ProfileError::InvalidPackageRef("home/nvim/".to_string()).to_string(),
+            "invalid package ref 'home/nvim/': expected a package name like 'nvim'"
+        );
+    }
+
+    #[test]
+    fn flat_profile_resolves_against_flat_known_packages() {
+        let tmp = TempDir::new().unwrap();
+        let config_dir = tmp.path();
+        let home = tmp.path().join("home");
+        fs::create_dir_all(config_dir.join("dotfiles/nvim")).unwrap();
+        fs::create_dir_all(config_dir.join("dotfiles/.git")).unwrap();
+        let config: Config = serde_yaml_ng::from_str("packages: dotfiles\nglobal: {}\n").unwrap();
+
+        let known = known_packages(&config, config_dir, &home);
+        assert_eq!(known.iter().collect::<Vec<_>>(), ["nvim"]);
+
+        let mut set = ProfileSet::new(config_dir.join("profiles"));
+        set.create(profile("p", &[], &["nvim", "ghost"])).unwrap();
+        let resolved = set.resolve("p", &known).unwrap();
+        let missing: Vec<_> = resolved
+            .entries
+            .iter()
+            .map(|e| (e.package.as_str(), e.missing))
+            .collect();
+        assert_eq!(missing, [("nvim", false), ("ghost", true)]);
     }
 
     #[test]

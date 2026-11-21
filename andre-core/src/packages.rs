@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+/// Every direct subfolder of `source` whose name does not start with `.` (so `.git` is
+/// never a package), sorted by name.
 pub fn discover_packages(source: &Path) -> Vec<String> {
     if !source.is_dir() {
         return Vec::new();
@@ -13,7 +15,10 @@ pub fn discover_packages(source: &Path) -> Vec<String> {
             let path = entry.path();
             if path.is_dir() {
                 if let Some(name) = path.file_name() {
-                    packages.push(name.to_string_lossy().to_string());
+                    let name = name.to_string_lossy().to_string();
+                    if !name.starts_with('.') {
+                        packages.push(name);
+                    }
                 }
             }
         }
@@ -84,6 +89,18 @@ mod tests {
 
         let packages = discover_packages(source);
         assert_eq!(packages, vec!["package1"]);
+    }
+
+    #[test]
+    fn test_discover_packages_skips_dot_folders() {
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path();
+
+        fs::create_dir_all(source.join(".git")).unwrap();
+        fs::create_dir_all(source.join(".config")).unwrap();
+        fs::create_dir_all(source.join("nvim")).unwrap();
+
+        assert_eq!(discover_packages(source), vec!["nvim"]);
     }
 
     #[test]

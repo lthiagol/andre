@@ -156,6 +156,13 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   unit tests for `button_click`, `dialog_click`, `dialog_row_click`, `chip_click`,
   `step_click`, `option_at`, `wheel_over`, `wheel_scroll` and `fit` (profiles).
 
+### Changed (breaking)
+
+- **Groups removed: one packages folder.** `andre.yml` takes `packages:` (the folder;
+  every subfolder is a package, folders starting with `.` are skipped) and an optional
+  `target:` (default: your home folder). Profile refs are plain package names (`nvim`),
+  not `group/package`.
+
 ### Changed
 
 - **Help is a two-pane screen, and titles are lowercase trails.** `help` lists eight

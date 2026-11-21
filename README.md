@@ -94,6 +94,9 @@ Create an `andre.yml` in your dotfiles directory:
 
 ```yaml
 # Minimal working example — see REFERENCE.md for full reference
+packages: packages/dotfiles   # every subfolder is a package
+target: "~"                   # optional; where links go (default: your home folder)
+
 global:
   stow:
     verbosity: 0
@@ -101,11 +104,6 @@ global:
     no_folding: false
     adopt: false
     action: stow
-
-groups:
-  dotfiles:
-    source: packages/dotfiles
-    target: ~
 ```
 
 andre reads the config from `~/.config/andre/` (or `$XDG_CONFIG_HOME/andre/`). To use another file or folder:

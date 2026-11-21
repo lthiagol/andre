@@ -1,7 +1,16 @@
 # andre configuration template
 # See: https://github.com/lthiagol/andre
 
-# Global settings that apply to all groups
+# The packages folder: every subfolder is one package, named after its folder.
+# Folders whose name starts with '.' are skipped (so .git is never a package).
+# Relative paths start at this config folder; '~' is your home folder.
+packages: ~/src/dotfiles
+
+# Optional: where every package links. Default: your home folder.
+# It must not be the packages folder or inside it.
+# target: "~"
+
+# Global settings that apply to every package
 global:
   # Optional: link engine. 'native' (default) is built in and needs no GNU
   # stow binary. Set to 'stow' to shell out to GNU stow — required for
@@ -16,13 +25,14 @@ global:
   # 'unicode' uses common Unicode symbols and needs no Nerd Font.
   # icons: nerd
 
-  # Optional: patterns to ignore globally (supports glob syntax)
+  # Optional: patterns to ignore for every package (supports glob syntax).
+  # A package can add its own .stow-local-ignore file.
   # ignore:
   #   - .git
   #   - .DS_Store
   #   - '*.swp'
 
-  # Default stow options (can be overridden per-group, or via TUI flags)
+  # Default stow options (can be overridden via TUI flags)
   stow:
     # Verbosity level: 0 (quiet), 1 (-v), 2 (-vv), 3 (-vvv)
     verbosity: 0
@@ -38,25 +48,3 @@ global:
 
     # Default action: stow, restow, delete, or simulate
     action: stow
-
-# Package groups - each group maps to a stow target directory
-groups:
-  # Example: dotfiles in ~/.dotfiles stowing to $HOME
-  dotfiles:
-    source: packages/dotfiles
-    target: target/home
-    # Optional: group-specific ignore patterns (merged with global.ignore)
-    # ignore:
-    #   - '.gitignore'
-
-  # Example: emacs config
-  # emacs:
-  #   source: packages/emacs
-  #   target: target/emacs
-
-  # Example: shell configs
-  # shell:
-  #   source: packages/shell
-  #   target: target/home
-
-  # Add more groups as needed...

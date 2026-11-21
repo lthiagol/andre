@@ -154,24 +154,16 @@ Create an `andre.yml` in your dotfiles directory:
 
 ```yaml
 # Minimal working example
+packages: packages/dotfiles   # every subfolder is a package
+target: "~"                   # optional; where links go (default: your home folder)
+
 global:
-  theme: default
-
-  ignore:
-    - .git
-    - .DS_Store
-
   stow:
     verbosity: 0
     dry_run: false
     no_folding: false
     adopt: false
     action: stow
-
-groups:
-  dotfiles:
-    source: packages/dotfiles
-    target: ~
 ```
 
 andre finds the config in `$XDG_CONFIG_HOME/andre/` (default `~/.config/andre/`). To use another file or folder:
@@ -252,6 +244,23 @@ andre loads one config file (`andre.yaml` or `andre.yml`), chosen in this order:
   it and suggests `--config-folder <that dir>`.
 - Profiles are read from `profiles/` next to the `andre.yml` that was loaded.
 
+### Packages Folder
+
+```yaml
+packages: ~/src/dotfiles   # required: the folder that holds every package
+target: "~"                # optional: where every package links (default: your home folder)
+```
+
+- **Packages**: each direct subfolder of `packages` is one package, named after its folder
+  (`nvim`). Folders whose name starts with `.` are skipped, so `.git` is never a package.
+- **Paths**: relative paths start at the config folder; `~` is your home folder.
+- **Target**: must not be the packages folder or inside it. The usual layout is the
+  packages folder inside the target (`~/src/dotfiles` under `~`).
+- **No `packages:`**: andre opens with no packages and warns
+  `no packages folder: set \`packages:\` in andre.yml`.
+- **Missing folder**: a `packages:` folder that is not on disk stops startup with
+  `Packages folder not found: <path>`.
+
 <a name="fresh-machine"></a>
 ### Fresh Machine
 
@@ -288,10 +297,10 @@ folder beside `andre.yml`:
 # profiles/agent-work.yml
 description: Work servers that run agents   # optional
 includes: [agent-base]                      # optional: other profile names
-packages:                                   # optional: "group/package" refs
-  - home/git
-  - home/shell
-  - config/nvim
+packages:                                   # optional: package names
+  - git
+  - shell
+  - nvim
 ```
 
 - **Name**: the file name without `.yml`. Lowercase letters, digits, `-` and `_`; must start
@@ -303,8 +312,8 @@ packages:                                   # optional: "group/package" refs
   entry records where it came from (own, or via which include).
 - **Cycles** (`a` includes `b`, `b` includes `a`) and **unknown includes** are errors
   for that profile. The message names the cycle path or the missing profile.
-- **Missing packages**: a ref to a group or package that does not exist is kept and
-  shown as `missing`, with a warning at startup. It is not fatal.
+- **Missing packages**: a ref to a package that does not exist is kept and shown as
+  `missing`, with a warning at startup. It is not fatal.
 - Renaming a package or group through andre rewrites the refs in every profile;
   deleting a package removes its refs. Deleting a profile removes the includes that
   name it.
@@ -356,6 +365,9 @@ All source and target paths are resolved **relative to the config file's directo
 ### Complete Template
 
 ```yaml
+packages: ~/src/dotfiles   # every subfolder is a package
+target: "~"               # optional; default: your home folder
+
 global:
   theme: catppuccin-mocha
 
@@ -380,17 +392,6 @@ global:
     no_folding: false
     adopt: false
     action: stow
-
-groups:
-  home:
-    source: dotfiles/home
-    target: ~
-    # Optional: per-group ignore patterns (merged with global.ignore)
-    # ignore:
-    #   - '*.log'
-  config:
-    source: dotfiles/config
-    target: ~/.config
 ```
 
 ### Configuration Flags
