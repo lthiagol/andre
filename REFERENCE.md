@@ -429,9 +429,17 @@ Mouse capture is always on. Hold Shift to select text in the terminal.
 | `▾` / `▸` fold | Fold or unfold the group |
 | Top-bar chip | Its key: the action pill cycles, `verbose` and each flag toggle |
 | Footer hint | Its key, such as `Esc back` |
+| Dialog or action-bar button | Its key, such as `y delete` or `n cancel` |
+| Row of a dialog list (membership, settings pickers) | Moves the cursor there; on the cursor's row, its key (`Space` toggles, `Enter` keeps) |
+| File tab (ignore editor) | Switches to that file |
+| Profile chip (status) | Opens the profile dropdown; a click on an option moves the cursor there, a second picks it |
+| Finished step (new package) | Goes back to that step |
 
-The wheel over a list moves the cursor one row per notch. Clicks outside an open dialog or
-text field do nothing. The new-package name list takes clicks while its name field has focus.
+The wheel over a list moves the cursor one row per notch, and the wheel over a dialog list
+does the same. The wheel over the detail pane of execute, help, status, packages, settings
+or profiles scrolls it three rows (a profile scrolls its section list). Clicks outside an
+open dialog or text field do nothing. The new-package name list takes clicks while its
+name field has focus.
 
 ### Profiles
 

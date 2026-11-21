@@ -20,7 +20,7 @@ use crate::input::Input;
 use crate::theme::ThemeColors;
 use crate::ui::confirm::review_buttons;
 use crate::ui::detail::{render_detail, Detail};
-use crate::ui::dialog::render_action_bar;
+use crate::ui::dialog::{button_click, render_action_bar};
 use crate::ui::footer::{review_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
@@ -44,6 +44,8 @@ pub struct ConfirmComponent {
     pub list: ListView,
     /// The detail of the cursor's row. Built by `sync`.
     detail: Detail,
+    /// The action bar, as the last `prepare` laid it out.
+    actions: Option<Rect>,
 }
 
 /// What a run does, worked out from disk when the review opens and when a flag changes.
@@ -233,6 +235,7 @@ impl ConfirmComponent {
             plan_flags: flags,
             list: ListView::default(),
             detail: Detail::default(),
+            actions: None,
         };
         component.sync(ctx);
         component
@@ -436,7 +439,13 @@ impl Component for ConfirmComponent {
         review_hints(self.flags(ctx).action.as_str())
     }
 
-    fn handle_mouse(&mut self, ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        if let Some(actions) = self.actions {
+            let buttons = review_buttons(self.flags(ctx).action.as_str(), self.count());
+            if let Some(key) = button_click(actions, &buttons, ev) {
+                return self.handle_key(key, ctx);
+            }
+        }
         let len = self.rows.len();
         match click_list(&mut self.list, ev, len) {
             Some(_) => Transition::Handled,
@@ -447,6 +456,7 @@ impl Component for ConfirmComponent {
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, Shape::Review);
         self.list.prepare(rects.list, self.rows.len());
+        self.actions = rects.actions;
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {

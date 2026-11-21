@@ -20,7 +20,8 @@ use crate::components::ignore::IgnoreEditComponent;
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
 use crate::theme::ThemeColors;
-use crate::ui::detail::{render_detail, Detail};
+use crate::ui::detail::{fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail};
+use crate::ui::dialog::{dialog_body_rect, dialog_click, dialog_row_click};
 use crate::ui::footer::{membership_dialog_hints, packages_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
@@ -84,6 +85,14 @@ pub struct PackagesComponent {
     /// What `rows` and `detail` were built from. `None` until the first update.
     detail_key: Option<u64>,
     popup: Option<Membership>,
+    /// The content area, as of the last `prepare`. The membership dialog is centred in it.
+    content: Rect,
+    /// Rows the detail is scrolled down. It resets when the cursor moves.
+    scroll: u16,
+    /// The cursor row `scroll` belongs to.
+    scroll_row: usize,
+    /// The detail pane as the last `prepare` laid it out.
+    detail_rect: Rect,
 }
 
 impl Component for PackagesComponent {
@@ -173,8 +182,22 @@ impl Component for PackagesComponent {
         }
     }
 
+    /// The membership dialog takes the mouse: its buttons and rows work, and the browser
+    /// behind it does not.
+    fn mouse_blocked(&self) -> bool {
+        false
+    }
+
     fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
         self.sync(ctx);
+        if self.popup.is_some() {
+            return self.popup_click(ev, ctx);
+        }
+        if let Some(down) = wheel_over(ev, self.detail_rect) {
+            let colors = ThemeColors::from_theme(ctx.core.theme);
+            self.scroll = wheel_scroll(&self.detail, self.detail_rect, &colors, self.scroll, down);
+            return Transition::Handled;
+        }
         let len = self.rows.len();
         let Some(click) = click_list(&mut self.list, ev, len) else {
             return Transition::None;
@@ -187,6 +210,8 @@ impl Component for PackagesComponent {
 
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, Shape::TwoPane);
+        self.content = area;
+        self.detail_rect = rects.detail;
         self.list.prepare(rects.list, self.rows.len());
     }
 
@@ -218,12 +243,13 @@ impl Component for PackagesComponent {
             Some(empty),
         );
 
-        render_detail(
+        render_detail_scrolled(
             frame,
             rects.detail,
             &colors,
             &self.detail_title(),
             &self.detail,
+            self.scroll,
         );
 
         if let Some(membership) = &self.popup {
@@ -233,6 +259,48 @@ impl Component for PackagesComponent {
 }
 
 impl PackagesComponent {
+    /// A click on a button of the membership dialog sends the button's key. A click on a
+    /// profile's row moves the cursor there; a second click on the cursor's row toggles it,
+    /// as Space does. The wheel moves the cursor a row. Other clicks change nothing.
+    fn popup_click(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        let icons = Icons::for_set(ctx.core.icons);
+        let Some(membership) = self.popup.as_ref() else {
+            return Transition::None;
+        };
+        let shown = view::visible_profiles(
+            self.content.height,
+            membership.profiles.len(),
+            membership.cursor,
+        );
+        let dialog = view::membership_dialog(membership, shown.clone(), &colors, icons);
+        let cursor = membership.cursor;
+        let button = dialog_click(self.content, &dialog, ev);
+        // Body lines are the profiles shown, in order, then the hint line.
+        let row = dialog_row_click(self.content, &dialog, ev)
+            .filter(|&line| line < shown.len())
+            .map(|line| shown.start + line);
+        let wheel = wheel_over(ev, dialog_body_rect(self.content, &dialog));
+
+        if let Some(key) = button {
+            return self.handle_key(key, ctx);
+        }
+        if let Some(row) = row {
+            if row == cursor {
+                return self.handle_key(input::key(KeyCode::Char(' ')), ctx);
+            }
+            if let Some(membership) = self.popup.as_mut() {
+                membership.cursor = row;
+            }
+            return Transition::Handled;
+        }
+        if let Some(down) = wheel {
+            let code = if down { KeyCode::Down } else { KeyCode::Up };
+            return self.handle_key(input::key(code), ctx);
+        }
+        Transition::Handled
+    }
+
     /// The profile membership dialog open over the browser, if any.
     pub fn popup(&self) -> Option<&Membership> {
         self.popup.as_ref()
@@ -343,6 +411,13 @@ impl PackagesComponent {
             // Reading the statuses changes the cache, so the key is taken again afterwards.
             self.detail_key = Some(self.fingerprint(ctx));
         }
+        // A detail starts at its top when the cursor moves onto its row.
+        if self.list.cursor != self.scroll_row {
+            self.scroll = 0;
+            self.scroll_row = self.list.cursor;
+        }
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        self.scroll = fit_scroll(&self.detail, self.detail_rect, &colors, self.scroll);
     }
 
     /// Hash of everything the rows and the detail depend on. A change in any of these
@@ -491,5 +566,95 @@ fn save_membership(membership: &Membership, ctx: &mut AppContext) {
             "updated {package} in {changed} {}",
             plural(changed, "profile", "profiles")
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::detail::{detail_inner, detail_rows, WHEEL_ROWS};
+    use andre_core::config::Config;
+    use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
+    use ratatui::text::Line;
+
+    /// A wheel notch at column `x`, row `y`.
+    fn notch(kind: MouseEventKind, x: u16, y: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// A detail of forty rows, more than any pane at 80x24 shows.
+    fn long_detail() -> Detail {
+        Detail {
+            sections: (0..40).map(|i| Line::raw(format!("row{i}"))).collect(),
+            ..Detail::default()
+        }
+    }
+
+    #[test]
+    fn test_wheel_over_the_detail_scrolls_it_three_rows() {
+        let mut ctx = AppContext::for_tests(Config::default_empty(), std::path::Path::new("/"));
+        let mut component = PackagesComponent::default();
+        component.sync(&ctx);
+        component.detail = long_detail();
+        let area = Rect::new(0, 0, 80, 24);
+        component.prepare(area);
+        let detail = screen_rects(area, Shape::TwoPane).detail;
+        let (x, y) = (detail.x + 1, detail.y + 1);
+        component.handle_mouse(notch(MouseEventKind::ScrollDown, x, y), &mut ctx);
+        assert_eq!(component.scroll, WHEEL_ROWS, "one notch is three rows");
+        component.handle_mouse(notch(MouseEventKind::ScrollUp, x, y), &mut ctx);
+        assert_eq!(component.scroll, 0, "and a notch up takes them back");
+    }
+
+    /// One group `dots` with packages `alpha` and `beta`, each with one file.
+    fn fixture() -> (tempfile::TempDir, AppContext) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src/alpha")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("src/beta")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("tgt")).unwrap();
+        std::fs::write(tmp.path().join("src/alpha/f"), "").unwrap();
+        std::fs::write(tmp.path().join("src/beta/g"), "").unwrap();
+        let mut config = Config::default_empty();
+        config.add_group(
+            "dots".into(),
+            tmp.path().join("src").display().to_string(),
+            tmp.path().join("tgt").display().to_string(),
+        );
+        let ctx = AppContext::for_tests(config, tmp.path());
+        (tmp, ctx)
+    }
+
+    /// The cursor moves onto a row whose detail overflows the pane, so a scroll left over from
+    /// the last row would show: only the reset clears it.
+    #[test]
+    fn test_moving_the_cursor_starts_the_detail_at_the_top() {
+        let (_tmp, mut ctx) = fixture();
+        let mut component = PackagesComponent::default();
+        component.sync(&ctx);
+        let area = Rect::new(0, 0, 80, 4);
+        component.prepare(area);
+        let pane = screen_rects(area, Shape::TwoPane).detail;
+        component.detail = long_detail();
+        component.handle_mouse(
+            notch(MouseEventKind::ScrollDown, pane.x + 1, pane.y + 1),
+            &mut ctx,
+        );
+        assert_eq!(component.scroll, WHEEL_ROWS, "the first detail scrolls");
+
+        component.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), &mut ctx);
+        component.update(&mut ctx);
+        assert_eq!(component.list.cursor, 1, "the cursor is on alpha");
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        assert!(
+            detail_rows(&component.detail, pane, &colors)
+                > usize::from(WHEEL_ROWS) + usize::from(detail_inner(pane).height),
+            "alpha's detail overflows the pane"
+        );
+        assert_eq!(component.scroll, 0, "alpha's detail starts at its top");
     }
 }

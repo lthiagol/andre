@@ -5,9 +5,9 @@
 
 use std::borrow::Cow;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Clear, Paragraph},
@@ -17,6 +17,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::theme::ThemeColors;
 use crate::ui::block::themed_panel;
+use crate::ui::hits::key_at;
 
 /// Columns between two buttons.
 const BUTTON_GAP: u16 = 2;
@@ -141,6 +142,15 @@ pub fn button_rects(area: Rect, buttons: &[Button]) -> Vec<(Rect, KeyEvent)> {
         .collect()
 }
 
+/// The key of the button a left click at `ev` lands on, when `buttons` are drawn in `area`.
+/// Other mouse events, and clicks off the buttons, give `None`.
+pub fn button_click(area: Rect, buttons: &[Button], ev: MouseEvent) -> Option<KeyEvent> {
+    if ev.kind != MouseEventKind::Down(MouseButton::Left) {
+        return None;
+    }
+    key_at(&button_rects(area, buttons), ev.column, ev.row)
+}
+
 /// Draws `buttons` right-aligned on the first row of `area`, each into its
 /// [`button_rects`] rect.
 pub fn render_action_bar(frame: &mut Frame, area: Rect, colors: &ThemeColors, buttons: &[Button]) {
@@ -193,6 +203,42 @@ pub fn dialog_rect(content: Rect, d: &Dialog) -> Rect {
     )
 }
 
+/// The rect of `rows` body lines inside `inner`: under the blank row, above the button row,
+/// clipped to the rows there are.
+fn body_rect(inner: Rect, rows: usize) -> Rect {
+    Rect {
+        y: inner.y + 1,
+        height: (rows as u16).min(inner.height.saturating_sub(2)),
+        ..inner
+    }
+}
+
+/// The rect of `d`'s body lines when it is drawn in `content`, as [`render_dialog`] paints
+/// them. A dialog's list lives here.
+pub fn dialog_body_rect(content: Rect, d: &Dialog) -> Rect {
+    body_rect(dialog_inner(dialog_rect(content, d)), d.body.len())
+}
+
+/// The index of the body line a left click at `ev` lands on, when `d` is drawn in `content`.
+/// Body lines are numbered from the top, so a dialog's list reads its row this way. Other
+/// events, and clicks off the body, give `None`.
+pub fn dialog_row_click(content: Rect, d: &Dialog, ev: MouseEvent) -> Option<usize> {
+    if ev.kind != MouseEventKind::Down(MouseButton::Left) {
+        return None;
+    }
+    let body = dialog_body_rect(content, d);
+    body.contains(Position::new(ev.column, ev.row))
+        .then(|| usize::from(ev.row - body.y))
+}
+
+/// The key of the dialog button a left click at `ev` lands on, when `d` is drawn in
+/// `content`. The rect is the one [`render_dialog`] paints into, so a click on a drawn button
+/// hits it.
+pub fn dialog_click(content: Rect, d: &Dialog, ev: MouseEvent) -> Option<KeyEvent> {
+    let buttons = button_row(dialog_inner(dialog_rect(content, d)));
+    button_click(buttons, &d.buttons, ev)
+}
+
 /// Draws a dialog at `rect`, which [`dialog_rect`] sized. The panel is cleared first, so
 /// nothing under it shows through.
 pub fn render_dialog(frame: &mut Frame, rect: Rect, colors: &ThemeColors, d: &Dialog) {
@@ -204,16 +250,9 @@ pub fn render_dialog(frame: &mut Frame, rect: Rect, colors: &ThemeColors, d: &Di
         return;
     }
 
-    // The body starts under the blank row; the buttons take the last row.
-    let body_rows = (d.body.len() as u16).min(inner.height.saturating_sub(2));
-    let body = Rect {
-        y: inner.y + 1,
-        height: body_rows,
-        ..inner
-    };
     frame.render_widget(
         Paragraph::new(d.body.clone()).style(Style::default().fg(colors.text)),
-        body,
+        body_rect(inner, d.body.len()),
     );
     render_action_bar(frame, button_row(inner), colors, &d.buttons);
 }
@@ -493,5 +532,113 @@ mod tests {
         assert_eq!(spans[1].content, "n");
         assert_eq!(spans[1].style.fg, Some(c.key));
         assert_eq!(spans[2].style.fg, Some(c.text));
+    }
+
+    /// A left press at column `x`, row `y`.
+    fn press(x: u16, y: u16) -> MouseEvent {
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn test_button_click_sends_the_key_of_the_button_under_the_press() {
+        let area = Rect::new(0, 0, 30, 1);
+        let buttons = [button('n', "keep", false), button('y', "delete", true)];
+        let rects = button_rects(area, &buttons);
+        let (rect, key) = rects[1];
+        assert_eq!(
+            button_click(area, &buttons, press(rect.x, rect.y)),
+            Some(key)
+        );
+        assert_eq!(button_click(area, &buttons, press(0, 5)), None, "other row");
+    }
+
+    #[test]
+    fn test_button_click_ignores_the_wheel_and_releases() {
+        let area = Rect::new(0, 0, 30, 1);
+        let buttons = [button('y', "delete", true)];
+        let (rect, _) = button_rects(area, &buttons)[0];
+        let wheel = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            ..press(rect.x, rect.y)
+        };
+        let release = MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            ..press(rect.x, rect.y)
+        };
+        assert_eq!(button_click(area, &buttons, wheel), None);
+        assert_eq!(button_click(area, &buttons, release), None);
+    }
+
+    #[test]
+    fn test_dialog_click_hits_the_buttons_as_they_are_painted() {
+        let content = Rect::new(0, 0, 76, 16);
+        let c = ThemeColors::from_theme(Theme::Default);
+        let d = Dialog {
+            title: "unlink".to_string(),
+            body: vec![Line::raw("Remove agent?")],
+            buttons: vec![button('n', "keep", false), button('y', "delete", true)],
+        };
+        let rect = dialog_rect(content, &d);
+        let mut terminal = Terminal::new(TestBackend::new(76, 16)).unwrap();
+        terminal.draw(|f| render_dialog(f, rect, &c, &d)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let at = |text: &str| -> (u16, u16) {
+            (0..16)
+                .find_map(|y| {
+                    let row: String = (0..76).map(|x| buf[(x, y)].symbol()).collect();
+                    row.find(text).map(|byte| (byte as u16, y))
+                })
+                .expect("the button is painted")
+        };
+        let (x, y) = at("keep");
+        assert_eq!(dialog_click(content, &d, press(x, y)), Some(key('n')));
+        let (x, y) = at("delete");
+        assert_eq!(dialog_click(content, &d, press(x, y)), Some(key('y')));
+        assert_eq!(
+            dialog_click(content, &d, press(rect.x, rect.y)),
+            None,
+            "the border"
+        );
+        assert_eq!(
+            dialog_click(content, &d, press(0, 0)),
+            None,
+            "outside the dialog"
+        );
+    }
+
+    #[test]
+    fn test_dialog_row_click_gives_the_body_line_under_the_press() {
+        let content = Rect::new(0, 0, 76, 16);
+        let d = dialog(&["first", "second", "third"], vec![button('y', "ok", true)]);
+        let body = dialog_body_rect(content, &d);
+        assert_eq!(body.height, 3, "one row per body line");
+        assert_eq!(
+            dialog_row_click(content, &d, press(body.x, body.y)),
+            Some(0)
+        );
+        assert_eq!(
+            dialog_row_click(content, &d, press(body.x, body.y + 2)),
+            Some(2)
+        );
+        assert_eq!(
+            dialog_row_click(content, &d, press(body.x, body.bottom())),
+            None,
+            "the button row is not a body line"
+        );
+        assert_eq!(
+            dialog_row_click(content, &d, press(0, 0)),
+            None,
+            "outside the dialog"
+        );
+        let release = MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            ..press(body.x, body.y)
+        };
+        assert_eq!(dialog_row_click(content, &d, release), None, "a release");
     }
 }

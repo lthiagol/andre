@@ -8,7 +8,7 @@ use crate::input::Input;
 use crate::theme::ThemeColors;
 use crate::ui::confirm::{done_buttons, review_buttons};
 use crate::ui::detail::{render_detail, Detail};
-use crate::ui::dialog::render_action_bar;
+use crate::ui::dialog::{button_click, render_action_bar, Button};
 use crate::ui::footer::{unstow_review_hints, Hint};
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, click_list, render_list_panel, ListView};
@@ -25,6 +25,8 @@ pub struct UnstowConfirmComponent {
     pub list: ListView,
     /// The cursor link's detail. Built by `sync`, which has the home folder.
     detail: Detail,
+    /// The action bar, as the last `prepare` laid it out.
+    actions: Option<Rect>,
 }
 
 impl UnstowConfirmComponent {
@@ -45,6 +47,16 @@ impl UnstowConfirmComponent {
             outcomes: None,
             list: ListView::default(),
             detail: Detail::default(),
+            actions: None,
+        }
+    }
+
+    /// The action bar's buttons: the review's, or the done ones once the unlinks ran.
+    fn action_buttons(&self) -> Vec<Button> {
+        if self.finished() {
+            done_buttons()
+        } else {
+            review_buttons("remove", self.links.len())
         }
     }
 
@@ -158,7 +170,12 @@ impl Component for UnstowConfirmComponent {
         unstow_review_hints(self.finished())
     }
 
-    fn handle_mouse(&mut self, ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        if let Some(actions) = self.actions {
+            if let Some(key) = button_click(actions, &self.action_buttons(), ev) {
+                return self.handle_key(key, ctx);
+            }
+        }
         let len = self.links.len();
         match click_list(&mut self.list, ev, len) {
             Some(_) => Transition::Handled,
@@ -169,6 +186,7 @@ impl Component for UnstowConfirmComponent {
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, Shape::Review);
         self.list.prepare(rects.list, self.links.len());
+        self.actions = rects.actions;
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
@@ -203,12 +221,7 @@ impl Component for UnstowConfirmComponent {
         render_detail(frame, rects.detail, &colors, &title, &self.detail);
 
         if let Some(actions) = rects.actions {
-            let buttons = if self.finished() {
-                done_buttons()
-            } else {
-                review_buttons("remove", self.links.len())
-            };
-            render_action_bar(frame, actions, &colors, &buttons);
+            render_action_bar(frame, actions, &colors, &self.action_buttons());
         }
     }
 }

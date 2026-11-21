@@ -180,35 +180,49 @@ pub fn included_by(profiles: &ProfileSet, name: &str) -> Vec<String> {
         .collect()
 }
 
-/// `detail` cut to `height` rows, laid out as `render_detail` lays it out. When the sections
-/// do not fit, the last row says how many are left: `+ N more`.
-pub fn fit(detail: &Detail, height: usize, colors: &ThemeColors) -> Detail {
+/// The rows the sections of `detail` may take in `height` rows: what the headline and facts
+/// leave, less the blank row before the sections.
+fn section_room(detail: &Detail, height: usize) -> usize {
     let mut used = detail.headline.len();
     if !detail.facts.is_empty() {
         used += usize::from(used > 0) + detail.facts.len();
     }
-    if detail.sections.is_empty() {
-        return detail.clone();
-    }
-    let room = height.saturating_sub(used + usize::from(used > 0));
-    if detail.sections.len() <= room {
-        return detail.clone();
+    height.saturating_sub(used + usize::from(used > 0))
+}
+
+/// `detail` cut to `height` rows, laid out as `render_detail` lays it out. The sections start
+/// `scroll` sections down the list, as the wheel leaves them. When the rest do not fit, the
+/// last row says how many are left: `+ N more`.
+pub fn fit(detail: &Detail, height: usize, scroll: usize, colors: &ThemeColors) -> Detail {
+    let scroll = scroll.min(max_section_scroll(detail, height));
+    let rest = &detail.sections[scroll..];
+    let room = section_room(detail, height);
+    let mut shown = detail.clone();
+    if rest.len() <= room {
+        shown.sections = rest.to_vec();
+        return shown;
     }
 
-    let mut shown = detail.clone();
     shown.sections.clear();
     if room > 0 {
         let kept = room - 1;
-        shown
-            .sections
-            .extend(detail.sections[..kept].iter().cloned());
-        let more = detail.sections.len() - kept;
+        shown.sections.extend(rest[..kept].iter().cloned());
+        let more = rest.len() - kept;
         shown.sections.push(Line::styled(
             format!("+ {more} more"),
             Style::default().fg(colors.text_dim),
         ));
     }
     shown
+}
+
+/// The furthest `fit` lets the sections of `detail` scroll in `height` rows: the last section
+/// on the last row.
+pub fn max_section_scroll(detail: &Detail, height: usize) -> usize {
+    detail
+        .sections
+        .len()
+        .saturating_sub(section_room(detail, height))
 }
 
 /// Draws the dialog for `popup`, centred in `content`. Reads only what `popup` holds: the
@@ -219,7 +233,8 @@ pub fn render_popup(frame: &mut Frame, content: Rect, colors: &ThemeColors, popu
     render_dialog(frame, rect, colors, &dialog);
 }
 
-fn popup_dialog(popup: &Popup, colors: &ThemeColors) -> Dialog {
+/// The dialog `popup` shows. Its rect and buttons are the ones [`render_popup`] paints.
+pub fn popup_dialog(popup: &Popup, colors: &ThemeColors) -> Dialog {
     match popup {
         Popup::New(name) => name_dialog("new profile", "create", name, colors),
         Popup::Rename { name, .. } => name_dialog("rename profile", "rename", name, colors),
@@ -421,7 +436,7 @@ mod tests {
             sections: vec![Line::raw("a"), Line::raw("b")],
         };
         // headline, blank, one fact, blank, two sections: seven rows.
-        assert_eq!(fit(&detail, 7, &colors), detail);
+        assert_eq!(fit(&detail, 7, 0, &colors), detail);
     }
 
     #[test]
@@ -433,9 +448,45 @@ mod tests {
             sections: (0..6).map(|i| Line::raw(format!("pkg{i}"))).collect(),
         };
         // headline and blank take two rows, so four rows are left: three packages and `+ 3 more`.
-        let shown = fit(&detail, 6, &colors);
+        let shown = fit(&detail, 6, 0, &colors);
         let text: Vec<String> = shown.sections.iter().map(line_text).collect();
         assert_eq!(text, ["pkg0", "pkg1", "pkg2", "+ 3 more"]);
+    }
+
+    #[test]
+    fn test_fit_starts_the_sections_at_the_scroll_and_counts_what_is_left() {
+        let colors = ThemeColors::from_theme(andre_core::Theme::Default);
+        let detail = Detail {
+            headline: vec![Line::raw("head")],
+            facts: Vec::new(),
+            sections: (0..6).map(|i| Line::raw(format!("pkg{i}"))).collect(),
+        };
+        let text = |scroll| -> Vec<String> {
+            fit(&detail, 6, scroll, &colors)
+                .sections
+                .iter()
+                .map(line_text)
+                .collect()
+        };
+        assert_eq!(text(1), ["pkg1", "pkg2", "pkg3", "+ 2 more"]);
+        // The last sections fill the four rows, so nothing is left to count.
+        assert_eq!(text(2), ["pkg2", "pkg3", "pkg4", "pkg5"]);
+        assert_eq!(
+            text(99),
+            ["pkg2", "pkg3", "pkg4", "pkg5"],
+            "past the end clamps"
+        );
+    }
+
+    #[test]
+    fn test_max_section_scroll_puts_the_last_section_on_the_last_row() {
+        let detail = Detail {
+            headline: vec![Line::raw("head")],
+            facts: Vec::new(),
+            sections: (0..6).map(|i| Line::raw(format!("pkg{i}"))).collect(),
+        };
+        assert_eq!(max_section_scroll(&detail, 6), 2);
+        assert_eq!(max_section_scroll(&detail, 20), 0, "everything fits");
     }
 
     #[test]
@@ -446,7 +497,7 @@ mod tests {
             facts: Vec::new(),
             sections: vec![Line::raw("a")],
         };
-        assert!(fit(&detail, 1, &colors).sections.is_empty());
+        assert!(fit(&detail, 1, 0, &colors).sections.is_empty());
     }
 
     #[test]

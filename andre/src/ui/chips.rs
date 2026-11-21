@@ -1,9 +1,9 @@
 //! The chip row above a list or the panes: filters and tabs. The active chip is drawn in
 //! brackets in `accent`, the others in `text_dim`. Right-hand spans sit at the right edge.
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
 };
@@ -74,9 +74,9 @@ pub fn chip_line(
     Line::from(spans)
 }
 
-/// The rect of each chip on `area`'s first row, paired with the chip's key. A chip cut by
-/// the edge is clipped; chips past it are left out.
-pub fn chip_rects(area: Rect, chips: &[Chip]) -> Vec<(Rect, KeyEvent)> {
+/// The rect of each chip on `area`'s first row, paired with the chip's index in `chips`. A
+/// chip cut by the edge is clipped; chips past it are left out.
+pub fn chip_rects(area: Rect, chips: &[Chip]) -> Vec<(Rect, usize)> {
     let mut x = area.x;
     let mut out = Vec::new();
     for (i, chip) in chips.iter().enumerate() {
@@ -86,16 +86,27 @@ pub fn chip_rects(area: Rect, chips: &[Chip]) -> Vec<(Rect, KeyEvent)> {
         let width = chip_text(chip).width() as u16;
         let rect = Rect::new(x, area.y, width, 1).intersection(area);
         if rect.width > 0 {
-            out.push((rect, chip.key));
+            out.push((rect, i));
         }
         x = x.saturating_add(width);
     }
     out
 }
 
+/// The index of the chip a left click at `ev` lands on, from the rects [`chip_rects`] gave.
+pub fn chip_click(hits: &[(Rect, usize)], ev: MouseEvent) -> Option<usize> {
+    if ev.kind != MouseEventKind::Down(MouseButton::Left) {
+        return None;
+    }
+    let at = Position::new(ev.column, ev.row);
+    hits.iter()
+        .find(|(rect, _)| rect.contains(at))
+        .map(|(_, index)| *index)
+}
+
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{KeyCode, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
     use ratatui::text::Span;
 
     use super::*;
@@ -146,15 +157,12 @@ mod tests {
     }
 
     #[test]
-    fn test_chip_rects_follow_the_row_and_carry_each_key() {
+    fn test_chip_rects_follow_the_row_and_carry_each_index() {
         let chips = [chip("all", true, 'a'), chip("home", false, 'h')];
         let rects = chip_rects(Rect::new(0, 0, 30, 1), &chips);
-        assert_eq!(rects.len(), 2);
-        assert_eq!(rects[0].0, Rect::new(0, 0, 5, 1));
-        assert_eq!(rects[1].0, Rect::new(6, 0, 6, 1));
         assert_eq!(
-            rects[1].1,
-            KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)
+            rects,
+            vec![(Rect::new(0, 0, 5, 1), 0), (Rect::new(6, 0, 6, 1), 1)]
         );
     }
 
@@ -165,5 +173,39 @@ mod tests {
         let rects = chip_rects(Rect::new(0, 0, 6, 1), &chips);
         assert_eq!(rects.len(), 1);
         assert!(rects.iter().all(|(r, _)| r.right() <= 6));
+    }
+
+    fn press(x: u16, y: u16) -> MouseEvent {
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn test_chip_click_gives_the_index_of_the_chip_under_the_press() {
+        let chips = [chip("all", true, 'a'), chip("home", false, 'h')];
+        let hits = chip_rects(Rect::new(0, 0, 30, 1), &chips);
+        assert_eq!(chip_click(&hits, press(1, 0)), Some(0));
+        assert_eq!(chip_click(&hits, press(7, 0)), Some(1));
+        assert_eq!(
+            chip_click(&hits, press(5, 0)),
+            None,
+            "the gap between chips"
+        );
+        assert_eq!(chip_click(&hits, press(1, 1)), None, "the row below");
+    }
+
+    #[test]
+    fn test_chip_click_ignores_the_wheel() {
+        let chips = [chip("all", true, 'a')];
+        let hits = chip_rects(Rect::new(0, 0, 30, 1), &chips);
+        let wheel = MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            ..press(1, 0)
+        };
+        assert_eq!(chip_click(&hits, wheel), None);
     }
 }

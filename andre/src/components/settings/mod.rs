@@ -3,7 +3,7 @@
 //! it to `andre.yml`. Esc with unsaved edits asks first. Dialogs for pickers, group edits and
 //! removals sit on top of the list (see `overlays`).
 
-use andre_core::{IconSet, StowFlag, Theme};
+use andre_core::{IconSet, StowAction, StowFlag, Theme};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use ratatui::{layout::Rect, Frame};
 
@@ -11,7 +11,8 @@ use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, flag_for_key, Input};
 use crate::theme::ThemeColors;
 use crate::ui;
-use crate::ui::detail::{render_detail, Detail};
+use crate::ui::detail::{fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail};
+use crate::ui::dialog::{dialog_body_rect, dialog_click, dialog_row_click};
 use crate::ui::footer::{self, Hint};
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{click_list, ListView};
@@ -47,6 +48,25 @@ pub struct SettingsComponent {
     /// The row the cursor moves to at the next `refresh`: a group that was just renamed or
     /// added, or the group a cancelled menu was on.
     focus: Option<Row>,
+    /// The content area, as of the last `prepare`. Dialogs are centred in it.
+    content: Rect,
+    /// The detail pane as the last `prepare` laid it out.
+    detail_rect: Rect,
+    /// Rows the detail is scrolled down. It resets when the cursor moves.
+    scroll: u16,
+    /// The cursor row `scroll` belongs to.
+    scroll_row: usize,
+}
+
+/// The cursor and option count of a picker overlay, or `None` for a dialog that is not a
+/// picker.
+fn picker_state(overlay: &Overlay) -> Option<(usize, usize)> {
+    match overlay {
+        Overlay::Action { cursor } => Some((*cursor, StowAction::ALL.len())),
+        Overlay::Theme { cursor, .. } => Some((*cursor, Theme::ALL.len())),
+        Overlay::Icons { cursor, .. } => Some((*cursor, IconSet::ALL.len())),
+        _ => None,
+    }
 }
 
 impl SettingsComponent {
@@ -87,6 +107,13 @@ impl SettingsComponent {
                 self.detail_title.clear();
             }
         }
+        // A detail starts at its top when the cursor moves onto its row.
+        if self.list.cursor != self.scroll_row {
+            self.scroll = 0;
+            self.scroll_row = self.list.cursor;
+        }
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        self.scroll = fit_scroll(&self.detail, self.detail_rect, &colors, self.scroll);
     }
 
     /// The rows as the list paints them, headers included.
@@ -227,6 +254,47 @@ impl SettingsComponent {
         Transition::Handled
     }
 
+    /// Mouse input while a dialog is open. A button sends its key. On a picker a click on an
+    /// option moves the cursor there, and a click on the cursor's option keeps it, as Enter
+    /// does. The wheel moves a picker's cursor a row. Other clicks change nothing.
+    fn overlay_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        let (Some(pending), Some(overlay)) = (self.pending.as_ref(), self.overlays.last()) else {
+            return Transition::Handled;
+        };
+        let dialog = ui::settings::overlay_dialog(overlay, pending, ctx, &colors);
+        let picker = picker_state(overlay);
+        let button = dialog_click(self.content, &dialog, ev);
+        let option = dialog_row_click(self.content, &dialog, ev);
+        let wheel = wheel_over(ev, dialog_body_rect(self.content, &dialog));
+
+        if let Some(key) = button {
+            return self.handle_key(key, ctx);
+        }
+        if let Some((cursor, len)) = picker {
+            if let Some(index) = option.filter(|&index| index < len) {
+                if index == cursor {
+                    return self.handle_key(input::key(KeyCode::Enter), ctx);
+                }
+                // Each step goes through the arrow keys, so the theme and icon pickers preview.
+                let code = if index > cursor {
+                    KeyCode::Down
+                } else {
+                    KeyCode::Up
+                };
+                for _ in 0..index.abs_diff(cursor) {
+                    self.handle_key(input::key(code), ctx);
+                }
+                return Transition::Handled;
+            }
+            if let Some(down) = wheel {
+                let code = if down { KeyCode::Down } else { KeyCode::Up };
+                return self.handle_key(input::key(code), ctx);
+            }
+        }
+        Transition::Handled
+    }
+
     /// `y` saves and leaves, `n` discards and leaves, Esc stays.
     fn handle_leave_key(&mut self, key: KeyEvent, ctx: &mut AppContext) -> Transition {
         match key.code {
@@ -308,8 +376,22 @@ impl Component for SettingsComponent {
         }
     }
 
+    /// Dialogs take the mouse: their buttons and picker rows work, and the list behind them
+    /// does not (see `overlay_mouse`).
+    fn mouse_blocked(&self) -> bool {
+        false
+    }
+
     fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
         self.ensure(ctx);
+        if !self.overlays.is_empty() {
+            return self.overlay_mouse(ev, ctx);
+        }
+        if let Some(down) = wheel_over(ev, self.detail_rect) {
+            let colors = ThemeColors::from_theme(ctx.core.theme);
+            self.scroll = wheel_scroll(&self.detail, self.detail_rect, &colors, self.scroll, down);
+            return Transition::Handled;
+        }
         // A wheel notch moves to the next selectable row, as ↑↓ does, so it never rests on a
         // header. It works over a header row too.
         if matches!(
@@ -342,6 +424,8 @@ impl Component for SettingsComponent {
 
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, Shape::TwoPane);
+        self.content = area;
+        self.detail_rect = rects.detail;
         self.list.prepare(rects.list, self.items.len());
     }
 
@@ -359,12 +443,13 @@ impl Component for SettingsComponent {
             &self.items,
             &self.list,
         );
-        render_detail(
+        render_detail_scrolled(
             frame,
             rects.detail,
             &colors,
             &self.detail_title,
             &self.detail,
+            self.scroll,
         );
         if let Some(overlay) = self.overlays.last() {
             ui::settings::render_overlay(frame, area, &colors, overlay, pending, ctx);

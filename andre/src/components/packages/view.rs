@@ -216,7 +216,7 @@ pub fn render_membership(
 
 /// The profile rows that fit in a dialog `height` rows tall. The window ends at the cursor
 /// once the cursor is past the first screen, so the cursor row is always drawn.
-fn visible_profiles(height: u16, len: usize, cursor: usize) -> Range<usize> {
+pub fn visible_profiles(height: u16, len: usize, cursor: usize) -> Range<usize> {
     let rows = usize::from(height.saturating_sub(MEMBERSHIP_CHROME_ROWS)).max(1);
     if len <= rows {
         return 0..len;
@@ -227,7 +227,7 @@ fn visible_profiles(height: u16, len: usize, cursor: usize) -> Range<usize> {
 
 /// One checkbox row per profile in `shown`, the cursor's row filled. Save and cancel are the
 /// buttons.
-fn membership_dialog(
+pub fn membership_dialog(
     membership: &Membership,
     shown: Range<usize>,
     colors: &ThemeColors,

@@ -25,7 +25,8 @@ use crate::components::status::StatusComponent;
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
 use crate::theme::ThemeColors;
-use crate::ui::detail::{render_detail, Detail};
+use crate::ui::detail::{render_detail, wheel_over, Detail, WHEEL_ROWS};
+use crate::ui::dialog::dialog_click;
 use crate::ui::footer::{delete_dialog_hints, name_dialog_hints, profiles_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
@@ -96,6 +97,15 @@ pub struct ProfilesComponent {
     detail_key: Option<u64>,
     /// Rows the detail pane shows, as of the last `prepare`.
     detail_rows: usize,
+    /// The sections the detail starts at, as the wheel leaves them. It resets when the cursor
+    /// moves.
+    section_scroll: usize,
+    /// The cursor row `section_scroll` belongs to.
+    section_row: usize,
+    /// The detail pane as the last `prepare` laid it out.
+    detail_rect: Rect,
+    /// The content area, as of the last `prepare`. The dialog is centred in it.
+    content: Rect,
     /// The `+ new profile` hint line of the empty list, as of the last `prepare`.
     empty_hint: Option<Rect>,
     /// Whether Enter can run the selected profile: it resolves. Built by `rebuild`.
@@ -175,6 +185,11 @@ impl Component for ProfilesComponent {
             // Reading the statuses changes the cache, so the key is taken again afterwards.
             self.detail_key = Some(self.fingerprint(ctx));
         }
+        // A detail starts at its top when the cursor moves onto its row.
+        if self.list.cursor != self.section_row {
+            self.section_scroll = 0;
+            self.section_row = self.list.cursor;
+        }
         Transition::None
     }
 
@@ -190,7 +205,26 @@ impl Component for ProfilesComponent {
         }
     }
 
+    /// The dialog takes the mouse: its buttons work and the list behind it does not.
+    fn mouse_blocked(&self) -> bool {
+        false
+    }
+
     fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        if self.popup.is_some() {
+            return self.popup_click(ev, ctx);
+        }
+        if let Some(down) = wheel_over(ev, self.detail_rect) {
+            // Each section is one row, so a notch moves the window as many rows as the pane's.
+            let step = usize::from(WHEEL_ROWS);
+            let max = view::max_section_scroll(&self.detail, self.detail_rows);
+            self.section_scroll = if down {
+                (self.section_scroll + step).min(max)
+            } else {
+                self.section_scroll.saturating_sub(step)
+            };
+            return Transition::Handled;
+        }
         // The empty list's hint line is a button for `+`.
         let on_hint = self
             .empty_hint
@@ -207,6 +241,7 @@ impl Component for ProfilesComponent {
     }
 
     fn prepare(&mut self, area: Rect) {
+        self.content = area;
         let rects = screen_rects(area, Shape::TwoPane);
         self.list.prepare(rects.list, self.rows.len());
         self.empty_hint = if self.rows.is_empty() {
@@ -215,6 +250,7 @@ impl Component for ProfilesComponent {
             None
         };
         self.detail_rows = usize::from(rects.detail.height.saturating_sub(2));
+        self.detail_rect = rects.detail;
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
@@ -251,7 +287,7 @@ impl Component for ProfilesComponent {
         let title = self
             .selected_name()
             .unwrap_or_else(|| "profiles".to_string());
-        let detail = view::fit(&self.detail, self.detail_rows, &colors);
+        let detail = view::fit(&self.detail, self.detail_rows, self.section_scroll, &colors);
         render_detail(frame, rects.detail, &colors, &title, &detail);
 
         if let Some(popup) = &self.popup {
@@ -386,6 +422,20 @@ impl ProfilesComponent {
         }
     }
 
+    /// A click on a button of the open dialog sends the button's key. Other clicks and the
+    /// wheel do nothing, so the list behind the dialog keeps still.
+    fn popup_click(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        let key = self.popup.as_ref().and_then(|popup| {
+            let dialog = view::popup_dialog(popup, &colors);
+            dialog_click(self.content, &dialog, ev)
+        });
+        match key {
+            Some(key) => self.handle_key(key, ctx),
+            None => Transition::Handled,
+        }
+    }
+
     /// Applies a key to the open dialog. Returns the dialog to keep open, or `None` when the
     /// key closed it.
     fn next_popup(&mut self, popup: Popup, key: KeyEvent, ctx: &mut AppContext) -> Option<Popup> {
@@ -507,5 +557,65 @@ fn text_field(value: &str) -> TextField {
         value: value.to_string(),
         cursor: value.chars().count(),
         error: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::detail::WHEEL_ROWS;
+    use andre_core::config::Config;
+    use andre_core::profile::ProfileSet;
+    use crossterm::event::{KeyModifiers, MouseEventKind};
+
+    /// Two profiles, each with fourteen packages: more than the detail pane lists at once.
+    fn fixture() -> (tempfile::TempDir, AppContext) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dir = tmp.path().join("profiles");
+        std::fs::create_dir_all(&dir).unwrap();
+        let packages: Vec<String> = (0..14).map(|i| format!("home/pkg{i:02}")).collect();
+        let yaml = format!("packages: [{}]\n", packages.join(", "));
+        std::fs::write(dir.join("one.yml"), &yaml).unwrap();
+        std::fs::write(dir.join("two.yml"), &yaml).unwrap();
+        let mut ctx = AppContext::for_tests(Config::default_empty(), tmp.path());
+        ctx.core.profiles = ProfileSet::load(&dir).unwrap();
+        (tmp, ctx)
+    }
+
+    /// The cursor moves onto a profile whose sections overflow the pane, so a window left
+    /// over from the last profile would show: only the reset clears it.
+    #[test]
+    fn test_moving_the_cursor_starts_the_sections_at_the_top() {
+        let (_tmp, mut ctx) = fixture();
+        let mut component = ProfilesComponent::default();
+        let area = Rect::new(0, 0, 80, 12);
+        component.prepare(area);
+        component.update(&mut ctx);
+        let pane = screen_rects(area, Shape::TwoPane).detail;
+        let notch = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: pane.x + 1,
+            row: pane.y + 1,
+            modifiers: KeyModifiers::NONE,
+        };
+        component.handle_mouse(notch, &mut ctx);
+        assert_eq!(
+            component.section_scroll,
+            usize::from(WHEEL_ROWS),
+            "the first profile's sections move"
+        );
+
+        component.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), &mut ctx);
+        component.update(&mut ctx);
+        assert_eq!(component.list.cursor, 1, "the cursor is on two");
+        assert!(
+            view::max_section_scroll(&component.detail, component.detail_rows)
+                > usize::from(WHEEL_ROWS),
+            "two's sections overflow the pane"
+        );
+        assert_eq!(
+            component.section_scroll, 0,
+            "two's sections start at the top"
+        );
     }
 }

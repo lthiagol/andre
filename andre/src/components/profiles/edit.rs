@@ -17,7 +17,7 @@ use super::edit_view;
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
 use crate::theme::ThemeColors;
-use crate::ui::dialog::{dialog_rect, leave_dialog, render_dialog};
+use crate::ui::dialog::{dialog_click, dialog_rect, leave_dialog, render_dialog};
 use crate::ui::footer::{field_edit_hints, leave_dialog_hints, profile_edit_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
@@ -61,6 +61,8 @@ pub struct ProfileEditComponent {
     editing: Option<TextField>,
     /// The leave dialog is open.
     leaving: bool,
+    /// The content area, as of the last `prepare`. The leave dialog is centred in it.
+    content: Rect,
 }
 
 impl ProfileEditComponent {
@@ -422,8 +424,21 @@ impl Component for ProfileEditComponent {
         }
     }
 
+    /// A text field being edited takes the mouse; the leave dialog's buttons do not.
+    fn mouse_blocked(&self) -> bool {
+        self.editing.is_some()
+    }
+
     fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
-        if self.leaving || self.editing.is_some() {
+        if self.leaving {
+            let colors = ThemeColors::from_theme(ctx.core.theme);
+            let dialog = leave_dialog(&format!("profile `{}`", self.draft.name), &colors);
+            return match dialog_click(self.content, &dialog, ev) {
+                Some(key) => self.handle_key(key, ctx),
+                None => Transition::Handled,
+            };
+        }
+        if self.editing.is_some() {
             return Transition::None;
         }
         let len = self.rows.len();
@@ -438,6 +453,7 @@ impl Component for ProfileEditComponent {
     }
 
     fn prepare(&mut self, area: Rect) {
+        self.content = area;
         let rects = screen_rects(area, Shape::TwoPane);
         self.packages.prepare(rects.list, self.rows.len());
     }

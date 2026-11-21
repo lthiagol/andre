@@ -9,13 +9,15 @@ use andre::components::menu::{MainMenuComponent, MenuItem};
 use andre::components::packages::PackagesComponent;
 use andre::components::profiles::edit::ProfileEditComponent;
 use andre::components::profiles::{Popup, ProfilesComponent};
-use andre::components::settings::SettingsComponent;
+use andre::components::settings::{Overlay, SettingsComponent};
+use andre::components::status::StatusComponent;
 use andre::components::unstow::UnstowBrowseComponent;
 use andre::components::InputMode;
 use andre::input;
 use andre::ui::icons::Icons;
 use andre::ui::tree::TreeRow;
 use andre_core::profile::ProfileSet;
+use andre_core::Theme;
 use crossterm::event::KeyCode;
 use ratatui::{buffer::Buffer, layout::Rect};
 use std::path::PathBuf;
@@ -24,7 +26,7 @@ use tempfile::TempDir;
 use helpers::{
     click, component_id, down_key, draw, enter_key, esc_key, find_text, key_char, make_empty_app,
     make_test_app, make_two_group_app, make_unstow_app, push_browse, push_component, row_text,
-    up_key, wheel,
+    space_key, up_key, wheel,
 };
 
 /// Pushes the named screen and brings it up to date, as the loop does before the first frame.
@@ -668,4 +670,491 @@ fn test_a_file_checkbox_click_marks_the_file_and_a_link_cannot_be_marked() {
         row_text(&buf, notes).contains(icons.checkbox_on),
         "the file is marked"
     );
+}
+
+fn status(app: &App) -> &StatusComponent {
+    app.component_stack
+        .last()
+        .and_then(|c| c.as_any().downcast_ref())
+        .expect("status on top")
+}
+
+#[test]
+fn test_click_on_the_delete_button_deletes_the_profile() {
+    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('x'));
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "y delete").expect("the delete button");
+    click(&mut app, x + 2, y);
+    assert!(
+        app.ctx.core.profiles.get("agent").is_none(),
+        "the profile is gone"
+    );
+    assert!(profiles(&app).popup().is_none(), "the dialog closed");
+}
+
+#[test]
+fn test_click_on_the_keep_button_closes_the_delete_dialog_and_keeps_the_profile() {
+    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('x'));
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "n keep").expect("the keep button");
+    click(&mut app, x + 2, y);
+    assert!(profiles(&app).popup().is_none());
+    assert!(app.ctx.core.profiles.get("agent").is_some());
+}
+
+#[test]
+fn test_click_on_the_list_behind_the_delete_dialog_does_not_enter_the_profile() {
+    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('x'));
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "agent").expect("the profile row");
+    click(&mut app, x, y);
+    assert!(
+        matches!(profiles(&app).popup(), Some(Popup::Delete { .. })),
+        "the dialog is still open"
+    );
+    assert_eq!(component_id(&app), "Profiles", "no review was pushed");
+}
+
+#[test]
+fn test_click_on_the_create_button_makes_the_profile() {
+    let (mut app, _tmp) = make_empty_app();
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('+'));
+    for c in "work".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "Enter create").expect("the create button");
+    click(&mut app, x + 1, y);
+    assert!(
+        app.ctx.core.profiles.get("work").is_some(),
+        "the profile exists"
+    );
+    assert!(profiles(&app).popup().is_none());
+}
+
+#[test]
+fn test_click_on_the_stow_local_ignore_tab_switches_the_file() {
+    let (mut app, tmp) = make_test_app();
+    std::fs::write(tmp.path().join("dotfiles/home/test/.gitignore"), "aaa\n").unwrap();
+    open(&mut app, "Packages");
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('i'));
+    let buf = draw(&mut app, 80, 24);
+    assert_eq!(ignore_editor(&app).active(), 0);
+    let (x, y) = find_text(&buf, ".stow-local-ignore").expect("the tab");
+    click(&mut app, x, y);
+    assert_eq!(ignore_editor(&app).active(), 1);
+}
+
+#[test]
+fn test_click_on_the_discard_button_of_the_ignore_leave_dialog_leaves_the_editor() {
+    let (mut app, tmp) = make_test_app();
+    std::fs::write(tmp.path().join("dotfiles/home/test/.gitignore"), "aaa\n").unwrap();
+    open(&mut app, "Packages");
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('i'));
+    app.component_dispatch(key_char('+'));
+    for c in "bbb".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    app.component_dispatch(enter_key());
+    app.component_dispatch(esc_key());
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "n discard").expect("the discard button");
+    click(&mut app, x + 2, y);
+    assert_ne!(component_id(&app), "IgnoreEdit", "the editor closed");
+}
+
+#[test]
+fn test_click_on_a_done_step_in_the_bar_goes_back_to_it() {
+    let (mut app, _tmp) = make_two_group_app();
+    open(&mut app, "NewPackage");
+    app.component_dispatch(enter_key());
+    let buf = draw(&mut app, 80, 24);
+    // The done step's check is the icon set's glyph, so the step is found by its label.
+    let (x, y) = find_text(&buf, "group \u{203a}").expect("the done group step");
+    click(&mut app, x, y);
+    let buf = draw(&mut app, 80, 24);
+    assert!(
+        find_text(&buf, "[1 group]").is_some(),
+        "back on the group step"
+    );
+}
+
+#[test]
+fn test_click_on_the_cancel_button_of_a_review_goes_back() {
+    let (mut app, _tmp) = make_two_group_app();
+    open(&mut app, "Packages");
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Confirm", "the review is open");
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "n cancel").expect("the cancel button");
+    click(&mut app, x + 2, y);
+    assert_ne!(component_id(&app), "Confirm", "the review closed");
+}
+
+/// Opens the profile dropdown on the status screen, which must sit at `width` x `height`.
+fn open_status_dropdown(app: &mut App, width: u16, height: u16) {
+    let buf = draw(app, width, height);
+    let icons = Icons::for_set(app.ctx.core.icons);
+    let chip = format!("all {}", icons.fold_open);
+    let (x, y) = find_text(&buf, &chip).expect("the profile chip");
+    click(app, x, y);
+    let buf = draw(app, width, height);
+    assert!(
+        find_text(&buf, "all packages").is_some(),
+        "the dropdown is open"
+    );
+}
+
+#[test]
+fn test_click_on_the_profile_chip_opens_the_dropdown_and_a_second_click_picks_a_profile() {
+    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    open(&mut app, "Status");
+    open_status_dropdown(&mut app, 80, 24);
+    // The first click on an option moves the cursor there; the second picks it.
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "agent").expect("the profile option");
+    click(&mut app, x, y);
+    assert_eq!(
+        status(&app).profile(),
+        None,
+        "one click only moves the cursor"
+    );
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "agent").expect("the profile option");
+    click(&mut app, x, y);
+    assert_eq!(status(&app).profile(), Some("agent"));
+}
+
+#[test]
+fn test_wheel_over_the_dropdown_moves_its_cursor_and_enter_picks_the_option() {
+    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    open(&mut app, "Status");
+    open_status_dropdown(&mut app, 80, 24);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "all packages").expect("the first option");
+    wheel(&mut app, x, y, true);
+    app.component_dispatch(enter_key());
+    assert_eq!(
+        status(&app).profile(),
+        Some("agent"),
+        "the wheel moved to agent"
+    );
+}
+
+#[test]
+fn test_help_mouse_topic_says_shift_selects_text() {
+    let (mut app, _tmp) = make_test_app();
+    open(&mut app, "Help");
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "mouse").expect("the mouse topic");
+    click(&mut app, x, y);
+    app.update_components();
+    let buf = draw(&mut app, 80, 24);
+    assert!(find_text(&buf, "Shift").is_some(), "the topic names Shift");
+}
+
+#[test]
+fn test_the_dialogs_and_bars_this_batch_touched_render_at_120x40_and_200x50() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+        open_profiles(&mut app);
+        app.component_dispatch(key_char('x'));
+        draw(&mut app, width, height);
+
+        let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+        open(&mut app, "Status");
+        open_status_dropdown(&mut app, width, height);
+
+        let (mut app, _tmp) = make_two_group_app();
+        open(&mut app, "Packages");
+        app.component_dispatch(down_key());
+        app.component_dispatch(enter_key());
+        draw(&mut app, width, height);
+
+        let (mut app, _tmp) = make_two_group_app();
+        open(&mut app, "NewPackage");
+        app.component_dispatch(enter_key());
+        draw(&mut app, width, height);
+    }
+}
+
+/// The settings theme picker, opened from its row: the first click selects the row, the
+/// second opens it.
+fn open_theme_picker(app: &mut App) {
+    open(app, "Settings");
+    let buf = draw(app, 80, 24);
+    let (x, y) = find_text(&buf, "theme").expect("the theme row");
+    click(app, x, y);
+    click(app, x, y);
+    assert!(
+        matches!(settings(app).overlays.last(), Some(Overlay::Theme { .. })),
+        "the theme picker is open"
+    );
+}
+
+#[test]
+fn test_click_on_the_keep_button_of_the_theme_picker_closes_it() {
+    let (mut app, _tmp) = make_test_app();
+    open_theme_picker(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "Enter keep").expect("the keep button");
+    click(&mut app, x + 2, y);
+    assert!(settings(&app).overlays.is_empty(), "the picker closed");
+}
+
+#[test]
+fn test_click_on_an_option_of_the_theme_picker_previews_it_and_a_second_click_keeps_it() {
+    let (mut app, _tmp) = make_test_app();
+    open_theme_picker(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let name = Theme::ALL[2].name();
+    let (x, y) = find_text(&buf, name).expect("the third theme");
+    click(&mut app, x, y);
+    assert_eq!(
+        settings(&app).pending().map(|p| p.theme),
+        Some(Theme::ALL[2]),
+        "the click previews the theme"
+    );
+    assert!(
+        !settings(&app).overlays.is_empty(),
+        "one click keeps the picker open"
+    );
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, name).expect("the third theme");
+    click(&mut app, x, y);
+    assert!(
+        settings(&app).overlays.is_empty(),
+        "the second click keeps it"
+    );
+}
+
+#[test]
+fn test_wheel_over_the_theme_picker_moves_its_cursor_one_row() {
+    let (mut app, _tmp) = make_test_app();
+    open_theme_picker(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, Theme::ALL[0].name()).expect("the first theme");
+    wheel(&mut app, x, y, true);
+    assert_eq!(
+        settings(&app).pending().map(|p| p.theme),
+        Some(Theme::ALL[1]),
+        "one notch previews the next theme"
+    );
+}
+
+#[test]
+fn test_click_behind_the_theme_picker_changes_nothing() {
+    let (mut app, _tmp) = make_test_app();
+    open_theme_picker(&mut app);
+    let theme = settings(&app).pending().map(|p| p.theme);
+    let buf = draw(&mut app, 80, 24);
+    // The theme row is on the list, behind the picker.
+    let (x, y) = find_text(&buf, "theme").expect("the theme row");
+    click(&mut app, x, y);
+    assert!(
+        matches!(settings(&app).overlays.last(), Some(Overlay::Theme { .. })),
+        "the picker is still open"
+    );
+    assert_eq!(settings(&app).pending().map(|p| p.theme), theme);
+}
+
+#[test]
+fn test_click_on_the_discard_button_of_the_settings_leave_dialog_leaves_settings() {
+    let (mut app, _tmp) = make_test_app();
+    open(&mut app, "Settings");
+    app.component_dispatch(key_char('t'));
+    app.component_dispatch(esc_key());
+    assert!(
+        matches!(settings(&app).overlays.last(), Some(Overlay::Leave)),
+        "the leave dialog is open"
+    );
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "n discard").expect("the discard button");
+    click(&mut app, x + 2, y);
+    assert_ne!(component_id(&app), "Settings", "settings was left");
+}
+
+/// The membership dialog of the only package, `home/test`, opened from the packages screen.
+fn open_membership(app: &mut App) {
+    open(app, "Packages");
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('p'));
+    assert!(
+        packages(app).popup().is_some(),
+        "the membership dialog is open"
+    );
+}
+
+#[test]
+fn test_click_on_a_profile_row_then_save_writes_the_membership() {
+    let (mut app, _tmp) = make_editor_app("packages: []\n");
+    open_membership(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "agent").expect("the profile row");
+    click(&mut app, x, y);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "Enter save").expect("the save button");
+    click(&mut app, x + 2, y);
+    assert!(packages(&app).popup().is_none(), "the dialog closed");
+    let agent = app.ctx.core.profiles.get("agent").expect("the profile");
+    assert!(
+        agent.packages.iter().any(|p| p == "home/shell"),
+        "the profile lists the package under the cursor: {:?}",
+        agent.packages
+    );
+}
+
+#[test]
+fn test_click_on_the_cancel_button_of_the_membership_dialog_changes_nothing() {
+    let (mut app, _tmp) = make_editor_app("packages: []\n");
+    open_membership(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "agent").expect("the profile row");
+    click(&mut app, x, y);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "Esc cancel").expect("the cancel button");
+    click(&mut app, x + 2, y);
+    assert!(packages(&app).popup().is_none(), "the dialog closed");
+    let agent = app.ctx.core.profiles.get("agent").expect("the profile");
+    assert!(agent.packages.is_empty(), "nothing was saved");
+}
+
+#[test]
+fn test_a_click_behind_the_membership_dialog_changes_nothing() {
+    let (mut app, _tmp) = make_editor_app("packages: []\n");
+    open_membership(&mut app);
+    let cursor = packages(&app).list.cursor;
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "home").expect("the group row behind the dialog");
+    click(&mut app, x, y);
+    assert!(packages(&app).popup().is_some(), "the dialog is still open");
+    assert_eq!(packages(&app).list.cursor, cursor, "the list did not move");
+}
+
+#[test]
+fn test_wheel_over_the_membership_dialog_moves_its_cursor() {
+    let (mut app, tmp) = make_editor_app("packages: []\n");
+    std::fs::write(tmp.path().join("profiles/alpha.yml"), "packages: []\n").unwrap();
+    app.ctx.core.profiles = ProfileSet::load(&tmp.path().join("profiles")).unwrap();
+    open_membership(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "alpha").expect("the second profile row");
+    wheel(&mut app, x, y, true);
+    assert_eq!(
+        packages(&app).popup().map(|m| m.cursor),
+        Some(1),
+        "one notch moves to the next profile"
+    );
+}
+
+/// The profile editor with `home/test` marked, left with Esc so its leave dialog is open.
+fn open_leave_dialog_on_the_profile_edit(app: &mut App) {
+    open_editor(app);
+    app.component_dispatch(down_key());
+    app.component_dispatch(space_key());
+    app.component_dispatch(esc_key());
+    assert!(
+        find_text(&draw(app, 80, 24), "unsaved changes").is_some(),
+        "the leave dialog is open"
+    );
+}
+
+#[test]
+fn test_click_on_the_save_button_of_the_profile_edit_leave_dialog_writes_the_profile() {
+    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    open_leave_dialog_on_the_profile_edit(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "y save").expect("the save button");
+    click(&mut app, x + 2, y);
+    assert_ne!(component_id(&app), "ProfileEdit", "the editor closed");
+    let agent = app.ctx.core.profiles.get("agent").expect("the profile");
+    assert!(
+        agent.packages.iter().any(|p| p == "home/shell"),
+        "the mark was saved: {:?}",
+        agent.packages
+    );
+    assert!(
+        agent.packages.iter().any(|p| p == "home/test"),
+        "the package it was saved with is kept: {:?}",
+        agent.packages
+    );
+}
+
+#[test]
+fn test_click_on_the_discard_button_of_the_profile_edit_leave_dialog_keeps_the_profile() {
+    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    open_leave_dialog_on_the_profile_edit(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "n discard").expect("the discard button");
+    click(&mut app, x + 2, y);
+    assert_ne!(component_id(&app), "ProfileEdit", "the editor closed");
+    let agent = app.ctx.core.profiles.get("agent").expect("the profile");
+    assert_eq!(
+        agent.packages,
+        vec!["home/test".to_string()],
+        "nothing was saved"
+    );
+}
+
+#[test]
+fn test_a_click_off_the_profile_edit_leave_dialog_changes_nothing() {
+    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    open_leave_dialog_on_the_profile_edit(&mut app);
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "agent").expect("a row behind the dialog");
+    click(&mut app, x, y);
+    assert_eq!(
+        component_id(&app),
+        "ProfileEdit",
+        "the editor is still open"
+    );
+    let buf = draw(&mut app, 80, 24);
+    assert!(
+        find_text(&buf, "unsaved changes").is_some(),
+        "the leave dialog is still open"
+    );
+}
+
+#[test]
+fn test_wheel_over_a_long_profile_detail_moves_its_sections() {
+    let packages: Vec<String> = (0..14).map(|i| format!("home/pkg{i:02}")).collect();
+    let yaml = format!("packages: [{}]\n", packages.join(", "));
+    let (mut app, _tmp) = make_editor_app(&yaml);
+    open_profiles(&mut app);
+    let before = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&before, "more").expect("the sections overflow");
+    wheel(&mut app, x, y, true);
+    let after = draw(&mut app, 80, 24);
+    assert_ne!(before, after, "the sections moved");
+    wheel(&mut app, x, y, false);
+    let back = draw(&mut app, 80, 24);
+    assert_eq!(before, back, "a notch back restores the top");
+}
+
+#[test]
+fn test_click_on_the_keep_button_of_the_remove_group_dialog_closes_it() {
+    let (mut app, _tmp) = make_test_app();
+    open(&mut app, "Settings");
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "home").expect("the group row");
+    click(&mut app, x, y);
+    app.component_dispatch(key_char('x'));
+    assert!(
+        matches!(settings(&app).overlays.last(), Some(Overlay::Remove { .. })),
+        "the remove dialog is open"
+    );
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "n keep").expect("the keep button");
+    click(&mut app, x + 2, y);
+    assert!(settings(&app).overlays.is_empty(), "the dialog closed");
 }

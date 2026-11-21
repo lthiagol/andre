@@ -12,13 +12,17 @@ use std::hash::{Hash, Hasher};
 use andre_core::ignore::global_ignore_in;
 use andre_core::profile::{known_packages, Origin};
 use andre_core::{discover_packages, IconSet, StowStatus};
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
-use ratatui::{layout::Rect, text::Line, Frame};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::{
+    layout::{Position, Rect},
+    text::Line,
+    Frame,
+};
 
 use crate::components::{AppContext, Component, InputMode, Transition};
-use crate::input::{self, Input};
+use crate::input::{self, step_cursor, Input};
 use crate::theme::ThemeColors;
-use crate::ui::detail::{render_detail, Detail};
+use crate::ui::detail::{fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail};
 use crate::ui::footer::{status_filter_hints, status_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
@@ -56,6 +60,16 @@ pub struct StatusComponent {
     /// Show only the packages this profile resolves to. `None` lists every package.
     profile: Option<String>,
     filter: Option<FilterMenu>,
+    /// The chip row, and the content area, as the last `prepare` laid them out. A click on
+    /// the profile chip opens the dropdown, which is drawn under the chip row.
+    chip_row: Option<Rect>,
+    content: Rect,
+    /// The detail pane as the last `prepare` laid it out.
+    detail_rect: Rect,
+    /// Rows the detail is scrolled down. It resets when the cursor moves.
+    scroll: u16,
+    /// The cursor row `scroll` belongs to.
+    scroll_row: usize,
 }
 
 impl StatusComponent {
@@ -147,8 +161,32 @@ impl Component for StatusComponent {
         }
     }
 
+    /// The dropdown takes the mouse while it is open (see `filter_click`). The list and the
+    /// profile chip take it otherwise, so none of them is blocked here.
+    fn mouse_blocked(&self) -> bool {
+        false
+    }
+
     fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
         self.sync(ctx);
+        if self.filter.is_some() {
+            return self.filter_click(ev, ctx);
+        }
+        let icons = Icons::for_set(ctx.core.icons);
+        let chip = self
+            .chip_row
+            .and_then(|row| view::profile_chip_rect(row, self.profile.as_deref(), icons));
+        if chip.is_some_and(|rect| rect.contains(Position::new(ev.column, ev.row))) {
+            if ev.kind == MouseEventKind::Down(MouseButton::Left) {
+                self.open_filter(ctx);
+            }
+            return Transition::Handled;
+        }
+        if let Some(down) = wheel_over(ev, self.detail_rect) {
+            let colors = ThemeColors::from_theme(ctx.core.theme);
+            self.scroll = wheel_scroll(&self.detail, self.detail_rect, &colors, self.scroll, down);
+            return Transition::Handled;
+        }
         let len = self.rows.len();
         let Some(click) = click_list(&mut self.list, ev, len) else {
             return Transition::None;
@@ -161,6 +199,9 @@ impl Component for StatusComponent {
 
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, Shape::ChipTwoPane);
+        self.content = area;
+        self.chip_row = rects.chip;
+        self.detail_rect = rects.detail;
         self.viewport_height = list_panel::inner(rects.list).height.into();
         self.list.prepare(rects.list, self.rows.len());
     }
@@ -205,12 +246,13 @@ impl Component for StatusComponent {
             Some(empty),
         );
 
-        render_detail(
+        render_detail_scrolled(
             frame,
             rects.detail,
             &colors,
             &self.detail_title(),
             &self.detail,
+            self.scroll,
         );
 
         if let (Some(menu), Some(chip)) = (&self.filter, rects.chip) {
@@ -232,6 +274,13 @@ impl StatusComponent {
             // Reading the statuses changes the cache, so the key is taken again afterwards.
             self.detail_key = Some(self.fingerprint(ctx));
         }
+        // A detail starts at its top when the cursor moves onto its row.
+        if self.list.cursor != self.scroll_row {
+            self.scroll = 0;
+            self.scroll_row = self.list.cursor;
+        }
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        self.scroll = fit_scroll(&self.detail, self.detail_rect, &colors, self.scroll);
     }
 
     /// Hash of everything the rows and the detail depend on. A change in any of these
@@ -408,6 +457,34 @@ impl StatusComponent {
         self.filter = Some(FilterMenu { options, cursor });
     }
 
+    /// The dropdown's mouse rules, as a list's: the wheel over it moves the cursor a row, and
+    /// a click on an option that is not under the cursor moves the cursor there. A click on
+    /// the cursor's option picks it, as Enter does. Clicks and wheel notches elsewhere do
+    /// nothing: the dropdown stays open until Enter or Esc.
+    fn filter_click(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        let Some(row) = self.chip_row else {
+            return Transition::Handled;
+        };
+        let content = self.content;
+        let Some(menu) = self.filter.as_mut() else {
+            return Transition::Handled;
+        };
+        let rect = view::filter_rect(content, row, menu);
+        let count = menu.options.len();
+        if let Some(down) = wheel_over(ev, rect) {
+            menu.cursor = step_cursor(menu.cursor, count, down);
+            return Transition::Handled;
+        }
+        let Some(index) = view::option_at(rect, count, ev) else {
+            return Transition::Handled;
+        };
+        if index != menu.cursor {
+            menu.cursor = index;
+            return Transition::Handled;
+        }
+        self.handle_key(input::key(KeyCode::Enter), ctx)
+    }
+
     /// Applies a key to the profile dropdown. Enter picks the cursor's choice and Esc keeps
     /// the current one; both close it. Other keys move its cursor and keep it open.
     fn filter_key(&mut self, mut menu: FilterMenu, key: KeyEvent, ctx: &AppContext) {
@@ -452,8 +529,10 @@ fn via(origin: &Origin) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::detail::{detail_inner, detail_rows, WHEEL_ROWS};
     use andre_core::config::Config;
     use crossterm::event::{KeyCode, KeyModifiers};
+    use ratatui::text::Line;
 
     /// One group `dots` with packages `alpha` (file `f`) and `beta` (file `g`). Nothing links
     /// them, so both are unstowed.
@@ -826,5 +905,66 @@ mod tests {
 
         component.handle_key(key(KeyCode::Up), &mut ctx);
         assert_eq!(component.list.cursor, last - 1);
+    }
+
+    #[test]
+    fn test_wheel_over_the_detail_scrolls_it_three_rows() {
+        let (_tmp, mut ctx) = fixture();
+        let mut component = synced(&ctx, None);
+        component.detail = long_detail();
+        let area = Rect::new(0, 0, 80, 24);
+        component.prepare(area);
+        let detail = screen_rects(area, Shape::ChipTwoPane).detail;
+        let (x, y) = (detail.x + 1, detail.y + 1);
+        component.handle_mouse(notch(MouseEventKind::ScrollDown, x, y), &mut ctx);
+        assert_eq!(component.scroll, WHEEL_ROWS, "one notch is three rows");
+        component.handle_mouse(notch(MouseEventKind::ScrollUp, x, y), &mut ctx);
+        assert_eq!(component.scroll, 0, "and a notch up takes them back");
+    }
+
+    /// The cursor moves onto a row whose detail overflows the pane, so a scroll left over from
+    /// the last row would show: only the reset clears it.
+    #[test]
+    fn test_moving_the_cursor_starts_the_detail_at_the_top() {
+        let (_tmp, mut ctx) = fixture();
+        let mut component = synced(&ctx, None);
+        let area = Rect::new(0, 0, 80, 4);
+        component.prepare(area);
+        let pane = screen_rects(area, Shape::ChipTwoPane).detail;
+        component.detail = long_detail();
+        component.handle_mouse(
+            notch(MouseEventKind::ScrollDown, pane.x + 1, pane.y + 1),
+            &mut ctx,
+        );
+        assert_eq!(component.scroll, WHEEL_ROWS, "the first detail scrolls");
+
+        component.handle_key(key(KeyCode::Down), &mut ctx);
+        component.update(&mut ctx);
+        assert_eq!(component.list.cursor, 1, "the cursor is on alpha");
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        assert!(
+            detail_rows(&component.detail, pane, &colors)
+                > usize::from(WHEEL_ROWS) + usize::from(detail_inner(pane).height),
+            "alpha's detail overflows the pane"
+        );
+        assert_eq!(component.scroll, 0, "alpha's detail starts at its top");
+    }
+
+    /// A wheel notch at column `x`, row `y`.
+    fn notch(kind: MouseEventKind, x: u16, y: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// A detail of forty rows, more than any pane at 80x24 shows.
+    fn long_detail() -> Detail {
+        Detail {
+            sections: (0..40).map(|i| Line::raw(format!("row{i}"))).collect(),
+            ..Detail::default()
+        }
     }
 }

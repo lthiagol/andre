@@ -3,8 +3,9 @@
 
 use std::borrow::Cow;
 
+use crossterm::event::{MouseEvent, MouseEventKind};
 use ratatui::{
-    layout::{Margin, Rect},
+    layout::{Margin, Position, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
@@ -107,6 +108,32 @@ pub fn fit_scroll(d: &Detail, area: Rect, colors: &ThemeColors, scroll: u16) -> 
     scroll.min(u16::try_from(last).unwrap_or(u16::MAX))
 }
 
+/// Rows a wheel notch scrolls a detail pane by.
+pub const WHEEL_ROWS: u16 = 3;
+
+/// Whether a wheel notch at `ev` lands on `area`, the detail pane's rect, and which way it
+/// turns: `Some(true)` is down. Any other mouse event, or a notch off the pane, gives `None`.
+pub fn wheel_over(ev: MouseEvent, area: Rect) -> Option<bool> {
+    let down = match ev.kind {
+        MouseEventKind::ScrollDown => true,
+        MouseEventKind::ScrollUp => false,
+        _ => return None,
+    };
+    area.contains(Position::new(ev.column, ev.row))
+        .then_some(down)
+}
+
+/// `scroll` after one wheel notch over the detail: `WHEEL_ROWS` down or up, kept in range
+/// as [`fit_scroll`] keeps it.
+pub fn wheel_scroll(d: &Detail, area: Rect, colors: &ThemeColors, scroll: u16, down: bool) -> u16 {
+    let next = if down {
+        scroll.saturating_add(WHEEL_ROWS)
+    } else {
+        scroll.saturating_sub(WHEEL_ROWS)
+    };
+    fit_scroll(d, area, colors, next)
+}
+
 /// The rows `d` takes at the size of `area`, before any scroll. A scrollbar needs it.
 pub fn detail_rows(d: &Detail, area: Rect, colors: &ThemeColors) -> usize {
     wrapped_rows(&detail_lines(d, colors), detail_inner(area).width)
@@ -163,6 +190,7 @@ pub fn text_lines(text: &str, style: Style) -> Vec<Line<'static>> {
 
 #[cfg(test)]
 mod tests {
+    use crossterm::event::{MouseButton, MouseEventKind};
     use ratatui::{backend::TestBackend, buffer::Buffer, text::Line, Terminal};
 
     use super::*;
@@ -293,5 +321,57 @@ mod tests {
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
         assert_eq!(texts, ["a: x", "All operations aborted."]);
+    }
+
+    fn notch(kind: MouseEventKind, x: u16, y: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn test_wheel_over_says_which_way_a_notch_on_the_pane_turns() {
+        let area = Rect::new(10, 5, 40, 8);
+        assert_eq!(
+            wheel_over(notch(MouseEventKind::ScrollDown, 12, 6), area),
+            Some(true)
+        );
+        assert_eq!(
+            wheel_over(notch(MouseEventKind::ScrollUp, 12, 6), area),
+            Some(false)
+        );
+        assert_eq!(
+            wheel_over(notch(MouseEventKind::ScrollDown, 0, 0), area),
+            None,
+            "off the pane"
+        );
+        assert_eq!(
+            wheel_over(notch(MouseEventKind::Down(MouseButton::Left), 12, 6), area),
+            None,
+            "a click is not a notch"
+        );
+    }
+
+    #[test]
+    fn test_wheel_scroll_moves_three_rows_and_stays_in_range() {
+        // 40x8 pane: six rows inside the border, ten rows of text: the last scroll is 4.
+        let area = Rect::new(0, 0, 40, 8);
+        let colors = ThemeColors::from_theme(Theme::Default);
+        let d = lines_of(&["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9"]);
+        assert_eq!(wheel_scroll(&d, area, &colors, 0, true), WHEEL_ROWS);
+        assert_eq!(
+            wheel_scroll(&d, area, &colors, 2, true),
+            4,
+            "clamped at the end"
+        );
+        assert_eq!(wheel_scroll(&d, area, &colors, 4, false), 1);
+        assert_eq!(
+            wheel_scroll(&d, area, &colors, 1, false),
+            0,
+            "never above the top"
+        );
     }
 }

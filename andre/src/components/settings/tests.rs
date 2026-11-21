@@ -3,7 +3,11 @@
 
 use andre_core::config::Config;
 use andre_core::{IconSet, StowAction, Theme};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use ratatui::{layout::Rect, text::Line};
+
+use crate::ui::detail::{detail_inner, detail_rows, Detail, WHEEL_ROWS};
+use crate::ui::layout::{screen_rects, Shape};
 
 use super::pending::GroupChange;
 use super::*;
@@ -786,4 +790,63 @@ fn test_setting_detail_puts_file_and_paths_in_a_block_after_the_facts() {
     let labels: Vec<&str> = detail.facts.iter().map(|(l, _)| l.as_ref()).collect();
     assert_eq!(labels, ["now", "saved", "key"]);
     assert_eq!(detail.sections.len(), 2, "file and paths are one block");
+}
+
+#[test]
+fn test_wheel_over_the_detail_scrolls_it_three_rows() {
+    let (_tmp, mut ctx) = fixture();
+    let mut component = SettingsComponent::default();
+    component.ensure(&ctx);
+    component.detail = Detail {
+        sections: (0..40).map(|i| Line::raw(format!("row{i}"))).collect(),
+        ..Detail::default()
+    };
+    let area = Rect::new(0, 0, 80, 24);
+    component.prepare(area);
+    let detail = screen_rects(area, Shape::TwoPane).detail;
+    let notch = |kind| MouseEvent {
+        kind,
+        column: detail.x + 1,
+        row: detail.y + 1,
+        modifiers: KeyModifiers::NONE,
+    };
+    component.handle_mouse(notch(MouseEventKind::ScrollDown), &mut ctx);
+    assert_eq!(component.scroll, WHEEL_ROWS, "one notch is three rows");
+    component.handle_mouse(notch(MouseEventKind::ScrollUp), &mut ctx);
+    assert_eq!(component.scroll, 0, "and a notch up takes them back");
+}
+
+#[test]
+fn test_moving_the_cursor_starts_the_detail_at_the_top() {
+    let (_tmp, mut ctx) = fixture();
+    let mut component = open(&mut ctx);
+    let area = Rect::new(0, 0, 80, 4);
+    component.prepare(area);
+    let pane = screen_rects(area, Shape::TwoPane).detail;
+    component.detail = Detail {
+        sections: (0..40).map(|i| Line::raw(format!("row{i}"))).collect(),
+        ..Detail::default()
+    };
+    let notch = MouseEvent {
+        kind: MouseEventKind::ScrollDown,
+        column: pane.x + 1,
+        row: pane.y + 1,
+        modifiers: KeyModifiers::NONE,
+    };
+    component.handle_mouse(notch, &mut ctx);
+    assert_eq!(component.scroll, WHEEL_ROWS, "the first detail scrolls");
+
+    press(&mut component, &mut ctx, KeyCode::Down);
+    assert_ne!(
+        component.selected().unwrap().label,
+        "action",
+        "the cursor moved"
+    );
+    let colors = ThemeColors::from_theme(ctx.core.theme);
+    assert!(
+        detail_rows(&component.detail, pane, &colors)
+            > usize::from(WHEEL_ROWS) + usize::from(detail_inner(pane).height),
+        "the next detail overflows the pane"
+    );
+    assert_eq!(component.scroll, 0, "the next detail starts at its top");
 }

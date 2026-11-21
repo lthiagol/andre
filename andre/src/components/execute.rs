@@ -6,8 +6,10 @@ use crate::execute::{ExecutionResult, ExecutionState, ExecutionUpdate};
 use crate::input::Input;
 use crate::theme::ThemeColors;
 use crate::ui::confirm::done_buttons;
-use crate::ui::detail::{detail_inner, fit_scroll, render_detail_scrolled, Detail};
-use crate::ui::dialog::render_action_bar;
+use crate::ui::detail::{
+    detail_inner, fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail,
+};
+use crate::ui::dialog::{button_click, render_action_bar};
 use crate::ui::execute::{
     progress_line, result_detail, result_row, running_detail, running_row, spinner, summary_line,
 };
@@ -39,6 +41,8 @@ pub struct ExecuteComponent {
     scroll: u16,
     /// The detail pane as the last `prepare` laid it out. `update` clamps the scroll to it.
     detail_rect: Rect,
+    /// The action bar as the last `prepare` laid it out. It shows once the run is complete.
+    actions: Option<Rect>,
 }
 
 impl ExecuteComponent {
@@ -62,6 +66,7 @@ impl ExecuteComponent {
             detail: Detail::default(),
             scroll: 0,
             detail_rect: Rect::default(),
+            actions: None,
         }
     }
 
@@ -228,7 +233,17 @@ impl Component for ExecuteComponent {
         execute_hints(self.state == ExecutionState::Completed)
     }
 
-    fn handle_mouse(&mut self, ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        if let (Some(actions), ExecutionState::Completed) = (self.actions, self.state) {
+            if let Some(key) = button_click(actions, &done_buttons(), ev) {
+                return self.handle_key(key, ctx);
+            }
+        }
+        if let Some(down) = wheel_over(ev, self.detail_rect) {
+            let colors = ThemeColors::from_theme(ctx.core.theme);
+            self.scroll = wheel_scroll(&self.detail, self.detail_rect, &colors, self.scroll, down);
+            return Transition::Handled;
+        }
         let len = self.rows_len();
         match click_list(&mut self.list, ev, len) {
             Some(_) => Transition::Handled,
@@ -240,6 +255,7 @@ impl Component for ExecuteComponent {
         let rects = screen_rects(area, Shape::ChipReview);
         self.list.prepare(rects.list, self.rows_len());
         self.detail_rect = rects.detail;
+        self.actions = rects.actions;
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
@@ -282,8 +298,13 @@ impl Component for ExecuteComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::confirm::done_buttons;
+    use crate::ui::detail::WHEEL_ROWS;
+    use crate::ui::dialog::button_rects;
+    use crate::ui::layout::{screen_rects, Shape};
     use andre_core::config::Config;
     use andre_core::AppState as CoreState;
+    use crossterm::event::{MouseButton, MouseEventKind};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -458,5 +479,86 @@ mod tests {
         comp.handle_key(key(KeyCode::Down), &mut ctx);
         comp.update(&mut ctx);
         assert_eq!(comp.scroll, 0, "the next row starts at the top");
+    }
+
+    fn wheel(kind: MouseEventKind, x: u16, y: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        }
+    }
+
+    /// A wheel notch over a long failure's detail moves it three rows, and back.
+    #[test]
+    fn wheel_over_a_long_failure_scrolls_its_detail_three_rows() {
+        let (_tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut comp = ExecuteComponent::new(rx, 1, vec![long_failure()]);
+        comp.state = ExecutionState::Completed;
+        let mut ctx = make_ctx();
+        let area = Rect::new(0, 0, 80, 24);
+        let detail = screen_rects(area, Shape::ChipReview).detail;
+        comp.prepare(area);
+        comp.update(&mut ctx);
+
+        let inside = (detail.x + 1, detail.y + 1);
+        comp.handle_mouse(
+            wheel(MouseEventKind::ScrollDown, inside.0, inside.1),
+            &mut ctx,
+        );
+        assert_eq!(comp.scroll, WHEEL_ROWS, "one notch is three rows");
+
+        comp.handle_mouse(
+            wheel(MouseEventKind::ScrollUp, inside.0, inside.1),
+            &mut ctx,
+        );
+        assert_eq!(comp.scroll, 0, "and a notch up takes them back");
+    }
+
+    /// A wheel notch off the detail, over the list, does not scroll the detail.
+    #[test]
+    fn wheel_over_the_list_leaves_the_detail_scroll_alone() {
+        let (_tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut comp = ExecuteComponent::new(rx, 1, vec![long_failure()]);
+        comp.state = ExecutionState::Completed;
+        let mut ctx = make_ctx();
+        let area = Rect::new(0, 0, 80, 24);
+        let list = screen_rects(area, Shape::ChipReview).list;
+        comp.prepare(area);
+        comp.update(&mut ctx);
+
+        comp.handle_mouse(
+            wheel(MouseEventKind::ScrollDown, list.x + 1, list.y + 1),
+            &mut ctx,
+        );
+        assert_eq!(comp.scroll, 0);
+    }
+
+    /// The done button under a click leaves the run, as Enter does.
+    #[test]
+    fn clicking_the_done_button_leaves_the_completed_run() {
+        let (_tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut comp = ExecuteComponent::new(rx, 1, vec![result("a", true)]);
+        comp.state = ExecutionState::Completed;
+        let mut ctx = make_ctx();
+        let area = Rect::new(0, 0, 80, 24);
+        let actions = screen_rects(area, Shape::ChipReview)
+            .actions
+            .expect("a completed run shows its action bar");
+        comp.prepare(area);
+        comp.update(&mut ctx);
+
+        let (rect, _) = button_rects(actions, &done_buttons())[0];
+        let transition = comp.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: rect.x,
+                row: rect.y,
+                modifiers: crossterm::event::KeyModifiers::NONE,
+            },
+            &mut ctx,
+        );
+        assert!(matches!(transition, Transition::PopAll), "the run is left");
     }
 }

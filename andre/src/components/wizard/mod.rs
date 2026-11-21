@@ -16,17 +16,20 @@ use std::collections::BTreeMap;
 
 use andre_core::create::{is_valid_package_name, PackagePlan};
 use andre_core::discover_packages;
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::{layout::Rect, Frame};
 
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
+use crate::ui::dialog::button_click;
 use crate::ui::footer::{
     wizard_done_hints, wizard_files_hints, wizard_group_hints, wizard_ignore_hints,
     wizard_name_hints, wizard_profiles_hints, wizard_review_hints, wizard_source_hints, Hint,
 };
+use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{click_list, ListView};
+use crate::ui::step_bar::{step_click, step_rects, StepBar};
 use crate::ui::text_field::TextField;
 use finish::{Done, Gitignore, ProfileCount, ReviewLine, IGNORE_ROWS};
 use picker::FilePicker;
@@ -115,6 +118,9 @@ pub struct NewPackageWizard {
     review_height: u16,
     /// Set once the review has run (or was a dry run). Enter then leaves the wizard.
     done: Option<Done>,
+    /// The step bar and the review's action bar, as the last `prepare` laid them out.
+    bar: Option<Rect>,
+    actions: Option<Rect>,
 }
 
 impl Component for NewPackageWizard {
@@ -198,6 +204,16 @@ impl Component for NewPackageWizard {
 
     fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
         self.load(ctx);
+        if let Some(index) = self.bar_click(ev, ctx) {
+            self.back_to_step(index, ctx);
+            return Transition::Handled;
+        }
+        if let (Step::Review, Some(actions)) = (self.step, self.actions) {
+            let buttons = finish_view::review_buttons(self.done);
+            if let Some(key) = button_click(actions, &buttons, ev) {
+                return self.handle_key(key, ctx);
+            }
+        }
         let rows = self.step_rows();
         let Some(view) = self.step_list_mut() else {
             return Transition::None;
@@ -236,6 +252,8 @@ impl Component for NewPackageWizard {
 
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, self.shape());
+        self.bar = rects.chip;
+        self.actions = rects.actions;
         match self.step {
             Step::Group => {
                 let len = self.groups().len();
@@ -272,6 +290,33 @@ impl Component for NewPackageWizard {
 }
 
 impl NewPackageWizard {
+    /// The index in [`STEPS`] of the step a click on the step bar lands on. Only a step
+    /// already done can be jumped back to: the current step and the ones ahead give `None`.
+    fn bar_click(&self, ev: MouseEvent, ctx: &AppContext) -> Option<usize> {
+        let bar = self.bar?;
+        let steps = StepBar {
+            steps: STEPS,
+            current: self.step.bar_index(),
+        };
+        let hits = step_rects(bar, &steps, Icons::for_set(ctx.core.icons));
+        step_click(&hits, ev).filter(|&index| index < self.step.bar_index())
+    }
+
+    /// Goes back to the step at `index` of the bar, one Esc at a time, so each step's own
+    /// back rules run and nothing is lost on the way. A finished wizard does not go back.
+    fn back_to_step(&mut self, index: usize, ctx: &mut AppContext) {
+        if self.done.is_some() {
+            return;
+        }
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        for _ in 0..STEPS.len() {
+            if self.step.bar_index() <= index {
+                break;
+            }
+            self.handle_key(esc, ctx);
+        }
+    }
+
     /// The rows of the list the current step shows. The review has none.
     fn step_rows(&self) -> usize {
         match self.step {

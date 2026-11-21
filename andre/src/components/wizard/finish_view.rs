@@ -367,7 +367,7 @@ fn review_line(line: &ReviewLine, colors: &ThemeColors) -> Line<'static> {
 }
 
 /// Esc and Enter before the review ends; Enter alone after it.
-fn review_buttons(done: Option<Done>) -> Vec<Button> {
+pub(super) fn review_buttons(done: Option<Done>) -> Vec<Button> {
     let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
     match done {
         Some(_) => vec![Button {

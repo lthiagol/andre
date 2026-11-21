@@ -18,8 +18,9 @@ use ratatui::{layout::Rect, Frame};
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
 use crate::theme::ThemeColors;
+use crate::ui::chips::{chip_click, chip_rects};
 use crate::ui::detail::{render_detail, Detail};
-use crate::ui::dialog::{dialog_rect, leave_dialog, render_dialog};
+use crate::ui::dialog::{dialog_click, dialog_rect, leave_dialog, render_dialog};
 use crate::ui::footer::{ignore_edit_hints, ignore_hints, leave_dialog_hints, Hint};
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
@@ -79,6 +80,10 @@ pub struct IgnoreEditComponent {
     editing: Option<Editing>,
     /// The leave dialog is open.
     leaving: bool,
+    /// The file tabs, as the last `prepare` laid them out, with the file index of each.
+    tabs: Vec<(Rect, usize)>,
+    /// The content area, as of the last `prepare`. The leave dialog is centred in it.
+    content: Rect,
     /// The detail's title and content for the cursor's row. Rebuilt after every key, and when
     /// the theme changes (the colours are in the detail's lines).
     detail_title: String,
@@ -108,6 +113,8 @@ impl IgnoreEditComponent {
             list: ListView::default(),
             editing: None,
             leaving: false,
+            tabs: Vec::new(),
+            content: Rect::default(),
             detail_title: String::new(),
             detail: Detail::default(),
             detail_theme: theme,
@@ -376,6 +383,11 @@ impl IgnoreEditComponent {
         self.detail_theme = theme;
     }
 
+    /// The subject the leave dialog names: the package's ignore files.
+    fn leave_subject(&self) -> String {
+        format!("the ignore files of {}", self.package)
+    }
+
     /// The package files a line of `kind` matches, or why the line does not compile.
     fn matches(&self, kind: IgnoreFile, text: &str) -> Result<Vec<String>, String> {
         if text.is_empty() || text.starts_with('#') {
@@ -445,7 +457,29 @@ impl Component for IgnoreEditComponent {
         }
     }
 
+    /// The leave dialog takes the mouse: its buttons work and the list behind it does not.
+    /// While a line is typed the list keeps the mouse blocked, as the text field has focus.
+    fn mouse_blocked(&self) -> bool {
+        self.editing.is_some()
+    }
+
     fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        if self.leaving {
+            let colors = ThemeColors::from_theme(ctx.core.theme);
+            let dialog = leave_dialog(&self.leave_subject(), &colors);
+            return match dialog_click(self.content, &dialog, ev) {
+                Some(key) => self.handle_key(key, ctx),
+                None => Transition::Handled,
+            };
+        }
+        if let Some(index) = chip_click(&self.tabs, ev) {
+            if index != self.active {
+                self.active = index;
+                self.list.cursor = 0;
+                self.refresh_detail(ctx.core.theme);
+            }
+            return Transition::Handled;
+        }
         let len = self.row_count();
         match click_list(&mut self.list, ev, len) {
             Some(click) if click.activate => self.handle_key(input::key(KeyCode::Enter), ctx),
@@ -458,7 +492,11 @@ impl Component for IgnoreEditComponent {
     }
 
     fn prepare(&mut self, area: Rect) {
+        self.content = area;
         let rects = screen_rects(area, Shape::ChipTwoPane);
+        self.tabs = rects.chip.map_or_else(Vec::new, |chip| {
+            chip_rects(chip, &view::tab_chips(&self.files, self.active))
+        });
         let len = self.row_count();
         self.list.prepare(rects.list, len);
     }
@@ -498,8 +536,7 @@ impl Component for IgnoreEditComponent {
         );
 
         if self.leaving {
-            let subject = format!("the ignore files of {}", self.package);
-            let dialog = leave_dialog(&subject, &colors);
+            let dialog = leave_dialog(&self.leave_subject(), &colors);
             render_dialog(frame, dialog_rect(area, &dialog), &colors, &dialog);
         }
     }

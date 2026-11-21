@@ -29,14 +29,8 @@ const TITLE_WIDTH: usize = 40;
 
 /// The file tabs. Each shows how many patterns the file holds, or `(none)` when it does not
 /// exist yet.
-pub fn render_chips(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    files: &[IgnoreDraft],
-    active: usize,
-) {
-    let chips: Vec<Chip> = files
+pub fn tab_chips(files: &[IgnoreDraft], active: usize) -> Vec<Chip> {
+    files
         .iter()
         .enumerate()
         .map(|(index, draft)| Chip {
@@ -44,7 +38,17 @@ pub fn render_chips(
             active: index == active,
             key: KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
         })
-        .collect();
+        .collect()
+}
+
+pub fn render_chips(
+    frame: &mut Frame,
+    area: Rect,
+    colors: &ThemeColors,
+    files: &[IgnoreDraft],
+    active: usize,
+) {
+    let chips = tab_chips(files, active);
     frame.render_widget(
         Paragraph::new(chip_line(&chips, Vec::new(), colors, area.width)),
         area,

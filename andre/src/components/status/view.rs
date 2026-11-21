@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 
 use andre_core::{file_links, ignore::global_ignore_in, FileLink, StowStatus};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -19,7 +19,7 @@ use unicode_width::UnicodeWidthStr;
 use super::FilterMenu;
 use crate::components::AppContext;
 use crate::theme::ThemeColors;
-use crate::ui::chips::{chip_span, chip_width, Chip};
+use crate::ui::chips::{chip_rects, chip_span, chip_width, Chip};
 use crate::ui::detail::{Detail, VALUE_WIDTH};
 use crate::ui::icons::Icons;
 use crate::ui::selection;
@@ -147,6 +147,24 @@ fn severity(status: StowStatus) -> u8 {
     }
 }
 
+/// The profile chip: the profile the rows show, with the fold glyph that says it opens a menu.
+fn profile_chip(profile: Option<&str>, icons: &Icons) -> Chip {
+    Chip {
+        label: format!("{} {}", profile.unwrap_or("all"), icons.fold_open),
+        active: true,
+        key: KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+    }
+}
+
+/// The rect of the profile chip on the chip row `chip_row`, where a click opens the dropdown.
+pub fn profile_chip_rect(chip_row: Rect, profile: Option<&str>, icons: &Icons) -> Option<Rect> {
+    let x = chip_row.x.saturating_add(PROFILE_LABEL.width() as u16);
+    let area = Rect::new(x, chip_row.y, chip_row.right().saturating_sub(x), 1);
+    chip_rects(area, &[profile_chip(profile, icons)])
+        .first()
+        .map(|(rect, _)| *rect)
+}
+
 /// Draws the chip row: ` profile [all ▾]`, then the status counts from `COUNTS_COLUMN` on.
 /// A chip too long to leave that room pushes the counts `COUNTS_GAP` columns on.
 pub fn render_chip_row(
@@ -157,11 +175,7 @@ pub fn render_chip_row(
     profile: Option<&str>,
     summary: &Summary,
 ) {
-    let chip = Chip {
-        label: format!("{} {}", profile.unwrap_or("all"), icons.fold_open),
-        active: true,
-        key: KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
-    };
+    let chip = profile_chip(profile, icons);
     let chip_end = PROFILE_LABEL.width() + chip_width(&chip);
     let gap = COUNTS_COLUMN.saturating_sub(chip_end).max(COUNTS_GAP);
     let mut spans = vec![
@@ -173,14 +187,8 @@ pub fn render_chip_row(
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// Draws the profile dropdown under the chip row's profile chip, clipped to `area`.
-pub fn render_filter(
-    frame: &mut Frame,
-    area: Rect,
-    chip_row: Rect,
-    colors: &ThemeColors,
-    menu: &FilterMenu,
-) {
+/// The dropdown's rect: under the profile chip, clipped to `area`.
+pub fn filter_rect(area: Rect, chip_row: Rect, menu: &FilterMenu) -> Rect {
     let longest = menu
         .options
         .iter()
@@ -191,8 +199,32 @@ pub fn render_filter(
     let inner_width = longest + 2;
     let height = menu.options.len() as u16 + 2;
     let x = chip_row.x + PROFILE_LABEL.width() as u16;
-    let rect = Rect::new(x, chip_row.y + 1, inner_width as u16 + 2, height).intersection(area);
+    Rect::new(x, chip_row.y + 1, inner_width as u16 + 2, height).intersection(area)
+}
 
+/// The index of the dropdown option a left click at `ev` lands on, when the dropdown is at
+/// `rect`. Its options are the rows inside its border.
+pub fn option_at(rect: Rect, count: usize, ev: MouseEvent) -> Option<usize> {
+    if ev.kind != MouseEventKind::Down(MouseButton::Left) {
+        return None;
+    }
+    let inside = ev.column > rect.x
+        && ev.column + 1 < rect.right()
+        && ev.row > rect.y
+        && ev.row + 1 < rect.bottom();
+    let index = usize::from(ev.row.saturating_sub(rect.y + 1));
+    (inside && index < count).then_some(index)
+}
+
+/// Draws the profile dropdown under the chip row's profile chip, clipped to `area`.
+pub fn render_filter(
+    frame: &mut Frame,
+    area: Rect,
+    chip_row: Rect,
+    colors: &ThemeColors,
+    menu: &FilterMenu,
+) {
+    let rect = filter_rect(area, chip_row, menu);
     frame.render_widget(Clear, rect);
     let panel = themed_panel(colors);
     let inner = panel.inner(rect);
@@ -387,6 +419,8 @@ fn shown(path: &std::path::Path, ctx: &AppContext) -> String {
 mod tests {
     use andre_core::IconSet;
 
+    use crossterm::event::{MouseButton, MouseEventKind};
+
     use super::*;
 
     #[test]
@@ -471,5 +505,34 @@ mod tests {
     fn test_option_labels_put_every_package_first_as_the_name_all() {
         assert_eq!(option_label(&None), "all packages");
         assert_eq!(option_label(&Some("work".into())), "work");
+    }
+
+    #[test]
+    fn test_option_at_picks_the_row_inside_the_dropdown_border() {
+        let rect = Rect::new(9, 1, 12, 4);
+        let press = |x: u16, y: u16| MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert_eq!(
+            option_at(rect, 2, press(10, 2)),
+            Some(0),
+            "first option row"
+        );
+        assert_eq!(
+            option_at(rect, 2, press(10, 3)),
+            Some(1),
+            "second option row"
+        );
+        assert_eq!(
+            option_at(rect, 2, press(10, 4)),
+            None,
+            "past the last option"
+        );
+        assert_eq!(option_at(rect, 2, press(9, 2)), None, "on the left border");
+        assert_eq!(option_at(rect, 2, press(10, 1)), None, "on the top border");
+        assert_eq!(option_at(rect, 2, press(30, 2)), None, "outside");
     }
 }

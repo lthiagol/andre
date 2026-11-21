@@ -140,6 +140,21 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   exception, since its field is part of the step. `t` and `q` footer chips do nothing while
   a text field has focus. Covered by `andre/tests/mouse.rs`
   and unit tests for `click_list`, `click_key`, `top_bar_hits` and `footer_hits`.
+- **Mouse on dialogs, bars, tabs, steps and detail panes.** A click on a dialog button
+  (profile `+`, `r`, `x`; the ignore and profile-edit leave dialogs; the packages
+  membership dialog; the settings pickers, leave and remove dialogs) or on an action-bar
+  button (review, unstow review, execute done, new-package review) sends that button's
+  key. A click on a row of the packages membership dialog or a settings picker moves the
+  cursor there; a second click toggles or keeps it, as Space or Enter does. The wheel
+  moves a dialog's list one row. The ignore editor's file tabs switch file on a click. A
+  click on a finished step in the new-package step bar goes back to it, one Esc at a time.
+  The status profile chip opens its dropdown; a click on an option moves the cursor there
+  and a second click picks it, and the wheel moves the cursor. The wheel scrolls the
+  detail pane of execute, help, status, packages and settings by three rows; the profile
+  detail's sections scroll the same way. The help mouse topic describes this. Clicks
+  outside an open dialog or dropdown do nothing. Covered by `andre/tests/mouse.rs` and
+  unit tests for `button_click`, `dialog_click`, `dialog_row_click`, `chip_click`,
+  `step_click`, `option_at`, `wheel_over`, `wheel_scroll` and `fit` (profiles).
 
 ### Changed
 

@@ -100,9 +100,14 @@ impl Topic {
             Topic::Keys => keys(&colors),
             Topic::Mouse => Detail {
                 headline: vec![prose(
-                    "Mouse support is not in this build yet. Every screen works from the keyboard.",
+                    "A click does what the key on that control does. Clicking a selected row opens it, as Enter does.",
                     &colors,
                 )],
+                sections: vec![
+                    prose("The wheel moves a list one row, and a detail pane three rows.", &colors),
+                    prose("Click a dialog or action-bar button to press it. Click a file tab or a filter chip to switch to it, and a finished step to go back to it.", &colors),
+                    prose("Mouse capture is always on. Hold Shift to select text in the terminal.", &colors),
+                ],
                 ..Detail::default()
             },
             Topic::StatusGlyphs => status_glyphs(Icons::for_set(ctx.core.icons), &colors),

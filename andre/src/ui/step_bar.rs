@@ -2,8 +2,9 @@
 //! `accent` in brackets, the steps still to come in `text_dim`. Steps are numbered from 1,
 //! and the done ones are not, as in `✓ group › [2 name] › 3 source`.
 
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
 };
@@ -79,9 +80,22 @@ pub fn step_rects(area: Rect, s: &StepBar, icons: &Icons) -> Vec<(Rect, usize)> 
     out
 }
 
+/// The index of the step a left click at `ev` lands on, from the rects [`step_rects`] gave.
+pub fn step_click(hits: &[(Rect, usize)], ev: MouseEvent) -> Option<usize> {
+    if ev.kind != MouseEventKind::Down(MouseButton::Left) {
+        return None;
+    }
+    let at = Position::new(ev.column, ev.row);
+    hits.iter()
+        .find(|(rect, _)| rect.contains(at))
+        .map(|(_, index)| *index)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
     use crate::ui::icons::UNICODE;
     use andre_core::Theme;
 
@@ -175,5 +189,23 @@ mod tests {
         };
         let nerd = text(&step_line(&bar, &crate::ui::icons::NERD, &colors()));
         assert!(nerd.starts_with("\u{f00c} a"), "{nerd:?}");
+    }
+
+    #[test]
+    fn test_step_click_gives_the_index_of_the_step_under_the_press() {
+        let bar = StepBar {
+            steps: &["group", "name", "source"],
+            current: 2,
+        };
+        let hits = step_rects(Rect::new(0, 0, 60, 1), &bar, &UNICODE);
+        let at = |x| MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x,
+            row: 0,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        assert_eq!(step_click(&hits, at(0)), Some(0), "the done group step");
+        assert_eq!(step_click(&hits, at(3)), Some(0), "inside the done step");
+        assert_eq!(step_click(&hits, at(60)), None, "past the last step");
     }
 }

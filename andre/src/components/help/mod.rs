@@ -13,7 +13,9 @@ use ratatui::{
 use crate::components::{AppContext, Component, Transition};
 use crate::input::Input;
 use crate::theme::ThemeColors;
-use crate::ui::detail::{detail_inner, detail_rows, fit_scroll, render_detail_scrolled, Detail};
+use crate::ui::detail::{
+    detail_inner, detail_rows, fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail,
+};
 use crate::ui::footer::{screen_hints, Hint};
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, click_list, render_list_panel, ListView};
@@ -85,7 +87,12 @@ impl Component for HelpComponent {
         screen_hints(self.id())
     }
 
-    fn handle_mouse(&mut self, ev: MouseEvent, _ctx: &mut AppContext) -> Transition {
+    fn handle_mouse(&mut self, ev: MouseEvent, ctx: &mut AppContext) -> Transition {
+        if let Some(down) = wheel_over(ev, self.detail_rect) {
+            let colors = ThemeColors::from_theme(ctx.core.theme);
+            self.scroll = wheel_scroll(&self.detail, self.detail_rect, &colors, self.scroll, down);
+            return Transition::Handled;
+        }
         let before = self.list.cursor;
         match click_list(&mut self.list, ev, Topic::ALL.len()) {
             Some(_) => {
@@ -151,4 +158,38 @@ fn topic_row(topic: Topic, selected: bool, colors: &ThemeColors, width: u16) -> 
         colors,
         width,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::detail::WHEEL_ROWS;
+    use andre_core::config::Config;
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+    use ratatui::text::Line;
+
+    #[test]
+    fn test_wheel_over_the_detail_scrolls_it_three_rows() {
+        let mut ctx = AppContext::for_tests(Config::default_empty(), std::path::Path::new("/"));
+        let mut component = HelpComponent {
+            detail: Detail {
+                sections: (0..40).map(|i| Line::raw(format!("row{i}"))).collect(),
+                ..Detail::default()
+            },
+            ..HelpComponent::default()
+        };
+        let area = Rect::new(0, 0, 80, 24);
+        component.prepare(area);
+        let detail = component.detail_rect;
+        let notch = |kind| MouseEvent {
+            kind,
+            column: detail.x + 1,
+            row: detail.y + 1,
+            modifiers: KeyModifiers::NONE,
+        };
+        component.handle_mouse(notch(MouseEventKind::ScrollDown), &mut ctx);
+        assert_eq!(component.scroll, WHEEL_ROWS, "one notch is three rows");
+        component.handle_mouse(notch(MouseEventKind::ScrollUp), &mut ctx);
+        assert_eq!(component.scroll, 0, "and a notch up takes them back");
+    }
 }

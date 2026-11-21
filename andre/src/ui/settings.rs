@@ -108,7 +108,9 @@ pub fn render_overlay(
     render_dialog(frame, dialog_rect(area, &dialog), colors, &dialog);
 }
 
-fn overlay_dialog(
+/// The dialog `overlay` shows, built from the pending settings. Painting and mouse input
+/// both read it, so a click lands on the buttons and rows drawn.
+pub fn overlay_dialog(
     overlay: &Overlay,
     pending: &PendingSettings,
     ctx: &AppContext,
