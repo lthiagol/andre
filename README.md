@@ -153,6 +153,8 @@ Select your group, pick packages, and stow them.
 
 Global shortcuts work from list screens. They are blocked during text input (e.g., typing a package name in the adoption prompt) and modal popups (e.g., settings picker).
 
+Icons default to the Nerd Font set. If your terminal font is not a [Nerd Font](https://www.nerdfonts.com/), set `global.icons: unicode` in `andre.yml` (or pick it in Settings) to use plain symbols instead.
+
 <a name="detailed-reference"></a>
 ## 📖 Detailed Reference
 

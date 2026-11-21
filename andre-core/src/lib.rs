@@ -19,7 +19,7 @@ pub use engine::{
 pub use error::{Error, Result};
 pub use packages::{discover_packages, get_package_preview};
 pub use path::resolve_path;
-pub use state::{AppState, StowAction, StowFlag, StowFlags, Theme, MAX_VERBOSITY};
+pub use state::{AppState, IconSet, StowAction, StowFlag, StowFlags, Theme, MAX_VERBOSITY};
 pub use stow::{
     build_stow_args, check_stowed_status, execute_stow, unlink_stowed_symlink, StowStatus,
 };

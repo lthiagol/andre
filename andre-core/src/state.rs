@@ -57,6 +57,40 @@ impl Theme {
     }
 }
 
+/// Glyph family for the TUI's icons. `Nerd` needs a Nerd Font in the terminal;
+/// `Unicode` uses single-width symbols that any font renders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IconSet {
+    #[default]
+    Nerd,
+    Unicode,
+}
+
+impl IconSet {
+    /// Every icon set, in the order the Settings row cycles through them.
+    pub const ALL: [IconSet; 2] = [IconSet::Nerd, IconSet::Unicode];
+
+    pub fn next(self) -> Self {
+        let index = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            IconSet::Nerd => "nerd",
+            IconSet::Unicode => "unicode",
+        }
+    }
+
+    /// Case-insensitive lookup by `name()`.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|set| set.name().eq_ignore_ascii_case(s))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StowAction {
     #[default]
@@ -132,6 +166,7 @@ pub struct AppState {
     pub config: Config,
     pub flags: StowFlags,
     pub theme: Theme,
+    pub icons: IconSet,
 }
 
 impl AppState {
@@ -145,10 +180,18 @@ impl AppState {
             .and_then(Theme::from_str)
             .unwrap_or_default();
 
+        let icons = config
+            .global
+            .icons
+            .as_deref()
+            .and_then(IconSet::from_str)
+            .unwrap_or_default();
+
         Self {
             config,
             flags,
             theme: theme_name,
+            icons,
         }
     }
 }
@@ -391,5 +434,43 @@ groups:
                 dotfiles: false,
             }
         );
+    }
+
+    #[test]
+    fn test_icons_default_is_nerd() {
+        assert_eq!(IconSet::default(), IconSet::Nerd);
+        assert_eq!(IconSet::default().name(), "nerd");
+    }
+
+    #[test]
+    fn test_icons_string_conversions_are_case_insensitive() {
+        assert_eq!(IconSet::from_str("nerd"), Some(IconSet::Nerd));
+        assert_eq!(IconSet::from_str("UNICODE"), Some(IconSet::Unicode));
+        assert_eq!(IconSet::from_str("emoji"), None);
+        assert_eq!(IconSet::from_str(""), None);
+    }
+
+    #[test]
+    fn test_icons_all_round_trips_and_next_cycles() {
+        for set in IconSet::ALL {
+            assert_eq!(IconSet::from_str(set.name()), Some(set));
+        }
+        assert_eq!(IconSet::Nerd.next(), IconSet::Unicode);
+        assert_eq!(IconSet::Unicode.next(), IconSet::Nerd);
+    }
+
+    #[test]
+    fn test_app_state_reads_icons_from_config() {
+        let mut config = Config::default_empty();
+        assert_eq!(AppState::from_config(config.clone()).icons, IconSet::Nerd);
+
+        config.set_icons(Some("unicode".to_string()));
+        assert_eq!(
+            AppState::from_config(config.clone()).icons,
+            IconSet::Unicode
+        );
+
+        config.set_icons(Some("bogus".to_string()));
+        assert_eq!(AppState::from_config(config).icons, IconSet::Nerd);
     }
 }

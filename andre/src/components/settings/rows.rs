@@ -12,6 +12,7 @@ pub enum SettingsRow {
     Dotfiles,
     Action,
     ThemeName,
+    IconsName,
     IgnoreLine { count: usize },
     Spacer,
     GroupLine { count: usize },
@@ -41,13 +42,14 @@ pub const ROW_ADOPT: usize = 5;
 pub const ROW_DOTFILES: usize = 6;
 pub const ROW_ACTION: usize = 7;
 pub const ROW_THEME: usize = 8;
-pub const ROW_IGNORE: usize = 9;
-pub const ROW_SPACER: usize = 10;
-pub const ROW_GROUP_LINE: usize = 11;
-pub const ROW_SAVE_BUTTON: usize = 12;
+pub const ROW_ICONS: usize = 9;
+pub const ROW_IGNORE: usize = 10;
+pub const ROW_SPACER: usize = 11;
+pub const ROW_GROUP_LINE: usize = 12;
+pub const ROW_SAVE_BUTTON: usize = 13;
 
 /// Number of non-message rows (before optional SavedMessage).
-pub const ROW_COUNT_BASE: usize = 13;
+pub const ROW_COUNT_BASE: usize = 14;
 
 /// Build the flat list of settings rows, optionally appending the saved message.
 pub fn build_flat_items(config: &Config) -> Vec<SettingsRow> {
@@ -61,6 +63,7 @@ pub fn build_flat_items(config: &Config) -> Vec<SettingsRow> {
         SettingsRow::Dotfiles,
         SettingsRow::Action,
         SettingsRow::ThemeName,
+        SettingsRow::IconsName,
         SettingsRow::IgnoreLine {
             count: config.global_ignore().len(),
         },
@@ -121,6 +124,7 @@ mod tests {
         assert_eq!(base[ROW_DOTFILES], SettingsRow::Dotfiles);
         assert_eq!(base[ROW_ACTION], SettingsRow::Action);
         assert_eq!(base[ROW_THEME], SettingsRow::ThemeName);
+        assert_eq!(base[ROW_ICONS], SettingsRow::IconsName);
         assert!(matches!(base[ROW_IGNORE], SettingsRow::IgnoreLine { .. }));
         assert_eq!(base[ROW_SPACER], SettingsRow::Spacer);
         assert!(matches!(
@@ -145,6 +149,7 @@ mod tests {
         assert_eq!(flag_at_row(ROW_CONFIG_RESOLVE), None);
         assert_eq!(flag_at_row(ROW_ACTION), None);
         assert_eq!(flag_at_row(ROW_THEME), None);
+        assert_eq!(flag_at_row(ROW_ICONS), None);
         assert_eq!(flag_at_row(ROW_IGNORE), None);
         assert_eq!(flag_at_row(ROW_SPACER), None);
         assert_eq!(flag_at_row(ROW_GROUP_LINE), None);

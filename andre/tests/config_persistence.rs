@@ -1,4 +1,5 @@
 use andre::app::App;
+use andre::components::settings::rows::*;
 
 mod helpers;
 use helpers::*;
@@ -16,11 +17,11 @@ fn navigate_to_config(app: &mut andre::app::App) {
     push_component(app, "Settings");
     app.component_dispatch(down_key());
     let comp = settings_mut(app);
-    comp.cursor = 2;
+    comp.cursor = ROW_VERBOSITY;
 }
 
 fn save_and_exit(app: &mut andre::app::App) {
-    settings_mut(app).cursor = 12;
+    settings_mut(app).cursor = ROW_SAVE_BUTTON;
     app.component_dispatch(enter_key());
     app.component_dispatch(esc_key());
 }
@@ -55,7 +56,7 @@ fn test_enter_cycles_verbosity_and_save_persists() {
 fn test_space_on_dry_run_then_save_persists() {
     let (mut app, tmp) = make_test_app();
     navigate_to_config(&mut app);
-    settings_mut(&mut app).cursor = 3;
+    settings_mut(&mut app).cursor = ROW_DRY_RUN;
     app.component_dispatch(space_key());
     save_and_exit(&mut app);
     assert!(app.ctx.core.flags.dry_run);
@@ -68,7 +69,7 @@ fn test_space_on_dry_run_then_save_persists() {
 fn test_enter_toggles_dry_run_and_save_persists() {
     let (mut app, tmp) = make_test_app();
     navigate_to_config(&mut app);
-    settings_mut(&mut app).cursor = 3;
+    settings_mut(&mut app).cursor = ROW_DRY_RUN;
     app.component_dispatch(enter_key());
     save_and_exit(&mut app);
     assert!(app.ctx.core.flags.dry_run);
@@ -80,11 +81,11 @@ fn test_enter_toggles_dry_run_and_save_persists() {
 fn test_flag_rows_enter_and_space_then_save_persists() {
     let (mut app, tmp) = make_test_app();
     navigate_to_config(&mut app);
-    settings_mut(&mut app).cursor = 4;
+    settings_mut(&mut app).cursor = ROW_NO_FOLDING;
     app.component_dispatch(enter_key()); // no-folding
-    settings_mut(&mut app).cursor = 5;
+    settings_mut(&mut app).cursor = ROW_ADOPT;
     app.component_dispatch(space_key()); // adopt
-    settings_mut(&mut app).cursor = 6;
+    settings_mut(&mut app).cursor = ROW_DOTFILES;
     app.component_dispatch(enter_key()); // dotfiles
                                          // Staged in Settings only until save
     assert!(!app.ctx.core.flags.no_folding);
@@ -109,7 +110,12 @@ fn bool_flags(flags: &andre_core::StowFlags) -> [bool; 4] {
 #[test]
 fn test_each_bool_flag_row_toggles_only_its_own_flag_and_saves() {
     // Toggling one row at a time: a swap between two rows shows up as the wrong bit set.
-    for (cursor, idx) in [(3, 0), (4, 1), (5, 2), (6, 3)] {
+    for (cursor, idx) in [
+        (ROW_DRY_RUN, 0),
+        (ROW_NO_FOLDING, 1),
+        (ROW_ADOPT, 2),
+        (ROW_DOTFILES, 3),
+    ] {
         let (mut app, tmp) = make_test_app();
         navigate_to_config(&mut app);
         settings_mut(&mut app).cursor = cursor;
@@ -174,7 +180,7 @@ fn test_add_group_then_save_persists() {
     navigate_to_config(&mut app);
     let groups_before = app.ctx.core.config.groups.len();
     // Open group actions, select Add, type name, confirm
-    settings_mut(&mut app).cursor = 11;
+    settings_mut(&mut app).cursor = ROW_GROUP_LINE;
     app.component_dispatch(enter_key()); // Opens Actions dialog
     app.component_dispatch(enter_key()); // Select Add (cursor=0)
                                          // Now at AddName dialog
@@ -200,7 +206,7 @@ fn test_remove_group_via_dialog_then_save_persists() {
     let (mut app, tmp) = make_test_app();
     let config_path = tmp.path().join("andre.yml");
     navigate_to_config(&mut app);
-    settings_mut(&mut app).cursor = 11;
+    settings_mut(&mut app).cursor = ROW_GROUP_LINE;
     let groups_before = app.ctx.core.config.groups.len();
     // Open group actions, select Remove
     app.component_dispatch(enter_key());
@@ -301,7 +307,7 @@ fn test_dirty_then_save_then_esc_works() {
     let (mut app, _tmp) = make_test_app();
     navigate_to_config(&mut app);
     app.component_dispatch(enter_key());
-    settings_mut(&mut app).cursor = 12;
+    settings_mut(&mut app).cursor = ROW_SAVE_BUTTON;
     app.component_dispatch(enter_key());
     app.component_dispatch(esc_key());
     assert_eq!(component_id(&app), "MainMenu");
@@ -312,7 +318,7 @@ fn test_n_dismisses_saved_message_without_toggling_setting() {
     let (mut app, _tmp) = make_test_app();
     navigate_to_config(&mut app);
     app.component_dispatch(enter_key());
-    settings_mut(&mut app).cursor = 12;
+    settings_mut(&mut app).cursor = ROW_SAVE_BUTTON;
     app.component_dispatch(enter_key());
     assert_eq!(
         settings(&app).config_message,
@@ -352,7 +358,7 @@ fn make_app_with_yaml(yaml: &str) -> (App, tempfile::TempDir) {
 /// Opens the Edit > Name prompt for the only group ("home").
 fn open_edit_name_prompt(app: &mut App) {
     navigate_to_config(app);
-    settings_mut(app).cursor = 11; // group line
+    settings_mut(app).cursor = ROW_GROUP_LINE; // group line
     app.component_dispatch(enter_key()); // group actions
     app.component_dispatch(down_key());
     app.component_dispatch(down_key()); // Edit
@@ -423,7 +429,7 @@ fn test_theme_picked_in_settings_persists_to_disk() {
     let (mut app, tmp) = make_test_app();
     let config_path = tmp.path().join("andre.yml");
     navigate_to_config(&mut app);
-    settings_mut(&mut app).cursor = 8; // theme row
+    settings_mut(&mut app).cursor = ROW_THEME; // theme row
     app.component_dispatch(enter_key()); // open picker on "default"
     app.component_dispatch(down_key());
     app.component_dispatch(down_key()); // "catppuccin-mocha"
@@ -449,4 +455,42 @@ fn test_theme_cycled_with_t_key_persists_to_disk() {
     save_and_exit(&mut app);
     let reloaded = andre_core::Config::load(&config_path).unwrap();
     assert_eq!(reloaded.global.theme.as_deref(), Some("dracula"));
+}
+
+#[test]
+fn test_icons_row_enter_cycles_and_persists_to_disk() {
+    let (mut app, tmp) = make_test_app();
+    let config_path = tmp.path().join("andre.yml");
+    navigate_to_config(&mut app);
+    settings_mut(&mut app).cursor = ROW_ICONS;
+    app.component_dispatch(enter_key()); // nerd -> unicode
+    assert_eq!(
+        app.ctx.core.icons,
+        andre_core::IconSet::Nerd,
+        "icons apply only once saved"
+    );
+    save_and_exit(&mut app);
+
+    assert_eq!(app.ctx.core.icons, andre_core::IconSet::Unicode);
+    let reloaded = andre_core::Config::load(&config_path).unwrap();
+    assert_eq!(reloaded.global.icons.as_deref(), Some("unicode"));
+    assert_eq!(
+        andre_core::AppState::from_config(reloaded).icons,
+        andre_core::IconSet::Unicode
+    );
+}
+
+#[test]
+fn test_icons_row_twice_returns_to_nerd_and_marks_dirty() {
+    let (mut app, _tmp) = make_test_app();
+    navigate_to_config(&mut app);
+    settings_mut(&mut app).cursor = ROW_ICONS;
+    app.component_dispatch(enter_key());
+    app.component_dispatch(enter_key());
+    assert!(
+        settings_mut(&mut app).config_dirty,
+        "cycling must mark the config dirty"
+    );
+    save_and_exit(&mut app);
+    assert_eq!(app.ctx.core.icons, andre_core::IconSet::Nerd);
 }

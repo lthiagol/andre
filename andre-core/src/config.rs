@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::engine::EngineKind;
 use crate::error::{Error, Result};
 use crate::path::resolve_path;
-use crate::state::{StowAction, StowFlags, Theme, MAX_VERBOSITY};
+use crate::state::{IconSet, StowAction, StowFlags, Theme, MAX_VERBOSITY};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -21,6 +21,8 @@ pub struct GlobalSettings {
     /// Link engine: "native" (default, no GNU stow) or "stow" (shells out to GNU stow).
     pub engine: Option<String>,
     pub theme: Option<String>,
+    /// Glyph set for the TUI: "nerd" (default, needs a Nerd Font) or "unicode".
+    pub icons: Option<String>,
     #[serde(alias = "ignores")]
     pub ignore: Option<Vec<String>>,
     pub stow: Option<StowConfig>,
@@ -51,6 +53,7 @@ pub enum ConfigWarning {
     UnknownTheme(String),
     UnknownAction(String),
     UnknownEngine(String),
+    UnknownIcons(String),
     VerbosityOutOfRange(u8),
     NoGroups,
 }
@@ -63,6 +66,7 @@ impl fmt::Display for ConfigWarning {
             ConfigWarning::UnknownEngine(e) => {
                 write!(f, "unknown engine '{}', using native", e)
             }
+            ConfigWarning::UnknownIcons(i) => write!(f, "unknown icons '{}', using nerd", i),
             ConfigWarning::VerbosityOutOfRange(v) => {
                 write!(f, "verbosity {} is out of range (0-{})", v, MAX_VERBOSITY)
             }
@@ -77,6 +81,7 @@ impl Config {
             global: GlobalSettings {
                 engine: None,
                 theme: None,
+                icons: None,
                 ignore: None,
                 stow: None,
             },
@@ -100,6 +105,12 @@ impl Config {
         if let Some(ref engine) = self.global.engine {
             if EngineKind::from_str(engine).is_none() {
                 warnings.push(ConfigWarning::UnknownEngine(engine.clone()));
+            }
+        }
+
+        if let Some(ref icons) = self.global.icons {
+            if IconSet::from_str(icons).is_none() {
+                warnings.push(ConfigWarning::UnknownIcons(icons.clone()));
             }
         }
 
@@ -265,6 +276,10 @@ impl Config {
 
     pub fn set_theme(&mut self, t: Option<String>) {
         self.global.theme = t;
+    }
+
+    pub fn set_icons(&mut self, icons: Option<String>) {
+        self.global.icons = icons;
     }
 
     /// Adds a group. Returns `true` if a group with the same name was overwritten.
@@ -966,6 +981,7 @@ groups:
             global: GlobalSettings {
                 engine: None,
                 theme: Some("nord".to_string()),
+                icons: None,
                 ignore: None,
                 stow: Some(StowConfig {
                     verbosity: Some(2),
@@ -1003,6 +1019,7 @@ groups:
             global: GlobalSettings {
                 engine: None,
                 theme: Some("nonexistent-theme".to_string()),
+                icons: None,
                 ignore: None,
                 stow: None,
             },
@@ -1030,6 +1047,7 @@ groups:
             global: GlobalSettings {
                 engine: None,
                 theme: None,
+                icons: None,
                 ignore: None,
                 stow: Some(StowConfig {
                     verbosity: None,
@@ -1064,6 +1082,7 @@ groups:
             global: GlobalSettings {
                 engine: None,
                 theme: None,
+                icons: None,
                 ignore: None,
                 stow: Some(StowConfig {
                     verbosity: Some(99),
@@ -1098,6 +1117,7 @@ groups:
             global: GlobalSettings {
                 engine: None,
                 theme: None,
+                icons: None,
                 ignore: None,
                 stow: None,
             },
@@ -1173,6 +1193,7 @@ groups: {}
             global: GlobalSettings {
                 engine: Some("ruby".into()),
                 theme: None,
+                icons: None,
                 ignore: None,
                 stow: None,
             },
@@ -1183,5 +1204,44 @@ groups: {}
             matches!(&warnings[..], [ConfigWarning::NoGroups, ConfigWarning::UnknownEngine(e)] if e == "ruby")
         );
         assert_eq!(config.effective_engine(), EngineKind::Native);
+    }
+
+    #[test]
+    fn test_icons_unknown_value_warns() {
+        let config = Config {
+            global: GlobalSettings {
+                engine: None,
+                theme: None,
+                icons: Some("emoji".into()),
+                ignore: None,
+                stow: None,
+            },
+            groups: BTreeMap::new(),
+        };
+        let warnings = config.validate();
+        assert!(
+            matches!(&warnings[..], [ConfigWarning::NoGroups, ConfigWarning::UnknownIcons(i)] if i == "emoji")
+        );
+    }
+
+    #[test]
+    fn test_icons_round_trips_through_yaml() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("andre.yml");
+        std::fs::write(
+            &path,
+            "global:\n  icons: unicode\n  stow:\n    verbosity: 0\ngroups: {}\n",
+        )
+        .unwrap();
+        let config = Config::load(&path).unwrap();
+        assert!(config
+            .validate()
+            .iter()
+            .all(|w| !matches!(w, ConfigWarning::UnknownIcons(_))));
+
+        let path2 = tmp.path().join("andre2.yml");
+        config.save(&path2).unwrap();
+        let reloaded = Config::load(&path2).unwrap();
+        assert_eq!(reloaded.global.icons.as_deref(), Some("unicode"));
     }
 }

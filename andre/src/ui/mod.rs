@@ -7,6 +7,7 @@ mod confirm;
 mod execute;
 mod footer;
 pub mod help;
+pub mod icons;
 pub mod packages;
 mod settings;
 mod status;
@@ -65,7 +66,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(1),
-            Constraint::Length(2),
+            Constraint::Length(1),
         ])
         .split(inner);
 
@@ -87,12 +88,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         app.ctx.breadcrumb_cache.clear();
         app.ctx.breadcrumb_cache.extend(stack_ids.iter().copied());
     }
+    // The bars keep one column of air on each side, like the content below.
     render_status_bar(
         frame,
-        v[2],
+        v[2].inner(Margin::new(1, 0)),
         &colors,
         &app.ctx.core.flags,
-        app.ctx.core.theme.name(),
+        app.ctx.core.icons,
         app.ctx.debug,
     );
 
@@ -111,7 +113,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         component.render(frame, h[1], &app.ctx);
     }
 
-    render_footer(frame, v[6], &colors, screen_id);
+    render_footer(
+        frame,
+        v[6].inner(Margin::new(1, 0)),
+        &colors,
+        screen_id,
+        app.ctx.core.theme.name(),
+    );
 
     if let Some(ref toast) = app.ctx.toast {
         // Overlay above chrome; Clear inside render_toast avoids ghosting.

@@ -1,8 +1,12 @@
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
+use ratatui::style::{Color, Modifier};
 use ratatui::Terminal;
 
 use andre::app::App;
+use andre::theme::ThemeColors;
+use andre::ui::icons::NERD;
+use andre_core::{IconSet, StowAction, Theme};
 
 mod helpers;
 use helpers::{make_empty_app, make_test_app};
@@ -28,23 +32,53 @@ fn line_contains(buf: &Buffer, fragment: &str) -> bool {
     false
 }
 
-/// True when `fragment` appears on a row that also contains a status-bar marker
-/// (Verbosity/Dry-Run/Theme), so body text like "Main Menu" does not count.
-fn status_bar_contains(buf: &Buffer, fragment: &str) -> bool {
+/// The top bar's row: the frame border, the one-row margin, the 7-row banner
+/// and a separator come first.
+const TOP_BAR_ROW: u16 = 9;
+
+fn row_text(buf: &Buffer, y: u16) -> String {
+    (0..buf.area().width)
+        .map(|x| buf[(x, y)].symbol())
+        .collect()
+}
+
+fn top_bar_contains(buf: &Buffer, fragment: &str) -> bool {
+    row_text(buf, TOP_BAR_ROW).contains(fragment)
+}
+
+/// The bottom bar's row: the last row inside the frame border.
+fn footer_row(buf: &Buffer) -> String {
+    row_text(buf, buf.area().height - 2)
+}
+
+/// The first row whose text contains `fragment`.
+fn row_containing(buf: &Buffer, fragment: &str) -> Option<String> {
+    (0..buf.area().height)
+        .map(|y| row_text(buf, y))
+        .find(|row| row.contains(fragment))
+}
+
+/// Index of the first cell whose text is `fragment` on row `y`.
+fn column_of(buf: &Buffer, y: u16, fragment: &str) -> Option<u16> {
+    let len = fragment.chars().count() as u16;
+    (0..buf.area().width.saturating_sub(len - 1)).find(|&x| {
+        (0..len)
+            .map(|i| buf[(x + i, y)].symbol())
+            .collect::<String>()
+            == fragment
+    })
+}
+
+/// Foreground of the first cell drawn with `glyph`.
+fn first_glyph_color(buf: &Buffer, glyph: &str) -> Option<Color> {
     for y in 0..buf.area().height {
-        let mut line = String::new();
         for x in 0..buf.area().width {
-            line.push_str(buf[(x, y)].symbol());
-        }
-        let is_status = line.contains("Verbosity")
-            || line.contains("Dry-Run")
-            || line.contains("Theme:")
-            || line.contains("Action:");
-        if is_status && line.contains(fragment) {
-            return true;
+            if buf[(x, y)].symbol() == glyph {
+                return Some(buf[(x, y)].fg);
+            }
         }
     }
-    false
+    None
 }
 
 fn push_screen(app: &mut App, name: &str) {
@@ -120,70 +154,77 @@ fn test_status_bar_shows_verbosity() {
     let (mut app, _) = make_test_app();
     app.ctx.core.flags.verbosity = 3;
     let buf = render_app(&mut app, 80, 24);
-    assert!(line_contains(&buf, "3"), "verbosity not shown");
+    assert!(top_bar_contains(&buf, "verbose 3"), "verbosity not shown");
 }
 
 #[test]
-fn test_status_bar_shows_action() {
+fn test_status_bar_shows_lowercase_action_pill() {
     let (mut app, _) = make_test_app();
     let buf = render_app(&mut app, 80, 24);
-    assert!(line_contains(&buf, "STOW"), "action not shown");
+    assert!(top_bar_contains(&buf, " stow "), "action pill not shown");
+    assert!(
+        !top_bar_contains(&buf, "STOW"),
+        "action must not be uppercase"
+    );
 }
 
-/// Regression guard for the M11 flag-color restoration: each ON/OFF toggle
-/// must be rendered in the success/error color, not a single secondary tone.
-/// Asserts both the ON-state (green) and OFF-state (red) get their distinct
-/// fg by comparing the two cells side-by-side.
 #[test]
-fn test_status_bar_toggle_colors_distinguish_on_from_off() {
-    use ratatui::style::Color;
-
+fn test_status_bar_action_pill_follows_restow() {
     let (mut app, _) = make_test_app();
-    let buf = render_app(&mut app, 140, 24);
+    app.ctx.core.flags.action = StowAction::Restow;
+    let buf = render_app(&mut app, 80, 24);
+    assert!(top_bar_contains(&buf, " restow "), "restow not shown");
+}
 
-    // Set every toggle ON so we can find each ON cell.
+#[test]
+fn test_status_bar_shows_debug_chip_only_in_debug_mode() {
+    let (mut app, _) = make_test_app();
+    let buf = render_app(&mut app, 80, 24);
+    assert!(
+        !top_bar_contains(&buf, "debug"),
+        "debug chip without debug mode"
+    );
+
+    app.ctx.debug = true;
+    let buf = render_app(&mut app, 80, 24);
+    assert!(
+        top_bar_contains(&buf, "debug"),
+        "debug chip missing in debug mode"
+    );
+}
+
+/// Regression guard for the toggle colours: an ON toggle's icon is drawn in the
+/// success colour and an OFF toggle's icon in muted, so the state reads at a glance.
+#[test]
+fn test_top_bar_toggle_icons_distinguish_on_from_off() {
+    let (mut app, _) = make_test_app();
+    let colors = ThemeColors::from_theme(Theme::Default);
+    let buf_off = render_app(&mut app, 140, 24);
+
     app.ctx.core.flags.dry_run = true;
-    app.ctx.core.flags.no_folding = true;
-    app.ctx.core.flags.adopt = true;
-    app.ctx.core.flags.dotfiles = true;
     let buf_on = render_app(&mut app, 140, 24);
 
-    // Find the fg color of the "ON " token in each rendering. We pick "ON "
-    // because every toggle has the same label and they sit on the status
-    // bar row (row 1 in our layout).
-    fn first_on_color(buf: &ratatui::buffer::Buffer) -> Option<Color> {
-        for y in 0..buf.area().height {
-            for x in 0..buf.area().width.saturating_sub(2) {
-                if buf[(x, y)].symbol() == "O"
-                    && buf[(x + 1, y)].symbol() == "N"
-                    && buf[(x + 2, y)].symbol() == " "
-                {
-                    return Some(buf[(x, y)].fg);
-                }
-            }
-        }
-        None
-    }
-    fn first_off_color(buf: &ratatui::buffer::Buffer) -> Option<Color> {
-        for y in 0..buf.area().height {
-            for x in 0..buf.area().width.saturating_sub(2) {
-                if buf[(x, y)].symbol() == "O"
-                    && buf[(x + 1, y)].symbol() == "F"
-                    && buf[(x + 2, y)].symbol() == "F"
-                {
-                    return Some(buf[(x, y)].fg);
-                }
-            }
-        }
-        None
-    }
+    assert_eq!(
+        first_glyph_color(&buf_on, NERD.toggle_on),
+        Some(colors.success),
+        "an ON toggle icon must use the success colour"
+    );
+    assert_eq!(
+        first_glyph_color(&buf_off, NERD.toggle_off),
+        Some(colors.muted),
+        "an OFF toggle icon must use the muted colour"
+    );
+}
 
-    let on_color = first_on_color(&buf_on).expect("no ON cell on status bar");
-    let off_color = first_off_color(&buf).expect("no OFF cell on status bar");
-    assert_ne!(
-        on_color, off_color,
-        "ON and OFF must render in distinct colors (ON=success, OFF=error); \
-         got {on_color:?} for both"
+#[test]
+fn test_top_bar_uses_unicode_icons_when_configured() {
+    let (mut app, _) = make_test_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    let buf = render_app(&mut app, 80, 24);
+    assert!(top_bar_contains(&buf, "○"), "unicode off-icon missing");
+    assert!(
+        !top_bar_contains(&buf, NERD.toggle_off),
+        "nerd glyph leaked"
     );
 }
 
@@ -575,7 +616,7 @@ fn test_footer_narrow_area_shows_screen_hints() {
     let colors = ThemeColors::from_theme(Theme::Default);
     terminal
         .draw(|f| {
-            andre::ui::render_footer(f, Rect::new(0, 0, 40, 2), &colors, "MainMenu");
+            andre::ui::render_footer(f, Rect::new(0, 0, 40, 2), &colors, "MainMenu", "default");
         })
         .unwrap();
     let buf = terminal.backend().buffer().clone();
@@ -674,15 +715,147 @@ fn test_status_toggles_still_live_with_breadcrumb() {
     app.ctx.core.flags.verbosity = 2;
     app.ctx.core.flags.dry_run = true;
     let buf = render_app(&mut app, 140, 24);
-    // Breadcrumb now lives in the panel title; toggles still live in the status bar.
+    // Breadcrumb now lives in the panel title; toggles still live in the top bar.
     assert!(
         line_contains(&buf, "Main > Main Menu"),
         "breadcrumb missing from panel title"
     );
-    assert!(status_bar_contains(&buf, "2"), "verbosity toggle not live");
     assert!(
-        status_bar_contains(&buf, "Dry-Run:ON") || status_bar_contains(&buf, "ON"),
+        top_bar_contains(&buf, "verbose 2"),
+        "verbosity toggle not live"
+    );
+    assert!(
+        top_bar_contains(&buf, "dry-run") && top_bar_contains(&buf, NERD.toggle_on),
         "dry-run toggle not live"
+    );
+}
+
+#[test]
+fn test_footer_shows_quit_at_right_and_no_global_toggles() {
+    let (mut app, _) = make_test_app();
+    let buf = render_app(&mut app, 80, 24);
+    let hint_row = (0..buf.area().height)
+        .map(|y| row_text(&buf, y))
+        .find(|line| line.contains("navigate"))
+        .expect("footer hint row missing");
+    let content = hint_row.trim_end_matches(['│', ' ']);
+    assert!(
+        content.ends_with("q quit"),
+        "q quit not at right: {hint_row:?}"
+    );
+    assert!(
+        !hint_row.contains("dry-run") && !hint_row.contains("verbose"),
+        "global toggles must live in the top bar only: {hint_row:?}"
+    );
+    let y = buf.area().height - 2;
+    let q_x = column_of(&buf, y, "q quit").expect("q quit cell missing");
+    assert_eq!(
+        buf[(q_x, y)].fg,
+        ThemeColors::from_theme(Theme::Default).indicator,
+        "q must be drawn in the indicator colour"
+    );
+}
+
+#[test]
+fn test_top_bar_and_footer_fit_80_columns_on_one_row_each() {
+    let (mut app, _) = make_test_app();
+    app.ctx.core.flags.verbosity = 5;
+    app.ctx.core.flags.dry_run = true;
+    app.ctx.core.flags.dotfiles = true;
+    app.ctx.core.flags.action = StowAction::Unstow;
+    app.ctx.debug = true;
+    let buf = render_app(&mut app, 80, 24);
+    let top = row_text(&buf, TOP_BAR_ROW);
+    assert!(top.contains("debug"), "debug chip must still fit: {top:?}");
+    assert!(top.contains("unstow"), "action pill missing: {top:?}");
+    assert!(top.contains("verbose 5"), "full labels expected: {top:?}");
+    assert!(
+        !top.contains("theme"),
+        "top bar must not carry the theme: {top:?}"
+    );
+    let footer: Vec<String> = (0..buf.area().height)
+        .map(|y| row_text(&buf, y))
+        .filter(|r| r.contains("q quit"))
+        .collect();
+    assert_eq!(footer.len(), 1, "bottom bar must take exactly one row");
+    assert!(
+        footer[0].contains("theme default"),
+        "theme chip belongs in the bottom bar: {:?}",
+        footer[0]
+    );
+}
+
+#[test]
+fn test_top_bar_has_full_labels_and_no_theme_for_every_theme_at_80_columns() {
+    for theme in Theme::ALL {
+        let (mut app, _tmp) = make_test_app();
+        app.ctx.core.theme = theme;
+        app.ctx.core.flags.action = StowAction::Restow;
+        app.ctx.core.flags.verbosity = 3;
+        app.ctx.core.flags.dry_run = true;
+        app.ctx.core.flags.no_folding = true;
+        app.ctx.core.flags.adopt = true;
+        app.ctx.core.flags.dotfiles = true;
+        app.ctx.debug = true;
+        let buf = render_app(&mut app, 80, 24);
+        let top = row_text(&buf, TOP_BAR_ROW);
+        for label in [
+            "restow",
+            "verbose 3",
+            "dry-run",
+            "no-fold",
+            "adopt",
+            "dotfiles",
+            "debug",
+        ] {
+            assert!(
+                top.contains(label),
+                "{}: {label:?} missing: {top:?}",
+                theme.name()
+            );
+        }
+        assert!(!top.contains("theme"), "{}: {top:?}", theme.name());
+        assert!(!top.contains(theme.name()), "{}: {top:?}", theme.name());
+    }
+}
+
+#[test]
+fn test_main_menu_footer_shows_theme_chip_for_every_theme_at_80_columns() {
+    for theme in Theme::ALL {
+        let (mut app, _tmp) = make_test_app();
+        app.ctx.core.theme = theme;
+        let buf = render_app(&mut app, 80, 24);
+        let footer = footer_row(&buf);
+        assert!(
+            footer.contains(&format!("theme {}", theme.name())),
+            "{}: theme chip missing from bottom bar: {footer:?}",
+            theme.name()
+        );
+        assert!(
+            footer.trim_end_matches(['│', ' ']).ends_with("q quit"),
+            "{footer:?}"
+        );
+    }
+    let (mut app, _tmp) = make_test_app();
+    app.ctx.core.theme = Theme::CatppuccinMacchiato;
+    let buf = render_app(&mut app, 80, 24);
+    let y = buf.area().height - 2;
+    let colors = ThemeColors::from_theme(Theme::CatppuccinMacchiato);
+    let t_x = column_of(&buf, y, "theme").expect("theme chip missing");
+    assert_eq!(
+        buf[(t_x, y)].fg,
+        colors.indicator,
+        "t must be the indicator colour"
+    );
+    assert!(
+        buf[(t_x, y)].modifier.contains(Modifier::BOLD),
+        "t must be bold"
+    );
+    let name_x = column_of(&buf, y, "catppuccin-macchiato").expect("theme name missing");
+    assert_eq!(
+        buf[(name_x, y)].fg,
+        colors.highlight,
+        "name must be the highlight colour"
     );
 }
 
@@ -739,14 +912,52 @@ fn test_too_small_overlay_on_undersized_terminal() {
 fn test_chrome_degrades_on_minimum_supported_width() {
     let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Help");
-    // Minimum supported size (80x24): chrome must not panic and should keep
-    // breadcrumb tip and/or a footer hint fragment.
+    // Minimum supported size (80x24): the top bar keeps its chips and the bottom
+    // bar keeps the screen hint and `q quit`.
     let buf = render_app(&mut app, 80, 24);
     assert!(
-        status_bar_contains(&buf, "Main")
-            || status_bar_contains(&buf, "Help")
-            || line_contains(&buf, "back"),
-        "minimum-width chrome lost breadcrumb and footer entirely"
+        footer_row(&buf).contains("theme default"),
+        "bottom bar lost the theme chip: {:?}",
+        footer_row(&buf)
+    );
+    assert!(
+        footer_row(&buf).contains("back"),
+        "footer lost the screen hint"
+    );
+    assert!(footer_row(&buf).contains("q quit"), "footer lost q quit");
+}
+
+#[test]
+fn test_settings_icons_row_shows_pending_set_after_enter() {
+    use andre::components::settings::rows::ROW_ICONS;
+    use andre::components::settings::SettingsComponent;
+    use helpers::enter_key;
+
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Settings");
+    app.component_stack
+        .last_mut()
+        .unwrap()
+        .as_any_mut()
+        .downcast_mut::<SettingsComponent>()
+        .unwrap()
+        .cursor = ROW_ICONS;
+
+    let buf = render_app(&mut app, 80, 40);
+    let row = row_containing(&buf, "icons:").expect("icons row missing from settings");
+    assert!(row.contains("nerd"), "default icon set not shown: {row:?}");
+
+    app.component_dispatch(enter_key());
+    let buf = render_app(&mut app, 80, 40);
+    let row = row_containing(&buf, "icons:").expect("icons row missing from settings");
+    assert!(
+        row.contains("unicode"),
+        "Enter must show the pending set: {row:?}"
+    );
+    assert_eq!(
+        app.ctx.core.icons,
+        IconSet::Nerd,
+        "icons apply only once saved"
     );
 }
 

@@ -9,8 +9,36 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ## [Unreleased]
 
+### Added
+
+- `global.icons` config setting: `nerd` (default, Nerd Font glyphs) or
+  `unicode` (common Unicode symbols, no Nerd Font needed). An unknown value warns
+  and falls back to `nerd`. Settings gets an `icons` row (Enter cycles it,
+  saved with the rest of the config). Documented in `REFERENCE.md` (new
+  Icons section) and `andre.yml.example`. The glyph tables live in
+  `andre/src/ui/icons.rs`.
+
 ### Changed
 
+- Top bar redesigned as one flat, lowercase row: the current action as a pill
+  on the left (`stow`, `restow`, `unstow`) and a chip per toggle (`● verbose 1`,
+  `○ dry-run`, `○ no-fold`, `○ adopt`, `○ dotfiles`). Each chip's hotkey letter
+  is drawn in the indicator colour inside its label, so the separate key
+  letters are gone. On toggles are bright with a success icon, off toggles are
+  muted. A `debug` chip shows in debug mode. Labels shrink to hotkey letters
+  when the full bar does not fit. The top bar no longer shows the theme. The
+  bar is built by the pure function `ui::status_bar::top_bar_line`, which has
+  unit tests.
+- Bottom bar is one row: the current screen's key hints on the left, then
+  `theme <name>` and `q quit` at the right edge (`t` in the indicator colour,
+  the name in the highlight colour). The theme chip shrinks to `theme` when the
+  full name does not fit beside the hints, and is dropped when not even that
+  fits. `q quit` is always kept. The global-key line is gone (those keys now
+  live in the top bar). The freed row goes back to the content area. Both bars
+  keep a one-column margin on each side. The bar is built by the pure function
+  `ui::footer::footer_line`, which has unit tests.
+- `ui::footer::screen_hints` holds the per-screen hint table (same hints as
+  before).
 - Dependency upgrade: `ratatui` 0.26 → 0.29 and `crossterm` 0.27 → 0.28 (the
   version ratatui 0.29 builds on). No intended visual change; the existing
   render snapshot tests pass unchanged. API fallout:

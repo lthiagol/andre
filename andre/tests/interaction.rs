@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use andre::app::App;
 use andre::components::confirm::ConfirmComponent;
+use andre::components::settings::rows::*;
 use andre::components::stow::GroupSelectComponent;
 use ratatui::{backend::TestBackend, Terminal};
 
@@ -405,7 +406,7 @@ fn test_config_navigation_starts_at_first_interactive() {
 fn test_config_up_wraps_to_last_interactive() {
     let (mut app, _) = make_test_app();
     push_component(&mut app, "Settings");
-    settings_mut(&mut app).cursor = 2;
+    settings_mut(&mut app).cursor = ROW_VERBOSITY;
     app.component_dispatch(up_key());
     assert!(
         settings(&app).cursor >= 2,
@@ -417,7 +418,7 @@ fn test_config_up_wraps_to_last_interactive() {
 // --- Group Actions Dialog ---
 
 fn navigate_to_group_row(app: &mut App) {
-    settings_mut(app).cursor = 11;
+    settings_mut(app).cursor = ROW_GROUP_LINE;
 }
 
 #[test]
@@ -561,7 +562,7 @@ fn test_global_keys_blocked_during_settings_picker() {
     let (mut app, _) = make_test_app();
     push_component(&mut app, "Settings");
     // Navigate to Action row (ROW_ACTION = 7)
-    settings_mut(&mut app).cursor = 7;
+    settings_mut(&mut app).cursor = ROW_ACTION;
     app.component_dispatch(enter_key());
     assert!(settings(&app).picker.is_some(), "picker should be open");
     let initial_theme = app.ctx.core.theme;
@@ -618,7 +619,7 @@ fn test_settings_picker_is_modal() {
     use andre::components::InputMode;
     push_component(&mut app, "Settings");
     // Open picker on Action row
-    settings_mut(&mut app).cursor = 7;
+    settings_mut(&mut app).cursor = ROW_ACTION;
     app.component_dispatch(enter_key());
     assert_eq!(
         app.component_stack.last().unwrap().input_mode(),
@@ -633,7 +634,7 @@ fn test_settings_add_name_is_text_input() {
     use andre::components::InputMode;
     push_component(&mut app, "Settings");
     // Navigate to group row, open Actions, select Add
-    settings_mut(&mut app).cursor = 11;
+    settings_mut(&mut app).cursor = ROW_GROUP_LINE;
     app.component_dispatch(enter_key()); // Actions menu
     app.component_dispatch(enter_key()); // Add → AddName dialog
     assert_eq!(
@@ -648,7 +649,7 @@ fn test_settings_text_input_blocks_globals() {
     let (mut app, _) = make_test_app();
     push_component(&mut app, "Settings");
     // Open AddName dialog via group row
-    settings_mut(&mut app).cursor = 11;
+    settings_mut(&mut app).cursor = ROW_GROUP_LINE;
     app.component_dispatch(enter_key()); // Actions menu
     app.component_dispatch(enter_key()); // Add → AddName dialog
     let initial_theme = app.ctx.core.theme;
@@ -727,7 +728,7 @@ fn test_config_save_shows_toast() {
         .as_any_mut()
         .downcast_mut::<andre::components::settings::SettingsComponent>()
         .unwrap();
-    settings.cursor = 12;
+    settings.cursor = ROW_SAVE_BUTTON;
     app.component_dispatch(enter_key());
     let toast = app.ctx.toast.as_ref().expect("toast after save");
     assert_eq!(toast.message, "Config saved");
@@ -750,7 +751,7 @@ fn test_config_save_failure_error_toast_keeps_dirty() {
             .as_any_mut()
             .downcast_mut::<SettingsComponent>()
             .unwrap();
-        s.cursor = 2;
+        s.cursor = ROW_VERBOSITY;
     }
     app.component_dispatch(enter_key());
     app.ctx.config_path = tmp.path().join("missing-dir").join("andre.yml");
@@ -762,7 +763,7 @@ fn test_config_save_failure_error_toast_keeps_dirty() {
             .as_any_mut()
             .downcast_mut::<SettingsComponent>()
             .unwrap();
-        s.cursor = 12;
+        s.cursor = ROW_SAVE_BUTTON;
     }
     let verbosity_before = app.ctx.core.flags.verbosity;
     app.component_dispatch(enter_key());
@@ -807,7 +808,7 @@ fn test_discard_save_y_stays_on_failure() {
             .as_any_mut()
             .downcast_mut::<SettingsComponent>()
             .unwrap();
-        s.cursor = 2;
+        s.cursor = ROW_VERBOSITY;
     }
     app.component_dispatch(enter_key()); // dirty via verbosity
     app.ctx.config_path = tmp.path().join("nope").join("andre.yml");
@@ -985,7 +986,7 @@ fn test_adopt_target_second_row_opens_second_group() {
 
 /// Save the open Settings screen (Save row) and reload the config file from disk.
 fn save_and_reload(app: &mut App) -> andre_core::Config {
-    settings_mut(app).cursor = 12;
+    settings_mut(app).cursor = ROW_SAVE_BUTTON;
     app.component_dispatch(enter_key());
     andre_core::Config::load(&app.ctx.config_path).unwrap()
 }

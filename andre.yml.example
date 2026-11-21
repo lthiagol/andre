@@ -12,6 +12,10 @@ global:
   # catppuccin-frappe, catppuccin-macchiato, catppuccin-mocha)
   # theme: default
 
+  # Optional: icon set. 'nerd' (default) needs a Nerd Font in the terminal;
+  # 'unicode' uses common Unicode symbols and needs no Nerd Font.
+  # icons: nerd
+
   # Optional: patterns to ignore globally (supports glob syntax)
   # ignore:
   #   - .git

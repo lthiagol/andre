@@ -77,6 +77,7 @@ mod tests {
                 config: Config::default_empty(),
                 flags: StowFlags::default(),
                 theme: Theme::Default,
+                icons: andre_core::IconSet::Nerd,
             }),
             ..Default::default()
         }

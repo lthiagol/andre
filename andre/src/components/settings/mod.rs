@@ -121,6 +121,11 @@ impl Component for SettingsComponent {
                 } else if cursor == ROW_THEME {
                     let val = self.pending.as_ref().unwrap().theme.name().to_string();
                     picker::open_picker(self, "Theme", PickerField::Theme, &val);
+                } else if cursor == ROW_ICONS {
+                    if let Some(ref mut pending) = self.pending {
+                        pending.icons = pending.icons.next();
+                        self.config_dirty = true;
+                    }
                 } else if cursor == ROW_IGNORE {
                     self.dialog = Some(GroupDialog::IgnoreManage {
                         group: None,
@@ -217,6 +222,7 @@ impl Component for SettingsComponent {
             &ctx.config_dir,
             &pending.flags,
             pending.theme.name(),
+            pending.icons,
             cursor,
             config_message,
             self.config_dirty,

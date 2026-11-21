@@ -15,7 +15,7 @@ use crate::components::settings::{GroupDialog, PickerState};
 use crate::theme::ThemeColors;
 use crate::ui::widgets::file_browser::FileBrowserWidget;
 use crate::ui::widgets::scrollbar::render_scrollbar;
-use andre_core::{config::Config, StowFlags};
+use andre_core::{config::Config, IconSet, StowFlags};
 
 fn val_str(on: bool) -> &'static str {
     if on {
@@ -33,6 +33,7 @@ fn render_row(
     colors: &ThemeColors,
     flags: &StowFlags,
     theme_name: &str,
+    icons: IconSet,
     config_path: &Path,
     config_dir: &Path,
     config_dirty: bool,
@@ -170,6 +171,14 @@ fn render_row(
                 colors.secondary
             }),
         )),
+        SettingsRow::IconsName => Line::from(Span::styled(
+            format!("{}icons:            {}", marker, icons.name()),
+            Style::default().fg(if is_cursor {
+                colors.highlight
+            } else {
+                colors.secondary
+            }),
+        )),
         SettingsRow::IgnoreLine { count } => {
             let label = if *count == 1 { "pattern" } else { "patterns" };
             Line::from(vec![Span::styled(
@@ -235,6 +244,7 @@ pub fn render_settings(
     config_dir: &Path,
     flags: &StowFlags,
     theme_name: &str,
+    icons: IconSet,
     cursor: usize,
     config_message: ConfigMessage,
     config_dirty: bool,
@@ -261,6 +271,7 @@ pub fn render_settings(
                 colors,
                 flags,
                 theme_name,
+                icons,
                 config_path,
                 config_dir,
                 config_dirty,

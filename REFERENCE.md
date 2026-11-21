@@ -18,6 +18,7 @@
 - [All Keyboard Shortcuts](#all-keyboard-shortcuts)
 - [Testing](#testing)
 - [Themes](#themes)
+- [Icons](#icons)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -69,7 +70,9 @@ andre
 5. **Execution** — See live output with progress feedback
 6. **Status** — View results after execution
 
-Global shortcuts (`v`/`d`/`t`/`n`/`a`/`o`/`Ctrl+C`) work from any screen.
+Global shortcuts (`v`/`d`/`t`/`n`/`a`/`o`/`Ctrl+C`) work from any screen. The
+top bar shows their state; the bottom bar shows the current screen's keys, the
+active theme (`theme <name>`, changed with `t`) and `q quit`.
 
 <a name="features"></a>
 ## ✨ Features
@@ -226,6 +229,9 @@ All source and target paths are resolved **relative to the config file's directo
 global:
   theme: catppuccin-mocha
 
+  # Icon set: 'nerd' (default, needs a Nerd Font) or 'unicode'
+  icons: nerd
+
   # Link engine: 'native' (default, no GNU stow binary required) or 'stow'
   # (shells out to GNU stow; needed for adopt, dotfiles, and regex ignores)
   engine: native
@@ -265,6 +271,7 @@ groups:
 | `no_folding` | Create individual symlinks (no directory folding) | `true`, `false` |
 | `adopt` | Move existing target files into the package | `true`, `false` |
 | `action` | Default stow action | `stow`, `restow`, `unstow` |
+| `icons` | Glyph set for toggles and menus (Settings → `icons`) | `nerd` (default, needs a Nerd Font), `unicode` (common Unicode symbols, no Nerd Font needed) |
 
 <a name="all-keyboard-shortcuts"></a>
 ## ⌨️ All Keyboard Shortcuts
@@ -420,6 +427,20 @@ Cycle through themes with `t`:
 | **Catppuccin Macchiato** | Dark, medium contrast |
 | **Nord** | Cool blue-gray palette |
 | **Gruvbox** | Warm retro palette |
+
+<a name="icons"></a>
+## 🔣 Icons
+
+Set `global.icons` to `nerd` (the default) or `unicode`, or change it on the
+Settings screen: the `icons` row cycles with Enter, and the change applies once
+you save the config.
+
+| Set | Toggles on / off | When to use |
+|:---|:---|:---|
+| **nerd** | Nerd Font glyphs | Your terminal font is a [Nerd Font](https://www.nerdfonts.com/) |
+| **unicode** | `●` / `○` | Any other font. Common symbols, one column wide each |
+
+An unknown value in the config triggers a warning and falls back to `nerd`.
 
 <a name="contributing"></a>
 ## 🤝 Contributing
