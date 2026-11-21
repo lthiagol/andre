@@ -17,6 +17,23 @@ pub fn make_test_app() -> (App, TempDir) {
     (app, tmp)
 }
 
+/// A flat app: one packages folder (`dotfiles`) and no groups, holding the package `test`
+/// (`dotfiles/test/.bashrc`). HOME is the temp dir, so the target `~` is the temp dir.
+pub fn make_flat_test_app() -> (App, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("andre.yml");
+    std::fs::write(
+        &path,
+        "packages: dotfiles\nglobal:\n  stow:\n    verbosity: 0\n",
+    )
+    .unwrap();
+    let pkg_dir = tmp.path().join("dotfiles/test");
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(pkg_dir.join(".bashrc"), "alias l='ls -la'").unwrap();
+    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
+    (app, tmp)
+}
+
 pub fn write_test_config(dir: &TempDir) -> PathBuf {
     let path = dir.path().join("andre.yml");
     std::fs::write(
@@ -155,6 +172,29 @@ pub fn make_bootstrap_app() -> (App, TempDir) {
             "global: {{}}\ngroups:\n  config:\n    source: \"{}\"\n    target: \"{}\"\n",
             source.display(),
             home.display()
+        ),
+    )
+    .unwrap();
+    let app = App::with_home(config_path, home).unwrap();
+    (app, tmp)
+}
+
+/// A flat bootstrap app: the packages folder `dotfiles` holds the package `andre`, whose
+/// `.config/andre/andre.yml` is the running config. HOME is `home`, which has no `.config`
+/// yet, so the package's link (`~/.config/andre`) is free.
+pub fn make_flat_bootstrap_app() -> (App, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path().join("home");
+    let packages = tmp.path().join("dotfiles");
+    let folder = packages.join("andre").join(".config").join("andre");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let config_path = folder.join("andre.yml");
+    std::fs::write(
+        &config_path,
+        format!(
+            "packages: \"{}\"\nglobal:\n  stow:\n    verbosity: 0\n",
+            packages.display()
         ),
     )
     .unwrap();

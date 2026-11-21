@@ -11,16 +11,16 @@ fn test_status_cache_populated_after_entering_packages() {
     let (mut app, _tmp) = make_test_app();
     app.component_dispatch(key_char('2'));
     app.update_components();
-    assert!(app.ctx.status_cache.borrow().get("home", "test").is_some());
+    assert!(app.ctx.status_cache.borrow().get("home/test").is_some());
 }
 
 #[test]
 fn test_status_cache_cleared_on_execution_complete() {
     let (app, _tmp) = make_test_app();
-    app.ctx.status_cache.borrow_mut().insert(
-        ("test".into(), "test".into()),
-        andre_core::StowStatus::Stowed,
-    );
+    app.ctx
+        .status_cache
+        .borrow_mut()
+        .insert("test".into(), andre_core::StowStatus::Stowed);
     assert!(!app.ctx.status_cache.borrow().is_empty());
     app.invalidate_status_cache();
     assert!(app.ctx.status_cache.borrow().is_empty());
@@ -31,14 +31,14 @@ fn test_marking_a_group_keeps_the_status_cache() {
     let (mut app, _tmp) = make_test_app();
     push_component(&mut app, "Packages");
     app.update_components();
-    app.ctx.status_cache.borrow_mut().insert(
-        ("home".into(), "test".into()),
-        andre_core::StowStatus::Stowed,
-    );
+    app.ctx
+        .status_cache
+        .borrow_mut()
+        .insert("home/test".into(), andre_core::StowStatus::Stowed);
     // Marking is a UI action: the cached status is kept, not read again from disk.
     app.component_dispatch(space_key());
     assert_eq!(
-        app.ctx.status_cache.borrow().get("home", "test"),
+        app.ctx.status_cache.borrow().get("home/test"),
         Some(andre_core::StowStatus::Stowed)
     );
 }
@@ -60,10 +60,10 @@ fn menu_stowed_fact(app: &App) -> String {
 #[test]
 fn test_menu_stowed_count_is_unknown_after_an_execution_finishes() {
     let (mut app, _tmp) = make_test_app();
-    app.ctx.status_cache.borrow_mut().insert(
-        ("home".into(), "test".into()),
-        andre_core::StowStatus::Stowed,
-    );
+    app.ctx
+        .status_cache
+        .borrow_mut()
+        .insert("home/test".into(), andre_core::StowStatus::Stowed);
     app.update_components();
     assert_eq!(menu_stowed_fact(&app), "1 of 1");
 

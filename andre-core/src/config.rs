@@ -40,6 +40,16 @@ pub struct PackageEntry {
     pub ignores: Vec<String>,
 }
 
+impl PackageEntry {
+    /// The package's folder name: `nvim` for `<packages>/nvim`, which `stow` takes as the
+    /// package. Unlike `name`, it has no `group/` part in an interim `groups:` config.
+    pub fn folder_name(&self) -> String {
+        self.dir
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GlobalSettings {

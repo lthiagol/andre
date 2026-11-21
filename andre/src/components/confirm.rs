@@ -1,10 +1,9 @@
-//! The review: what a run would do, before it runs. The left pane is the selected groups and
-//! packages with the status each has now; the right pane is the command and target of the
-//! cursor's row. `y` runs the selection on the run screen, `n` or `Esc` goes back. Nothing
-//! changes on disk here: commands are previewed and files are counted.
+//! The review: what a run would do, before it runs. The left pane is the selected packages
+//! with the status each has now; the right pane is the command and target of the cursor's
+//! package. `y` runs the selection on the run screen, `n` or `Esc` goes back. Nothing changes
+//! on disk here: commands are previewed and files are counted.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use andre_core::ignore::global_ignore_in;
@@ -25,24 +24,23 @@ use crate::ui::footer::{review_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
-use crate::ui::tree::{tree_line_without_checkboxes, Tree, TreeGroup, TreePackage, TreeRow};
+use crate::ui::package_list::{package_line, PackageList, PackageRow};
 use crate::ui::{display_path, plural};
 
 pub struct ConfirmComponent {
-    pub selected_packages: HashMap<String, Vec<String>>,
+    /// The packages the run covers, by name, in name order.
+    pub selected_packages: Vec<String>,
     /// The action this review runs. `None` follows the global action.
     action: Option<StowAction>,
-    /// Groups and packages with the status each has now. Statuses are read once, when the
-    /// review opens.
-    tree: Tree,
-    /// The tree's visible rows, as of the last `sync`.
-    rows: Vec<TreeRow>,
+    /// The packages with the status each has now. Statuses are read once, when the review
+    /// opens.
+    packages: PackageList,
     /// What each package would run. Rebuilt when a global flag changes.
     plan: Plan,
     /// The flags `plan` was built from.
     plan_flags: StowFlags,
     pub list: ListView,
-    /// The detail of the cursor's row. Built by `sync`.
+    /// The detail of the cursor's package. Built by `sync`.
     detail: Detail,
     /// The action bar, as the last `prepare` laid it out.
     actions: Option<Rect>,
@@ -53,17 +51,13 @@ pub struct ConfirmComponent {
 struct Plan {
     /// `native` or `stow`: the engine the run uses.
     engine: &'static str,
-    groups: BTreeMap<String, GroupPlan>,
-}
-
-struct GroupPlan {
-    /// Where the group links, as a display path. `None` when the path does not resolve.
-    target: Option<String>,
-    /// Each selected package's command, in selection order.
+    /// Each selected package's preview, in review order.
     packages: Vec<(String, Preview)>,
 }
 
 struct Preview {
+    /// Where the package links, as a display path. `None` when the path does not resolve.
+    target: Option<String>,
     command: String,
     /// The files the package would link. `None` when its folder cannot be read.
     files: Option<usize>,
@@ -78,103 +72,95 @@ fn flags_for(ctx: &AppContext, action: Option<StowAction>) -> StowFlags {
     }
 }
 
-/// The selection, groups in name order.
-fn sorted(selected: &HashMap<String, Vec<String>>) -> BTreeMap<&str, &[String]> {
-    selected
-        .iter()
-        .map(|(group, packages)| (group.as_str(), packages.as_slice()))
-        .collect()
+/// Sorts and de-duplicates the names, so the review lists and runs them in name order.
+fn in_review_order(mut names: Vec<String>) -> Vec<String> {
+    names.sort();
+    names.dedup();
+    names
 }
 
-/// The tree the review lists. Reads each group's statuses through the status cache.
-fn build_tree(selected: &HashMap<String, Vec<String>>, ctx: &AppContext) -> Tree {
-    let config = &ctx.core.config;
+/// The rows the review lists. Reads each package's status through the status cache. A name
+/// that is not a package, or whose target folder is missing, has no status.
+fn build_rows(selected: &[String], ctx: &AppContext) -> PackageList {
+    let entries = ctx.package_entries();
     let global = global_ignore_in(&ctx.home_dir);
     let mut cache = ctx.status_cache.borrow_mut();
-    let groups = sorted(selected)
-        .into_iter()
-        .map(|(name, packages)| {
-            let source = config.get_group_source(name, &ctx.config_dir, &ctx.home_dir);
-            let target = config.get_group_target(name, &ctx.config_dir, &ctx.home_dir);
-            if let (Some(source), Some(target)) = (&source, &target) {
-                cache.prefetch_group(source, target, name, packages, Some(global.as_path()));
-            }
-            TreeGroup {
-                name: name.to_string(),
-                packages: packages
-                    .iter()
-                    .map(|package| TreePackage {
-                        name: package.clone(),
-                        status: cache.get(name, package),
-                        mark: None,
-                        meta: String::new(),
-                    })
-                    .collect(),
+    let rows = selected
+        .iter()
+        .map(|name| {
+            // A package whose target is missing does not resolve, so its status stays unknown.
+            let status = entries
+                .iter()
+                .find(|entry| &entry.name == name)
+                .filter(|entry| entry.target.exists())
+                .map(|entry| cache.prefetch(entry, Some(global.as_path())));
+            PackageRow {
+                name: name.clone(),
+                status,
+                mark: None,
+                meta: String::new(),
             }
         })
         .collect();
-    Tree::new(groups)
+    PackageList::new(rows)
 }
 
 /// The plan for `selected` under `flags`. Reads each package's folder to count its files.
-fn build_plan(
-    selected: &HashMap<String, Vec<String>>,
-    ctx: &AppContext,
-    flags: &StowFlags,
-) -> Plan {
+fn build_plan(selected: &[String], ctx: &AppContext, flags: &StowFlags) -> Plan {
     let config = &ctx.core.config;
     let native = config.effective_engine() == EngineKind::Native;
     let global = global_ignore_in(&ctx.home_dir);
-    let groups = sorted(selected)
-        .into_iter()
-        .map(|(group, packages)| {
-            let source = config.get_group_source(group, &ctx.config_dir, &ctx.home_dir);
-            let target = config.get_group_target(group, &ctx.config_dir, &ctx.home_dir);
-            let ignores = config.effective_ignores(group);
-            let packages = packages
+    let entries = ctx.package_entries();
+    let packages = selected
+        .iter()
+        .map(|name| {
+            // A package whose target is missing does not resolve, as a run would not stow it.
+            let entry = entries
                 .iter()
-                .map(|pkg| {
-                    // Native (the default) does not shell out, so it shows no `stow` command.
-                    let command = if native {
-                        match (&source, &target) {
-                            (Some(_), Some(_)) => format!("native: {pkg}  (relative symlink)"),
-                            _ => format!("native: {pkg} (path unresolved)"),
-                        }
-                    } else if let (Some(src), Some(tgt)) = (&source, &target) {
-                        // Paths read as the list shows them (`~/...`). The run uses the real ones.
-                        let cmd = build_stow_args(
-                            Path::new(&display_path(src, &ctx.home_dir)),
-                            Path::new(&display_path(tgt, &ctx.home_dir)),
-                            pkg,
-                            flags,
-                            &ignores,
-                        );
-                        let args: Vec<String> = cmd
-                            .get_args()
-                            .map(|a| a.to_string_lossy().to_string())
-                            .collect();
-                        format!("{} {}", cmd.get_program().to_string_lossy(), args.join(" "))
-                    } else {
-                        format!("stow {pkg} (path unresolved)")
-                    };
-                    let files = source
-                        .as_ref()
-                        .and_then(|src| {
-                            linkable_files(&src.join(pkg), &ignores, Some(global.as_path())).ok()
-                        })
-                        .map(|files| files.len());
-                    (pkg.clone(), Preview { command, files })
+                .find(|entry| &entry.name == name)
+                .filter(|entry| entry.target.exists());
+            // Native (the default) does not shell out, so it shows no `stow` command.
+            let command = if native {
+                match entry {
+                    Some(_) => format!("native: {name}  (relative symlink)"),
+                    None => format!("native: {name} (path unresolved)"),
+                }
+            } else if let Some(entry) = entry {
+                // Paths read as the list shows them (`~/...`). The run uses the real ones.
+                let cmd = build_stow_args(
+                    Path::new(&display_path(&entry.source, &ctx.home_dir)),
+                    Path::new(&display_path(&entry.target, &ctx.home_dir)),
+                    &entry.folder_name(),
+                    flags,
+                    &entry.ignores,
+                );
+                let args: Vec<String> = cmd
+                    .get_args()
+                    .map(|a| a.to_string_lossy().to_string())
+                    .collect();
+                format!("{} {}", cmd.get_program().to_string_lossy(), args.join(" "))
+            } else {
+                format!("stow {name} (path unresolved)")
+            };
+            let files = entry
+                .and_then(|entry| {
+                    linkable_files(&entry.dir, &entry.ignores, Some(global.as_path())).ok()
                 })
-                .collect();
-            let target = target
-                .as_ref()
-                .map(|path| display_path(path, &ctx.home_dir));
-            (group.to_string(), GroupPlan { target, packages })
+                .map(|files| files.len());
+            let target = entry.map(|entry| display_path(&entry.target, &ctx.home_dir));
+            (
+                name.clone(),
+                Preview {
+                    target,
+                    command,
+                    files,
+                },
+            )
         })
         .collect();
     Plan {
         engine: if native { "native" } else { "stow" },
-        groups,
+        packages,
     }
 }
 
@@ -209,28 +195,24 @@ fn dry_run_line(flags: &StowFlags, colors: &ThemeColors) -> Line<'static> {
 }
 
 impl ConfirmComponent {
-    pub fn new(selected_packages: HashMap<String, Vec<String>>, ctx: &AppContext) -> Self {
+    pub fn new(selected_packages: Vec<String>, ctx: &AppContext) -> Self {
         Self::build(selected_packages, ctx, None)
     }
 
     /// A review that always stows, whatever the global action is: the bootstrap item.
-    pub fn stow_only(selected_packages: HashMap<String, Vec<String>>, ctx: &AppContext) -> Self {
+    pub fn stow_only(selected_packages: Vec<String>, ctx: &AppContext) -> Self {
         Self::build(selected_packages, ctx, Some(StowAction::Stow))
     }
 
-    fn build(
-        selected_packages: HashMap<String, Vec<String>>,
-        ctx: &AppContext,
-        action: Option<StowAction>,
-    ) -> Self {
+    fn build(selected_packages: Vec<String>, ctx: &AppContext, action: Option<StowAction>) -> Self {
+        let selected_packages = in_review_order(selected_packages);
         let flags = flags_for(ctx, action);
-        let tree = build_tree(&selected_packages, ctx);
+        let packages = build_rows(&selected_packages, ctx);
         let plan = build_plan(&selected_packages, ctx, &flags);
         let mut component = Self {
             selected_packages,
             action,
-            tree,
-            rows: Vec::new(),
+            packages,
             plan,
             plan_flags: flags,
             list: ListView::default(),
@@ -247,55 +229,48 @@ impl ConfirmComponent {
 
     /// The packages the run covers.
     fn count(&self) -> usize {
-        self.selected_packages.values().map(Vec::len).sum()
+        self.selected_packages.len()
     }
 
-    /// Brings the rows, the plan and the detail up to date with the tree and the flags.
+    /// Brings the plan, the detail and the cursor up to date with the flags.
     fn sync(&mut self, ctx: &AppContext) {
         let flags = self.flags(ctx);
         if flags != self.plan_flags {
             self.plan = build_plan(&self.selected_packages, ctx, &flags);
             self.plan_flags = flags;
         }
-        self.rows = self.tree.rows();
-        self.list.cursor = self.list.cursor.min(self.rows.len().saturating_sub(1));
+        self.list.cursor = self
+            .list
+            .cursor
+            .min(self.packages.rows().len().saturating_sub(1));
         self.detail = self.detail_for(ctx);
     }
 
-    /// The row a fold on `row` lands on: the group header it sits under.
-    fn group_header(&self, row: usize) -> usize {
-        self.rows
-            .iter()
-            .take(row + 1)
-            .rposition(|r| matches!(r, TreeRow::Group { .. }))
-            .unwrap_or(row)
+    /// The name of the package under the cursor.
+    fn cursor_name(&self) -> Option<&str> {
+        self.packages
+            .rows()
+            .get(self.list.cursor)
+            .map(|row| row.name.as_str())
     }
 
-    /// The detail for the cursor's row: a package's command and target, or a group's
-    /// commands for all of its packages.
+    /// The detail for the cursor's package: its command and target.
     fn detail_for(&self, ctx: &AppContext) -> Detail {
         let colors = ThemeColors::from_theme(ctx.core.theme);
         let flags = self.flags(ctx);
-        match self.rows.get(self.list.cursor) {
-            Some(TreeRow::Package { group, name, .. }) => {
-                self.package_detail(group, name, &flags, &colors)
-            }
-            Some(TreeRow::Group { name, .. }) => self.group_detail(name, &flags, &colors),
+        match self.cursor_name() {
+            Some(name) => self.package_detail(name, &flags, &colors),
             None => Detail::default(),
         }
     }
 
-    fn package_detail(
-        &self,
-        group: &str,
-        name: &str,
-        flags: &StowFlags,
-        colors: &ThemeColors,
-    ) -> Detail {
-        let Some(plan) = self.plan.groups.get(group) else {
-            return Detail::default();
-        };
-        let Some((_, preview)) = plan.packages.iter().find(|(package, _)| package == name) else {
+    fn package_detail(&self, name: &str, flags: &StowFlags, colors: &ThemeColors) -> Detail {
+        let Some((_, preview)) = self
+            .plan
+            .packages
+            .iter()
+            .find(|(package, _)| package == name)
+        else {
             return Detail::default();
         };
         let links = match preview.files {
@@ -304,14 +279,15 @@ impl ConfirmComponent {
         };
         Detail {
             headline: vec![Line::styled(
-                format!("{} {group}/{name}", flags.action.as_str()),
+                format!("{} {name}", flags.action.as_str()),
                 Style::default().fg(colors.text),
             )],
             facts: vec![
                 fact("engine", self.plan.engine.to_string()),
                 fact(
                     "target",
-                    plan.target
+                    preview
+                        .target
                         .clone()
                         .unwrap_or_else(|| "not found".to_string()),
                 ),
@@ -325,43 +301,8 @@ impl ConfirmComponent {
         }
     }
 
-    fn group_detail(&self, group: &str, flags: &StowFlags, colors: &ThemeColors) -> Detail {
-        let Some(plan) = self.plan.groups.get(group) else {
-            return Detail::default();
-        };
-        let mut sections: Vec<Line<'static>> = plan
-            .packages
-            .iter()
-            .map(|(_, preview)| command_line(self.plan.engine, &preview.command, colors))
-            .collect();
-        if !sections.is_empty() {
-            sections.push(Line::raw(""));
-            sections.push(dry_run_line(flags, colors));
-        }
-        Detail {
-            headline: vec![Line::styled(
-                format!("{} {group}", flags.action.as_str()),
-                Style::default().fg(colors.text),
-            )],
-            facts: vec![
-                fact(
-                    "target",
-                    plan.target
-                        .clone()
-                        .unwrap_or_else(|| "not found".to_string()),
-                ),
-                fact("packages", plan.packages.len().to_string()),
-            ],
-            sections,
-        }
-    }
-
     fn detail_title(&self) -> String {
-        match self.rows.get(self.list.cursor) {
-            Some(TreeRow::Package { group, name, .. }) => format!("{group}/{name}"),
-            Some(TreeRow::Group { name, .. }) => name.clone(),
-            None => "review".to_string(),
-        }
+        self.cursor_name().unwrap_or("review").to_string()
     }
 
     /// Runs the selection on the run screen, which keeps the run's packages and their
@@ -405,25 +346,11 @@ impl Component for ConfirmComponent {
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => return Transition::Pop,
             _ => {}
         }
-        if Input::handle_list_navigation(&key, &mut self.list.cursor, self.rows.len()) {
+        if Input::handle_list_navigation(&key, &mut self.list.cursor, self.packages.rows().len()) {
             self.sync(ctx);
             return Transition::Handled;
         }
-        match key.code {
-            KeyCode::Right => self.tree.fold(self.list.cursor, false),
-            KeyCode::Left => {
-                // On a package, Left moves to its group's header. On a header, it folds the group.
-                let header = self.group_header(self.list.cursor);
-                if header != self.list.cursor {
-                    self.list.cursor = header;
-                } else {
-                    self.tree.fold(header, true);
-                }
-            }
-            _ => return Transition::None,
-        }
-        self.sync(ctx);
-        Transition::Handled
+        Transition::None
     }
 
     fn update(&mut self, ctx: &mut AppContext) -> Transition {
@@ -443,7 +370,7 @@ impl Component for ConfirmComponent {
                 return self.handle_key(key, ctx);
             }
         }
-        let len = self.rows.len();
+        let len = self.packages.rows().len();
         match click_list(&mut self.list, ev, len) {
             Some(_) => Transition::Handled,
             None => Transition::None,
@@ -452,7 +379,7 @@ impl Component for ConfirmComponent {
 
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, Shape::Review);
-        self.list.prepare(rects.list, self.rows.len());
+        self.list.prepare(rects.list, self.packages.rows().len());
         self.actions = rects.actions;
     }
 
@@ -463,12 +390,11 @@ impl Component for ConfirmComponent {
 
         let width = list_panel::inner(rects.list).width;
         let lines: Vec<Line> = self
-            .rows
+            .packages
+            .rows()
             .iter()
             .enumerate()
-            .map(|(i, row)| {
-                tree_line_without_checkboxes(row, i == self.list.cursor, icons, &colors, width)
-            })
+            .map(|(i, row)| package_line(row, i == self.list.cursor, false, icons, &colors, width))
             .collect();
         let action = self.flags(ctx).action.as_str();
         let count = self.count();
@@ -504,135 +430,139 @@ mod tests {
     use super::*;
     use andre_core::config::Config;
 
-    /// A group `dots` whose source and target both exist, with the package `alpha`.
+    /// A flat packages folder `src` with the package `alpha`, linking into `tgt`.
     fn fixture() -> (tempfile::TempDir, AppContext) {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join("src/alpha")).unwrap();
         std::fs::create_dir_all(tmp.path().join("tgt")).unwrap();
         let mut config = Config::default_empty();
-        config.add_group(
-            "dots".into(),
-            tmp.path().join("src").display().to_string(),
-            tmp.path().join("tgt").display().to_string(),
-        );
+        config.set_packages(Some(tmp.path().join("src").display().to_string()));
+        config.target = Some(tmp.path().join("tgt").display().to_string());
         let ctx = AppContext::for_tests(config, tmp.path());
         (tmp, ctx)
     }
 
-    fn selected(group: &str, package: &str) -> HashMap<String, Vec<String>> {
-        HashMap::from([(group.to_string(), vec![package.to_string()])])
+    fn names(list: &PackageList) -> Vec<String> {
+        list.rows().iter().map(|row| row.name.clone()).collect()
     }
 
     #[test]
-    fn test_review_lists_each_group_then_its_packages() {
-        let (_tmp, ctx) = fixture();
-        let component = ConfirmComponent::new(selected("dots", "alpha"), &ctx);
+    fn test_review_lists_each_package_in_name_order() {
+        let (tmp, ctx) = fixture();
+        std::fs::create_dir_all(tmp.path().join("src/beta")).unwrap();
+        let component = ConfirmComponent::new(vec!["beta".into(), "alpha".into()], &ctx);
 
-        assert!(matches!(
-            &component.rows[..],
-            [
-                TreeRow::Group { name, folded: false, .. },
-                TreeRow::Package { group, name: package, mark: None, .. },
-            ] if name == "dots" && group == "dots" && package == "alpha"
-        ));
+        assert_eq!(names(&component.packages), ["alpha", "beta"]);
+        assert_eq!(component.selected_packages, ["alpha", "beta"]);
+    }
+
+    #[test]
+    fn test_review_drops_a_repeated_name() {
+        let (_tmp, ctx) = fixture();
+        let component = ConfirmComponent::new(vec!["alpha".into(), "alpha".into()], &ctx);
+        assert_eq!(component.count(), 1);
     }
 
     #[test]
     fn test_native_preview_names_the_relative_link_when_both_paths_resolve() {
         let (_tmp, ctx) = fixture();
-        let component = ConfirmComponent::new(selected("dots", "alpha"), &ctx);
-        let (_, preview) = &component.plan.groups["dots"].packages[0];
+        let component = ConfirmComponent::new(vec!["alpha".into()], &ctx);
+        let (_, preview) = &component.plan.packages[0];
 
         assert_eq!(preview.command, "native: alpha  (relative symlink)");
         assert_eq!(preview.files, Some(0), "the package folder is empty");
     }
 
     #[test]
-    fn test_native_preview_marks_unresolved_group_paths() {
-        let (_tmp, mut ctx) = fixture();
-        ctx.core.config.remove_group("dots");
-        let component = ConfirmComponent::new(selected("dots", "alpha"), &ctx);
+    fn test_native_preview_marks_an_unresolved_target() {
+        let (tmp, mut ctx) = fixture();
+        ctx.core.config.target = Some(tmp.path().join("gone").display().to_string());
+        let component = ConfirmComponent::new(vec!["alpha".into()], &ctx);
+        let (_, preview) = &component.plan.packages[0];
 
+        assert_eq!(preview.command, "native: alpha (path unresolved)");
+        assert_eq!(preview.target, None);
+    }
+
+    #[test]
+    fn test_a_package_whose_target_is_missing_has_no_status() {
+        let (tmp, mut ctx) = fixture();
+        ctx.core.config.target = Some(tmp.path().join("gone").display().to_string());
+        let component = ConfirmComponent::new(vec!["alpha".into()], &ctx);
+        assert_eq!(component.packages.rows()[0].status, None);
+    }
+
+    #[test]
+    fn test_a_name_that_is_not_a_package_has_no_status_and_is_skipped() {
+        let (_tmp, ctx) = fixture();
+        let component = ConfirmComponent::new(vec!["ghost".into()], &ctx);
+        assert_eq!(component.packages.rows()[0].status, None);
         assert_eq!(
-            component.plan.groups["dots"].packages[0].1.command,
-            "native: alpha (path unresolved)"
+            component.plan.packages[0].1.command,
+            "native: ghost (path unresolved)"
         );
-        assert_eq!(component.plan.groups["dots"].target, None);
+
+        let (ops, skipped) = build_execution_results(
+            &component.selected_packages,
+            &ctx.core.config,
+            &ctx.config_dir,
+            &ctx.home_dir,
+            &StowFlags::default(),
+        );
+        assert!(ops.is_empty());
+        assert_eq!(skipped[0].name, "ghost");
     }
 
     #[test]
     fn test_dry_run_toggle_rebuilds_the_stow_preview() {
         let (_tmp, mut ctx) = fixture();
         ctx.core.config.global.engine = Some("stow".into());
-        let mut component = ConfirmComponent::new(selected("dots", "alpha"), &ctx);
-        assert!(!component.plan.groups["dots"].packages[0]
-            .1
-            .command
-            .contains(" -n "));
+        let mut component = ConfirmComponent::new(vec!["alpha".into()], &ctx);
+        assert!(!component.plan.packages[0].1.command.contains(" -n "));
 
         ctx.core.flags.dry_run = true;
         component.update(&mut ctx);
-        assert!(component.plan.groups["dots"].packages[0]
-            .1
-            .command
-            .contains(" -n "));
+        assert!(component.plan.packages[0].1.command.contains(" -n "));
     }
 
     #[test]
     fn test_stow_preview_shows_paths_as_the_list_does() {
         let (tmp, mut ctx) = fixture();
         ctx.core.config.global.engine = Some("stow".into());
-        let component = ConfirmComponent::new(selected("dots", "alpha"), &ctx);
-        let command = &component.plan.groups["dots"].packages[0].1.command;
+        let component = ConfirmComponent::new(vec!["alpha".into()], &ctx);
+        let command = &component.plan.packages[0].1.command;
 
         assert!(command.starts_with("stow -d ~/src -t ~/tgt "), "{command}");
+        assert!(
+            command.ends_with(" alpha"),
+            "the package is named by its folder: {command}"
+        );
         assert!(
             !command.contains(&tmp.path().display().to_string()),
             "{command}"
         );
     }
 
-    /// The run applies packages in the order the review lists them: groups by name, then
-    /// each group's packages in selection order.
+    /// The run applies packages in the order the review lists them: name order.
     #[test]
-    fn test_run_order_is_the_review_order_across_groups() {
+    fn test_run_order_is_the_review_order() {
         let tmp = tempfile::TempDir::new().unwrap();
         let names = ["zeta", "alpha", "mid", "beta", "omega", "gamma"];
-        let mut config = Config::default_empty();
+        let packages = tmp.path().join("src");
         for name in names {
-            let src = tmp.path().join("src").join(name);
-            let tgt = tmp.path().join("tgt").join(name);
-            std::fs::create_dir_all(src.join("pkg-b")).unwrap();
-            std::fs::create_dir_all(src.join("pkg-a")).unwrap();
-            std::fs::create_dir_all(&tgt).unwrap();
-            config.add_group(
-                name.into(),
-                src.display().to_string(),
-                tgt.display().to_string(),
-            );
+            std::fs::create_dir_all(packages.join(name)).unwrap();
         }
-        let selected: HashMap<String, Vec<String>> = names
-            .iter()
-            .map(|name| {
-                (
-                    name.to_string(),
-                    vec!["pkg-b".to_string(), "pkg-a".to_string()],
-                )
-            })
-            .collect();
+        std::fs::create_dir_all(tmp.path().join("tgt")).unwrap();
+        let mut config = Config::default_empty();
+        config.set_packages(Some(packages.display().to_string()));
+        config.target = Some(tmp.path().join("tgt").display().to_string());
         let ctx = AppContext::for_tests(config, tmp.path());
 
+        let selected: Vec<String> = names.iter().map(|name| name.to_string()).collect();
         let component = ConfirmComponent::new(selected.clone(), &ctx);
-        let reviewed: Vec<String> = component
-            .rows
-            .iter()
-            .filter_map(|row| match row {
-                TreeRow::Package { group, name, .. } => Some(format!("{group}/{name}")),
-                TreeRow::Group { .. } => None,
-            })
-            .collect();
+        let reviewed = names_of(&component);
         let (ops, skipped) = build_execution_results(
-            &selected,
+            &component.selected_packages,
             &ctx.core.config,
             &ctx.config_dir,
             &ctx.home_dir,
@@ -641,15 +571,19 @@ mod tests {
         let run: Vec<String> = ops.iter().map(|op| op.name.clone()).collect();
 
         assert!(skipped.is_empty());
-        assert_eq!(reviewed.len(), 12);
+        assert_eq!(reviewed.len(), 6);
         assert_eq!(run, reviewed);
+    }
+
+    fn names_of(component: &ConfirmComponent) -> Vec<String> {
+        names(&component.packages)
     }
 
     #[test]
     fn test_unstow_review_says_files_change_when_dry_run_is_off() {
         let (_tmp, mut ctx) = fixture();
         ctx.core.flags.action = StowAction::Unstow;
-        let component = ConfirmComponent::new(selected("dots", "alpha"), &ctx);
+        let component = ConfirmComponent::new(vec!["alpha".into()], &ctx);
 
         let flags = component.flags(&ctx);
         let line = dry_run_line(&flags, &ThemeColors::from_theme(ctx.core.theme));

@@ -8,11 +8,10 @@ mod edit_view;
 mod view;
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use andre_core::ignore::global_ignore_in;
-use andre_core::profile::{known_packages, split_package_ref, Profile, ProfileSet};
+use andre_core::profile::{known_packages, Profile, ProfileSet};
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     layout::{Position, Rect},
@@ -390,15 +389,12 @@ impl ProfilesComponent {
             }
         };
 
-        let mut selected: HashMap<String, Vec<String>> = HashMap::new();
-        for entry in resolved.entries.iter().filter(|e| !e.missing) {
-            if let Some((group, package)) = split_package_ref(&entry.package) {
-                selected
-                    .entry(group.to_string())
-                    .or_default()
-                    .push(package.to_string());
-            }
-        }
+        let selected: Vec<String> = resolved
+            .entries
+            .iter()
+            .filter(|e| !e.missing)
+            .map(|entry| entry.package.clone())
+            .collect();
         if selected.is_empty() {
             ctx.show_error_toast(format!("profile {name} has no packages to run"));
             return Transition::Handled;
@@ -525,28 +521,23 @@ impl ProfilesComponent {
     }
 }
 
-/// Reads the status of the `group/package` refs in `refs` that the cache has not seen yet.
-/// Packages whose group has no source or target on disk stay unknown.
+/// Reads the status of the package names in `refs` that the cache has not seen yet. A name
+/// that is not a package, or whose target folder is missing, stays unknown.
 fn prefetch<'a>(ctx: &AppContext, refs: impl IntoIterator<Item = &'a str>) {
     let global = global_ignore_in(&ctx.home_dir);
+    let entries = ctx.package_entries();
     let mut cache = ctx.status_cache.borrow_mut();
     for reference in refs {
-        let Some((group, package)) = split_package_ref(reference) else {
-            continue;
-        };
-        if cache.get(group, package).is_some() {
+        if cache.get(reference).is_some() {
             continue;
         }
-        let source = ctx
-            .core
-            .config
-            .get_group_source(group, &ctx.config_dir, &ctx.home_dir);
-        let target = ctx
-            .core
-            .config
-            .get_group_target(group, &ctx.config_dir, &ctx.home_dir);
-        if let (Some(source), Some(target)) = (source, target) {
-            cache.prefetch_package(&source, &target, group, package, Some(&global));
+        // A package whose target folder is missing does not resolve, so its status stays unknown.
+        let entry = entries
+            .iter()
+            .find(|entry| entry.name == reference)
+            .filter(|entry| entry.target.exists());
+        if let Some(entry) = entry {
+            cache.prefetch(entry, Some(&global));
         }
     }
 }
@@ -566,6 +557,7 @@ mod tests {
     use crate::ui::detail::WHEEL_ROWS;
     use andre_core::config::Config;
     use andre_core::profile::ProfileSet;
+    use andre_core::StowStatus;
     use crossterm::event::{KeyModifiers, MouseEventKind};
 
     /// Two profiles, each with fourteen packages: more than the detail pane lists at once.
@@ -616,6 +608,31 @@ mod tests {
         assert_eq!(
             component.section_scroll, 0,
             "two's sections start at the top"
+        );
+    }
+
+    /// A package whose target folder is missing does not resolve, so reading it for a profile
+    /// leaves it unknown. The packages browser reads the same cache, so it must not get `→`
+    /// from here either. Once the target exists, the same package is read.
+    #[test]
+    fn test_profile_prefetch_skips_a_package_whose_target_is_missing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let packages = tmp.path().join("dotfiles");
+        std::fs::create_dir_all(packages.join("shell")).unwrap();
+        std::fs::write(packages.join("shell/.bashrc"), "x").unwrap();
+        let mut config = Config::default_empty();
+        config.packages = Some(packages.display().to_string());
+        config.target = Some(tmp.path().join("missing").display().to_string());
+        let ctx = AppContext::for_tests(config, tmp.path());
+
+        prefetch(&ctx, ["shell"]);
+        assert_eq!(ctx.status_cache.borrow().get("shell"), None);
+
+        std::fs::create_dir_all(tmp.path().join("missing")).unwrap();
+        prefetch(&ctx, ["shell"]);
+        assert_eq!(
+            ctx.status_cache.borrow().get("shell"),
+            Some(StowStatus::Unstowed)
         );
     }
 }

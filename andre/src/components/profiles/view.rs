@@ -332,8 +332,7 @@ fn packages_fact(resolved: &ResolvedProfile) -> String {
 
 /// The stow status of a resolved package, from the cache. `None` when it has not been read.
 fn entry_status(ctx: &AppContext, entry: &ResolvedEntry) -> Option<StowStatus> {
-    let (group, package) = andre_core::profile::split_package_ref(&entry.package)?;
-    ctx.status_cache.borrow().get(group, package)
+    ctx.status_cache.borrow().get(&entry.package)
 }
 
 /// The statuses of the packages that exist, counted: `✓ 3  → 1  ✗ 1`. Unread ones count as

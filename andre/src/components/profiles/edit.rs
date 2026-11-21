@@ -14,7 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, Frame};
 
 use super::edit_view;
-use crate::components::{AppContext, Component, InputMode, Transition};
+use crate::components::{grouped_name, AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::dialog::{dialog_click, dialog_rect, leave_dialog, render_dialog};
@@ -182,7 +182,7 @@ impl ProfileEditComponent {
         TreePackage {
             name: package.to_string(),
             status: on_disk
-                .then(|| ctx.status_cache.borrow().get(group, package))
+                .then(|| ctx.status_cache.borrow().get(&grouped_name(group, package)))
                 .flatten(),
             mark: Some(mark),
             meta: if on_disk {

@@ -278,11 +278,10 @@ repo whose `config/andre` package holds `.config/andre/andre.yml`: stowing that 
 links `~/.config/andre` to the repo, and plain `andre` finds the config from then on.
 
 andre offers this when the loaded config folder is not `~/.config/andre`, that path does
-not exist (a broken link counts as existing), and some group's package holds the config
+not exist (a broken link counts as existing), and some package holds the config
 folder at the path that would link to it. It is offered only when plain `andre` would
-read `~/.config/andre`, i.e. `$XDG_CONFIG_HOME` is unset or points at `~/.config`. A flat
-package (`packages:`, no group) is not offered yet: the review still takes grouped names. The offer is the first main-menu item,
-`set up this machine` (`0`). Enter opens the review for exactly that package with the
+read `~/.config/andre`, i.e. `$XDG_CONFIG_HOME` is unset or points at `~/.config`. The
+offer is the first main-menu item, `set up this machine` (`0`). Enter opens the review for exactly that package with the
 action `stow`, whatever the global action is; the global action is not changed. Once
 `~/.config/andre` exists the item is gone.
 

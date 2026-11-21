@@ -13,7 +13,8 @@ use andre_core::{IconSet, StowAction, StowStatus, Theme};
 mod helpers;
 use helpers::{
     browse_cursor_to, down_key, enter_key, esc_key, key_char, make_bootstrap_app, make_empty_app,
-    make_test_app, make_unstow_app, push_browse, space_key, up_key,
+    make_flat_bootstrap_app, make_flat_test_app, make_test_app, make_unstow_app, push_browse,
+    space_key, up_key,
 };
 
 fn render_app(app: &mut App, width: u16, height: u16) -> Buffer {
@@ -119,7 +120,7 @@ fn push_screen(app: &mut App, name: &str) {
         "Confirm" => {
             app.component_stack
                 .push(Box::new(andre::components::confirm::ConfirmComponent::new(
-                    std::collections::HashMap::new(),
+                    Vec::new(),
                     &app.ctx,
                 )))
         }
@@ -1276,8 +1277,7 @@ fn test_confirm_preview_is_engine_aware_native_default() {
     // `stow ...` command preview (that would mislead users into thinking GNU
     // stow runs). It should show a native preview instead.
     let (mut app, _tmp) = make_test_app();
-    let mut selected = std::collections::HashMap::new();
-    selected.insert("home".to_string(), vec!["test".to_string()]);
+    let selected = vec!["home/test".to_string()];
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
             selected, &app.ctx,
@@ -1510,7 +1510,7 @@ fn test_detail_facts_are_built_in_update_not_render() {
     app.ctx
         .status_cache
         .borrow_mut()
-        .insert(("home".to_string(), "test".to_string()), StowStatus::Stowed);
+        .insert("home/test".to_string(), StowStatus::Stowed);
 
     // Render alone does not read the cache again.
     let buf = render_app(&mut app, 120, 24);
@@ -4046,7 +4046,7 @@ fn test_zero_reviews_a_stow_of_the_package_whatever_the_global_action() {
     let buf = render_app(&mut app, 80, 24);
     assert!(line_contains(&buf, "stow 1 package"), "the review stows");
     assert!(
-        line_contains(&buf, "native: andre"),
+        line_contains(&buf, "native: config/andre"),
         "the review names the package"
     );
     assert_eq!(
@@ -4075,8 +4075,7 @@ fn test_set_up_flow_renders_at_120x40_and_200x50() {
 #[test]
 fn test_review_names_its_action_in_the_action_bar() {
     let (mut app, _tmp) = make_test_app();
-    let selected =
-        std::collections::HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+    let selected = vec!["home/test".to_string()];
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
             selected, &app.ctx,
@@ -4099,8 +4098,7 @@ fn test_review_names_its_action_in_the_action_bar() {
 #[test]
 fn test_review_action_bar_sits_on_the_last_content_row_at_80x24() {
     let (mut app, _tmp) = make_test_app();
-    let selected =
-        std::collections::HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+    let selected = vec!["home/test".to_string()];
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
             selected, &app.ctx,
@@ -4117,24 +4115,103 @@ fn test_review_action_bar_sits_on_the_last_content_row_at_80x24() {
     );
 }
 
-/// The review's tree has no checkbox column: the group and its package start where their
-/// glyphs do, with no blank column between.
+/// The review is a flat list: one row per package, no group header, no fold glyph and no
+/// checkbox column. The status glyph sits in column one, after the cursor gutter.
 #[test]
-fn test_review_tree_has_no_checkbox_column_at_80x24() {
-    let (mut app, _tmp) = make_test_app();
+fn test_review_is_a_flat_list_at_80x24() {
+    let (mut app, _tmp) = make_flat_test_app();
     app.ctx.core.icons = IconSet::Unicode;
-    let selected =
-        std::collections::HashMap::from([("home".to_string(), vec!["test".to_string()])]);
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
-            selected, &app.ctx,
+            vec!["test".to_string()],
+            &app.ctx,
         )));
     let buf = render_updated(&mut app, 80, 24);
-    assert!(line_contains(&buf, "\u{25be} home"), "group row");
+    assert!(line_contains(&buf, "stow 1 package"), "review title");
     assert!(
-        line_contains(&buf, "    \u{2192} test") || line_contains(&buf, "    \u{b7} test"),
-        "package row under the group, with its status glyph in column four"
+        line_contains(&buf, "\u{2192} test"),
+        "the package row, its status glyph right after the gutter"
     );
+    assert!(
+        !line_contains(&buf, "\u{25be}"),
+        "no fold glyph on a flat list"
+    );
+}
+
+/// Packages list in name order, whatever order the selection gives them in.
+#[test]
+fn test_review_lists_packages_in_name_order() {
+    let (mut app, tmp) = make_flat_test_app();
+    std::fs::create_dir_all(tmp.path().join("dotfiles/shell")).unwrap();
+    app.component_stack
+        .push(Box::new(andre::components::confirm::ConfirmComponent::new(
+            vec!["test".to_string(), "shell".to_string()],
+            &app.ctx,
+        )));
+    let buf = render_updated(&mut app, 80, 24);
+    let row_of = |name: &str| (0..buf.area().height).find(|&y| row_text(&buf, y).contains(name));
+    let (shell, test) = (row_of("shell").unwrap(), row_of("test").unwrap());
+    assert!(
+        shell < test,
+        "shell (row {shell}) lists before test (row {test})"
+    );
+    assert!(line_contains(&buf, "stow 2 packages"), "review title");
+}
+
+/// The detail names the stow command on a flat fixture: the packages folder and the target.
+/// At 80x24 the detail pane is 39 columns, so the command must fit on one row there.
+#[test]
+fn test_review_detail_shows_the_stow_command_on_a_flat_fixture() {
+    let (mut app, _tmp) = make_flat_test_app();
+    app.ctx.core.config.global.engine = Some("stow".into());
+    app.component_stack
+        .push(Box::new(andre::components::confirm::ConfirmComponent::new(
+            vec!["test".to_string()],
+            &app.ctx,
+        )));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "$ stow -d ~/dotfiles -t ~"),
+        "the detail shows the command the run uses"
+    );
+}
+
+/// Set-up on a flat config: `0` reviews the package holding the config folder. Its row shows
+/// a known status, and the detail resolves the package to a native link.
+#[test]
+fn test_flat_set_up_review_resolves_its_package_at_80x24() {
+    let (mut app, _tmp) = make_flat_bootstrap_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    render_updated(&mut app, 80, 24);
+    app.component_dispatch(key_char('0'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "stow 1 package"), "the review stows");
+    assert!(
+        line_contains(&buf, "\u{2192} andre"),
+        "the package row shows its status, not `·`"
+    );
+    assert!(
+        line_contains(&buf, "native: andre  (relative symlink)"),
+        "the detail resolves the package"
+    );
+    assert!(
+        !line_contains(&buf, "path unresolved"),
+        "the package resolves to its target"
+    );
+}
+
+#[test]
+fn test_flat_review_renders_at_120x40_and_200x50_without_panic() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_flat_test_app();
+        app.component_stack
+            .push(Box::new(andre::components::confirm::ConfirmComponent::new(
+                vec!["test".to_string()],
+                &app.ctx,
+            )));
+        let buf = render_updated(&mut app, width, height);
+        assert!(line_contains(&buf, "stow 1 package"), "{width}x{height}");
+    }
 }
 
 /// A failure's message keeps each of its lines: `All operations aborted.` starts its own row
@@ -4355,8 +4432,7 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
 
     for (width, height) in [(120, 40), (200, 50)] {
         let (mut app, tmp) = make_test_app();
-        let selected =
-            std::collections::HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+        let selected = vec!["home/test".to_string()];
         app.component_stack
             .push(Box::new(andre::components::confirm::ConfirmComponent::new(
                 selected, &app.ctx,

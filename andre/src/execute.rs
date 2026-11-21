@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use tokio::time::Duration;
 
 use andre_core::ignore::global_ignore_in;
-use andre_core::{Config, LinkEngine, LinkOp, StowFlags};
+use andre_core::{Config, LinkEngine, LinkOp, PackageEntry, StowFlags};
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
@@ -76,54 +76,45 @@ pub fn spawn_execution(
     rx
 }
 
-/// One `LinkOp` per selected package whose group resolves on disk, plus a skipped
-/// `ExecutionResult` for each package whose source or target directory is missing.
+/// One `LinkOp` per selected package that resolves on disk, plus a skipped `ExecutionResult`
+/// for each one that does not, in the order `selected` names them. A package is skipped when
+/// it does not exist or its target folder is missing.
 pub fn build_execution_results(
-    selected_packages: &HashMap<String, Vec<String>>,
+    selected: &[String],
     config: &Config,
     config_dir: &Path,
     home_dir: &Path,
     flags: &StowFlags,
 ) -> (Vec<LinkOp>, Vec<ExecutionResult>) {
+    let entries: HashMap<String, PackageEntry> = config
+        .package_entries(config_dir, home_dir)
+        .into_iter()
+        .map(|entry| (entry.name.clone(), entry))
+        .collect();
+    let global = global_ignore_in(home_dir);
     let mut ops = Vec::new();
     let mut skipped = Vec::new();
 
-    // Groups in name order, as the review lists them, so the run and the review agree.
-    let mut groups: Vec<(&String, &Vec<String>)> = selected_packages.iter().collect();
-    groups.sort_by(|a, b| a.0.cmp(b.0));
-    for (group, packages) in groups {
-        let source = config.get_group_source(group, config_dir, home_dir);
-        let target = config.get_group_target(group, config_dir, home_dir);
-        let ignores = config.effective_ignores(group);
-
-        if let (Some(src), Some(tgt)) = (source, target) {
-            for pkg in packages {
-                ops.push(LinkOp {
-                    name: format!("{group}/{pkg}"),
-                    package: pkg.clone(),
-                    source: src.clone(),
-                    target: tgt.clone(),
-                    flags: *flags,
-                    ignores: ignores.clone(),
-                    global_ignore: Some(global_ignore_in(home_dir)),
-                });
+    for name in selected {
+        let skip = |reason: &str| ExecutionResult {
+            name: name.clone(),
+            success: false,
+            error_message: Some(format!("Skipped: {reason}")),
+        };
+        match entries.get(name) {
+            None => skipped.push(skip("package not found")),
+            Some(entry) if !entry.target.exists() => {
+                skipped.push(skip("target directory not found"))
             }
-        } else {
-            for pkg in packages {
-                let reason = if config
-                    .get_group_source(group, config_dir, home_dir)
-                    .is_none()
-                {
-                    "source directory not found"
-                } else {
-                    "target directory not found"
-                };
-                skipped.push(ExecutionResult {
-                    name: format!("{group}/{pkg}"),
-                    success: false,
-                    error_message: Some(format!("Skipped: {}", reason)),
-                });
-            }
+            Some(entry) => ops.push(LinkOp {
+                name: entry.name.clone(),
+                package: entry.folder_name(),
+                source: entry.source.clone(),
+                target: entry.target.clone(),
+                flags: *flags,
+                ignores: entry.ignores.clone(),
+                global_ignore: Some(global.clone()),
+            }),
         }
     }
 
@@ -134,74 +125,56 @@ pub fn build_execution_results(
 mod tests {
     use super::*;
 
-    fn make_config_with_missing_target() -> (Config, tempfile::TempDir) {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("andre.yml");
+    /// A flat config whose packages folder is `packages` and whose target is `target`.
+    fn flat_config(packages: &Path, target: &Path) -> Config {
+        let tmp = packages.parent().unwrap();
+        let config_path = tmp.join("andre.yml");
         std::fs::write(
             &config_path,
-            r#"
-global: {}
-groups:
-  test-group:
-    source: /tmp
-    target: /nonexistent/target/dir
-"#,
+            format!(
+                "packages: {}\ntarget: {}\nglobal: {{}}\n",
+                packages.display(),
+                target.display()
+            ),
         )
         .unwrap();
-        let config = Config::load(&config_path).unwrap();
-        (config, tmp)
+        Config::load(&config_path).unwrap()
     }
 
     #[test]
     fn test_build_execution_results_skips_missing_target() {
-        let (config, tmp) = make_config_with_missing_target();
-        let mut selected = HashMap::new();
-        selected.insert("test-group".to_string(), vec!["test-pkg".to_string()]);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let packages = tmp.path().join("dotfiles");
+        std::fs::create_dir_all(packages.join("test-pkg")).unwrap();
+        let config = flat_config(&packages, &tmp.path().join("nonexistent"));
 
         let (ops, skipped) = build_execution_results(
-            &selected,
+            &["test-pkg".to_string()],
             &config,
             tmp.path(),
             tmp.path(),
             &StowFlags::default(),
         );
 
-        assert!(
-            ops.is_empty(),
-            "expected no ops when target dir is missing, got {}",
-            ops.len()
-        );
-        assert_eq!(skipped.len(), 1, "expected one skipped result");
-        assert_eq!(skipped[0].name, "test-group/test-pkg");
+        assert!(ops.is_empty(), "no ops when the target is missing");
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].name, "test-pkg");
         assert!(!skipped[0].success);
-        assert!(skipped[0]
-            .error_message
-            .as_deref()
-            .unwrap()
-            .contains("target directory"));
+        assert_eq!(
+            skipped[0].error_message.as_deref(),
+            Some("Skipped: target directory not found")
+        );
     }
 
     #[test]
-    fn test_build_execution_results_names_each_op_group_then_package() {
+    fn test_build_execution_results_names_each_op_by_package() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let source = tmp.path().join("dotfiles");
-        std::fs::create_dir_all(source.join("test-pkg")).unwrap();
-        let config_path = tmp.path().join("andre.yml");
-        std::fs::write(
-            &config_path,
-            format!(
-                "global: {{}}\ngroups:\n  test-group:\n    source: {}\n    target: {}\n",
-                source.display(),
-                tmp.path().display()
-            ),
-        )
-        .unwrap();
-        let config = Config::load(&config_path).unwrap();
-        let mut selected = HashMap::new();
-        selected.insert("test-group".to_string(), vec!["test-pkg".to_string()]);
+        let packages = tmp.path().join("dotfiles");
+        std::fs::create_dir_all(packages.join("test-pkg")).unwrap();
+        let config = flat_config(&packages, tmp.path());
 
         let (ops, skipped) = build_execution_results(
-            &selected,
+            &["test-pkg".to_string()],
             &config,
             tmp.path(),
             tmp.path(),
@@ -210,30 +183,45 @@ groups:
 
         assert!(skipped.is_empty());
         assert_eq!(ops.len(), 1);
-        assert_eq!(ops[0].name, "test-group/test-pkg");
+        assert_eq!(ops[0].name, "test-pkg");
         assert_eq!(ops[0].package, "test-pkg");
+        assert_eq!(ops[0].source, packages);
     }
 
     #[test]
-    fn test_build_execution_results_skips_missing_source() {
+    fn test_build_execution_results_skips_a_name_that_is_not_a_package() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("andre.yml");
-        std::fs::write(
-            &config_path,
-            r#"
-global: {}
-groups:
-  test-group:
-    source: /nonexistent/source
-    target: /tmp
-"#,
-        )
-        .unwrap();
-        let config = Config::load(&config_path).unwrap();
-        let mut selected = HashMap::new();
-        selected.insert("test-group".to_string(), vec!["test-pkg".to_string()]);
+        let packages = tmp.path().join("dotfiles");
+        std::fs::create_dir_all(&packages).unwrap();
+        let config = flat_config(&packages, tmp.path());
 
         let (ops, skipped) = build_execution_results(
+            &["ghost".to_string()],
+            &config,
+            tmp.path(),
+            tmp.path(),
+            &StowFlags::default(),
+        );
+
+        assert!(ops.is_empty());
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(
+            skipped[0].error_message.as_deref(),
+            Some("Skipped: package not found")
+        );
+    }
+
+    #[test]
+    fn test_build_execution_results_keeps_the_order_it_is_given() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let packages = tmp.path().join("dotfiles");
+        for name in ["alpha", "beta", "gamma"] {
+            std::fs::create_dir_all(packages.join(name)).unwrap();
+        }
+        let config = flat_config(&packages, tmp.path());
+        let selected = ["gamma".to_string(), "alpha".to_string()];
+
+        let (ops, _) = build_execution_results(
             &selected,
             &config,
             tmp.path(),
@@ -241,17 +229,7 @@ groups:
             &StowFlags::default(),
         );
 
-        assert!(
-            ops.is_empty(),
-            "expected no ops when source dir is missing, got {}",
-            ops.len()
-        );
-        assert_eq!(skipped.len(), 1, "expected one skipped result");
-        assert!(!skipped[0].success);
-        assert!(skipped[0]
-            .error_message
-            .as_deref()
-            .unwrap()
-            .contains("source directory"));
+        let names: Vec<&str> = ops.iter().map(|op| op.name.as_str()).collect();
+        assert_eq!(names, ["gamma", "alpha"]);
     }
 }

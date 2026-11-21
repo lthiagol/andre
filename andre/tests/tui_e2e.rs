@@ -13,7 +13,7 @@ use andre::components::wizard::NewPackageWizard;
 use andre::execute::ExecutionState;
 use andre_core::profile::ProfileSet;
 use andre_core::StowAction;
-use helpers::make_bootstrap_app;
+use helpers::{make_bootstrap_app, make_flat_bootstrap_app};
 
 fn binary_path() -> PathBuf {
     // Try llvm-cov target dir first, then default debug dir
@@ -445,5 +445,34 @@ fn test_set_up_review_stows_its_package_when_the_global_action_is_unstow() {
         app.ctx.core.flags.action,
         StowAction::Unstow,
         "the global action is not changed"
+    );
+}
+
+#[test]
+fn test_set_up_review_of_a_flat_config_links_its_config_folder() {
+    let (mut app, tmp) = make_flat_bootstrap_app();
+    app.ctx.core.flags.action = StowAction::Unstow;
+    // Make `~/.config` exist, so the package's `andre` folder is linked inside it.
+    std::fs::create_dir_all(tmp.path().join("home/.config")).unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let _guard = rt.enter();
+
+    app.update_components();
+    app.component_dispatch(key(KeyCode::Char('0')));
+    app.component_dispatch(key(KeyCode::Char('y')));
+    pump_until_complete(&mut app, 10);
+    rt.shutdown_timeout(Duration::from_secs(5));
+
+    let linked = tmp.path().join("home/.config/andre/andre.yml");
+    assert!(
+        std::fs::symlink_metadata(&linked)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the set-up review linked the config file"
+    );
+    assert_eq!(
+        std::fs::canonicalize(&linked).unwrap(),
+        std::fs::canonicalize(tmp.path().join("dotfiles/andre/.config/andre/andre.yml")).unwrap(),
     );
 }

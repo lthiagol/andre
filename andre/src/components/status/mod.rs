@@ -11,7 +11,7 @@ use std::hash::{Hash, Hasher};
 
 use andre_core::ignore::global_ignore_in;
 use andre_core::profile::{known_packages, Origin};
-use andre_core::{discover_packages, IconSet, StowStatus};
+use andre_core::{discover_packages, IconSet, PackageEntry, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     layout::{Position, Rect},
@@ -19,7 +19,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::components::{AppContext, Component, InputMode, Transition};
+use crate::components::{grouped_name, AppContext, Component, InputMode, Transition};
 use crate::input::{self, step_cursor, Input};
 use crate::theme::ThemeColors;
 use crate::ui::detail::{fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail};
@@ -311,6 +311,7 @@ impl StatusComponent {
     fn rebuild(&mut self, ctx: &AppContext) {
         let only = self.profile.as_deref().map(|name| profile_refs(ctx, name));
         let global = global_ignore_in(&ctx.home_dir);
+        let entries = ctx.package_entries();
         let mut groups = Vec::new();
         let mut statuses: BTreeMap<String, Vec<Option<StowStatus>>> = BTreeMap::new();
         for name in ctx.core.config.groups.keys() {
@@ -323,14 +324,15 @@ impl StatusComponent {
                 .config
                 .get_group_target(name, &ctx.config_dir, &ctx.home_dir);
             let discovered = source.as_deref().map(discover_packages).unwrap_or_default();
-            if let (Some(source), Some(target)) = (&source, &target) {
-                ctx.status_cache.borrow_mut().prefetch_group(
-                    source,
-                    target,
-                    name,
-                    &discovered,
-                    Some(&global),
-                );
+            if let (Some(_), Some(_)) = (&source, &target) {
+                let group_entries: Vec<PackageEntry> = entries
+                    .iter()
+                    .filter(|entry| entry.name.starts_with(&format!("{name}/")))
+                    .cloned()
+                    .collect();
+                ctx.status_cache
+                    .borrow_mut()
+                    .prefetch_all(&group_entries, Some(&global));
             }
 
             let mut shown = Vec::new();
@@ -345,7 +347,9 @@ impl StatusComponent {
                 // A group whose source or target is missing has no status to read. Its packages
                 // show `·`, as on the packages browser.
                 let status = match (&source, &target) {
-                    (Some(_), Some(_)) => ctx.status_cache.borrow().get(name, package),
+                    (Some(_), Some(_)) => {
+                        ctx.status_cache.borrow().get(&grouped_name(name, package))
+                    }
                     _ => None,
                 };
                 shown.push(TreePackage {
@@ -646,7 +650,7 @@ mod tests {
         let mut component = synced(&ctx, None);
         ctx.status_cache
             .borrow_mut()
-            .insert(("dots".into(), "alpha".into()), StowStatus::Conflict);
+            .insert("dots/alpha".into(), StowStatus::Conflict);
         component.sync(&ctx);
         assert_eq!(
             component.summary.counts,
@@ -784,7 +788,7 @@ mod tests {
         let mut component = synced(&ctx, None);
         ctx.status_cache
             .borrow_mut()
-            .insert(("dots".into(), "alpha".into()), StowStatus::Conflict);
+            .insert("dots/alpha".into(), StowStatus::Conflict);
 
         component.list.cursor = 1;
         component.sync(&ctx);

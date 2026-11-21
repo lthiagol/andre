@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, Frame};
 
-use andre_core::AppState as CoreState;
+use andre_core::{AppState as CoreState, PackageEntry};
 
 use crate::status_cache::StatusCache;
 use crate::ui::footer::{screen_hints, Hint};
@@ -59,6 +59,12 @@ pub mod wizard;
 
 pub use menu::MainMenuComponent;
 
+/// The name of a package in a grouped config, `group/package`, as `PackageEntry` names it.
+/// Interim: G10 removes groups, and with them this helper.
+pub(crate) fn grouped_name(group: &str, package: &str) -> String {
+    format!("{group}/{package}")
+}
+
 /// Resources shared by all components.
 pub struct AppContext {
     pub core: CoreState,
@@ -110,6 +116,20 @@ impl AppContext {
 }
 
 impl AppContext {
+    /// Every package in the packages folder, in name order.
+    pub fn package_entries(&self) -> Vec<PackageEntry> {
+        self.core
+            .config
+            .package_entries(&self.config_dir, &self.home_dir)
+    }
+
+    /// The package called `name`, if it exists.
+    pub fn package(&self, name: &str) -> Option<PackageEntry> {
+        self.core
+            .config
+            .package(name, &self.config_dir, &self.home_dir)
+    }
+
     /// Record a log entry. Nothing runs when debug is disabled: `message` is only
     /// evaluated (and allocated) once a debug session is recording.
     pub fn log(&self, level: LogLevel, message: impl FnOnce() -> String) {

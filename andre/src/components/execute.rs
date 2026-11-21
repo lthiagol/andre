@@ -358,7 +358,7 @@ mod tests {
         let mut ctx = make_ctx();
         ctx.status_cache
             .borrow_mut()
-            .insert(("home".to_string(), "bash".to_string()), StowStatus::Stowed);
+            .insert("bash".to_string(), StowStatus::Stowed);
 
         comp.update(&mut ctx);
         assert!(

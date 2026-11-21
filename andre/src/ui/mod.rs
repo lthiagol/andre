@@ -10,6 +10,7 @@ pub mod hits;
 pub mod icons;
 pub mod layout;
 pub mod list_panel;
+pub mod package_list;
 pub mod selection;
 pub mod settings;
 mod status_bar;

@@ -6,18 +6,18 @@
 mod view;
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 
-use andre_core::discover_packages;
 use andre_core::ignore::global_ignore_in;
 use andre_core::profile::ProfileSet;
+use andre_core::{discover_packages, PackageEntry};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, text::Line, Frame};
 
 use crate::components::confirm::ConfirmComponent;
 use crate::components::ignore::IgnoreEditComponent;
-use crate::components::{AppContext, Component, InputMode, Transition};
+use crate::components::{grouped_name, AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::detail::{fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail};
@@ -387,11 +387,11 @@ impl PackagesComponent {
             }
             return Transition::Handled;
         }
-        let mut selected: HashMap<String, Vec<String>> = HashMap::new();
-        for (group, package) in pairs {
-            selected.entry(group).or_default().push(package);
-        }
-        Transition::Push(Box::new(ConfirmComponent::new(selected, ctx)))
+        let names = pairs
+            .into_iter()
+            .map(|(group, package)| grouped_name(&group, &package))
+            .collect();
+        Transition::Push(Box::new(ConfirmComponent::new(names, ctx)))
     }
 
     /// The detail title: `group/package` for a package, the group's name for a group.
@@ -445,6 +445,7 @@ impl PackagesComponent {
     fn rebuild(&mut self, ctx: &AppContext) {
         let marked: BTreeSet<(String, String)> = self.tree.marked().into_iter().collect();
         let global = global_ignore_in(&ctx.home_dir);
+        let entries = ctx.package_entries();
         let mut groups = Vec::new();
         let mut listing = BTreeMap::new();
         for name in ctx.core.config.groups.keys() {
@@ -457,20 +458,21 @@ impl PackagesComponent {
                 .config
                 .get_group_target(name, &ctx.config_dir, &ctx.home_dir);
             let names = source.as_deref().map(discover_packages).unwrap_or_default();
-            if let (Some(source), Some(target)) = (&source, &target) {
-                ctx.status_cache.borrow_mut().prefetch_group(
-                    source,
-                    target,
-                    name,
-                    &names,
-                    Some(&global),
-                );
+            if let (Some(_), Some(_)) = (&source, &target) {
+                let group_entries: Vec<PackageEntry> = entries
+                    .iter()
+                    .filter(|entry| entry.name.starts_with(&format!("{name}/")))
+                    .cloned()
+                    .collect();
+                ctx.status_cache
+                    .borrow_mut()
+                    .prefetch_all(&group_entries, Some(&global));
             }
             let packages = names
                 .iter()
                 .map(|package| TreePackage {
                     name: package.clone(),
-                    status: ctx.status_cache.borrow().get(name, package),
+                    status: ctx.status_cache.borrow().get(&grouped_name(name, package)),
                     mark: Some(if marked.contains(&(name.clone(), package.clone())) {
                         Mark::On
                     } else {
@@ -508,7 +510,7 @@ impl PackagesComponent {
                     .get(name)
                     .into_iter()
                     .flatten()
-                    .map(|package| ctx.status_cache.borrow().get(name, package))
+                    .map(|package| ctx.status_cache.borrow().get(&grouped_name(name, package)))
                     .collect();
                 let marked = self.tree.marked().iter().filter(|(g, _)| g == name).count();
                 view::group_detail(ctx, name, &statuses, marked)

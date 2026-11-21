@@ -264,10 +264,9 @@ mod tests {
         std::os::unix::fs::symlink(&source, &link).unwrap();
 
         let mut ctx = AppContext::for_tests(Config::default_empty(), tmp.path());
-        ctx.status_cache.borrow_mut().insert(
-            ("home".to_string(), "link.txt".to_string()),
-            StowStatus::Stowed,
-        );
+        ctx.status_cache
+            .borrow_mut()
+            .insert("link.txt".to_string(), StowStatus::Stowed);
 
         let mut component = UnstowConfirmComponent::with_paths(vec![link.clone()]);
         let yes = KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE);

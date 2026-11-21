@@ -1,7 +1,6 @@
-use std::collections::{BTreeMap, HashMap};
-
 use andre::app::App;
 use andre::components::confirm::ConfirmComponent;
+use andre::components::menu::MenuItem;
 use andre::components::packages::PackagesComponent;
 use andre::components::profiles::edit::ProfileEditComponent;
 use andre::components::profiles::{NameCheck, Popup, ProfilesComponent};
@@ -452,18 +451,12 @@ fn make_app_with_a_two_package_group() -> (App, tempfile::TempDir) {
     (app, tmp)
 }
 
-/// The packages the confirm screen runs, by group, each group's packages sorted.
-fn confirmed(app: &App) -> BTreeMap<String, Vec<String>> {
+/// The packages the confirm screen runs, by name, sorted.
+fn confirmed(app: &App) -> Vec<String> {
     let review: &ConfirmComponent = top_component(app);
-    review
-        .selected_packages
-        .iter()
-        .map(|(group, packages)| {
-            let mut packages = packages.clone();
-            packages.sort();
-            (group.clone(), packages)
-        })
-        .collect()
+    let mut packages = review.selected_packages.clone();
+    packages.sort();
+    packages
 }
 
 #[test]
@@ -475,10 +468,7 @@ fn test_enter_runs_the_marked_packages_through_the_confirm_screen() {
     app.component_dispatch(down_key()); // config/tmux, unmarked: the cursor does not pick what runs
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "Confirm");
-    assert_eq!(
-        confirmed(&app),
-        BTreeMap::from([("config".to_string(), vec!["nvim".to_string()])])
-    );
+    assert_eq!(confirmed(&app), ["config/nvim"]);
     // Esc returns to the browser, with the mark still there.
     app.component_dispatch(esc_key());
     assert_eq!(component_id(&app), "Packages");
@@ -493,10 +483,7 @@ fn test_enter_on_a_package_with_no_marks_runs_that_package() {
     app.component_dispatch(down_key()); // config/tmux
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "Confirm");
-    assert_eq!(
-        confirmed(&app),
-        BTreeMap::from([("config".to_string(), vec!["tmux".to_string()])])
-    );
+    assert_eq!(confirmed(&app), ["config/tmux"]);
 }
 
 #[test]
@@ -505,13 +492,7 @@ fn test_enter_on_a_group_header_with_no_marks_runs_the_whole_group() {
     open_packages(&mut app);
     app.component_dispatch(enter_key()); // the config header
     assert_eq!(component_id(&app), "Confirm");
-    assert_eq!(
-        confirmed(&app),
-        BTreeMap::from([(
-            "config".to_string(),
-            vec!["nvim".to_string(), "tmux".to_string()]
-        )])
-    );
+    assert_eq!(confirmed(&app), ["config/nvim", "config/tmux"]);
 }
 
 #[test]
@@ -1023,7 +1004,7 @@ fn test_review_stow_preview_follows_dry_run_toggle() {
     // must rebuild the stow command preview before the next paint.
     let (mut app, _tmp) = make_test_app();
     app.ctx.core.config.global.engine = Some("stow".into());
-    let selected = HashMap::from([("home".to_string(), vec!["test".to_string()])]);
+    let selected = vec!["home/test".to_string()];
     app.component_stack
         .push(Box::new(ConfirmComponent::new(selected, &app.ctx)));
     app.update_components();
@@ -1603,15 +1584,11 @@ fn test_enter_runs_the_own_and_included_packages_and_skips_the_missing_ones() {
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "Confirm");
     let review: &ConfirmComponent = top_component(&app);
-    let mut packages = review
-        .selected_packages
-        .get("home")
-        .cloned()
-        .unwrap_or_default();
+    let mut packages = review.selected_packages.clone();
     packages.sort();
     assert_eq!(
         packages,
-        ["own", "test"],
+        ["home/own", "home/test"],
         "own and included packages run; home/ghost names no package and does not"
     );
 }
@@ -1882,21 +1859,21 @@ fn test_stow_local_ignore_line_added_in_the_editor_is_written_on_w() {
 fn test_saving_the_ignore_files_invalidates_the_status_cache() {
     let (mut app, _tmp) = make_test_app();
     open_ignore_on_test_package(&mut app);
-    app.ctx.status_cache.borrow_mut().insert(
-        ("home".to_string(), "test".to_string()),
-        andre_core::StowStatus::Stowed,
-    );
+    app.ctx
+        .status_cache
+        .borrow_mut()
+        .insert("home/test".to_string(), andre_core::StowStatus::Stowed);
     app.component_dispatch(key_char('+'));
     type_text(&mut app, "*.env");
     app.component_dispatch(enter_key());
     assert!(
-        app.ctx.status_cache.borrow().get("home", "test").is_some(),
+        app.ctx.status_cache.borrow().get("home/test").is_some(),
         "the cache is untouched until a save"
     );
 
     app.component_dispatch(key_char('w'));
     assert!(
-        app.ctx.status_cache.borrow().get("home", "test").is_none(),
+        app.ctx.status_cache.borrow().get("home/test").is_none(),
         "a save makes the packages screen read statuses again"
     );
 }
@@ -1933,10 +1910,38 @@ fn test_zero_opens_the_set_up_review_and_digits_keep_their_items() {
         .as_any()
         .downcast_ref::<ConfirmComponent>()
         .expect("0 opens the review");
-    assert_eq!(
-        confirm.selected_packages,
-        HashMap::from([("config".to_string(), vec!["andre".to_string()])])
-    );
+    assert_eq!(confirm.selected_packages, ["config/andre"]);
+}
+
+#[test]
+fn test_zero_on_a_flat_config_reviews_the_package_holding_the_config_folder() {
+    let (mut app, _tmp) = make_flat_bootstrap_app();
+    app.update_components();
+    assert_eq!(menu(&app).items().first(), Some(&MenuItem::Setup));
+    app.component_dispatch(key_char('0'));
+    let confirm = app
+        .component_stack
+        .last()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ConfirmComponent>()
+        .expect("0 opens the review");
+    assert_eq!(confirm.selected_packages, ["andre"]);
+}
+
+#[test]
+fn test_enter_on_the_set_up_item_of_a_flat_config_reviews_its_package() {
+    let (mut app, _tmp) = make_flat_bootstrap_app();
+    app.update_components();
+    app.component_dispatch(enter_key());
+    let confirm = app
+        .component_stack
+        .last()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ConfirmComponent>()
+        .expect("Enter on set-up opens the review");
+    assert_eq!(confirm.selected_packages, ["andre"]);
 }
 
 #[test]

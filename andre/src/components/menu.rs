@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
 use andre_core::bootstrap::{self, Bootstrap};
@@ -22,7 +22,7 @@ use crate::components::settings::SettingsComponent;
 use crate::components::status::StatusComponent;
 use crate::components::target_select::unstow_screen;
 use crate::components::wizard::NewPackageWizard;
-use crate::components::{AppContext, Component, Transition};
+use crate::components::{grouped_name, AppContext, Component, Transition};
 use crate::input;
 use crate::theme::ThemeColors;
 use crate::ui::detail::{render_detail, Detail, VALUE_WIDTH};
@@ -180,8 +180,7 @@ impl Component for MainMenuComponent {
                 &ctx.config_dir,
                 &ctx.home_dir,
                 ctx.search_dir.as_deref(),
-            )
-            .filter(|found| review_can_run(found, &ctx.core.config));
+            );
             let items = self.items().len();
             self.list.cursor = self.list.cursor.min(items - 1);
             self.detail = build_detail(self.selected(), ctx, self.bootstrap.as_ref());
@@ -289,13 +288,7 @@ impl MainMenuComponent {
         match item {
             MenuItem::Setup => match &self.bootstrap {
                 Some(found) => {
-                    // Interim: the grouped review keys packages by group, which an
-                    // interim `group/package` name carries. G3 passes the name instead.
-                    let (group, package) = found
-                        .package
-                        .split_once('/')
-                        .unwrap_or(("", found.package.as_str()));
-                    let selected = HashMap::from([(group.to_string(), vec![package.to_string()])]);
+                    let selected = vec![found.package.clone()];
                     Transition::Push(Box::new(ConfirmComponent::stow_only(selected, ctx)))
                 }
                 None => Transition::Handled,
@@ -395,7 +388,7 @@ fn tally(ctx: &AppContext) -> Tally {
         };
         for pkg in discover_packages(&source) {
             tally.packages += 1;
-            match cache.get(name, &pkg) {
+            match cache.get(&grouped_name(name, &pkg)) {
                 Some(StowStatus::Stowed) => {
                     tally.known += 1;
                     tally.stowed += 1;
@@ -433,9 +426,7 @@ fn targets(ctx: &AppContext) -> String {
 /// reviews it first.
 fn setup_detail(found: &Bootstrap, ctx: &AppContext, colors: &ThemeColors) -> Detail {
     let source = ctx
-        .core
-        .config
-        .package(&found.package, &ctx.config_dir, &ctx.home_dir)
+        .package(&found.package)
         .map(|entry| display_path(&entry.source, &ctx.home_dir))
         .unwrap_or_else(|| "unresolved".to_string());
     let link = display_path(&found.link, &ctx.home_dir);
@@ -532,14 +523,6 @@ fn build_detail(item: MenuItem, ctx: &AppContext, bootstrap: Option<&Bootstrap>)
             .collect(),
         sections: Vec::new(),
     }
-}
-
-/// Whether the set-up review can stow `found` yet. The review still takes grouped names, so
-/// it needs a `group/` part, which a flat package lacks. A config with no `packages:` key is
-/// the grouped one, so it passes too. Until G3 moves the review to names, flat packages are
-/// not offered.
-fn review_can_run(found: &Bootstrap, config: &andre_core::Config) -> bool {
-    found.package.contains('/') || config.packages.is_none()
 }
 
 /// The jump keys the footer and the help fact name: `0–8` while the set-up item is offered.
@@ -687,14 +670,13 @@ mod tests {
         let (_dir, mut ctx) = fixture(&["bash", "nvim"]);
         ctx.status_cache
             .borrow_mut()
-            .insert(("home".to_string(), "bash".to_string()), StowStatus::Stowed);
+            .insert("home/bash".to_string(), StowStatus::Stowed);
         let detail = detail_of(MenuItem::Status, &mut ctx);
         assert_eq!(fact(&detail, "stowed"), "\u{2013}", "nvim is still unknown");
 
-        ctx.status_cache.borrow_mut().insert(
-            ("home".to_string(), "nvim".to_string()),
-            StowStatus::Unstowed,
-        );
+        ctx.status_cache
+            .borrow_mut()
+            .insert("home/nvim".to_string(), StowStatus::Unstowed);
         let detail = detail_of(MenuItem::Status, &mut ctx);
         assert_eq!(fact(&detail, "stowed"), "1 of 2");
     }
@@ -767,15 +749,12 @@ mod tests {
     }
 
     #[test]
-    fn test_flat_package_holding_the_config_folder_offers_no_set_up_row() {
+    fn test_flat_package_holding_the_config_folder_offers_set_up() {
         let (_dir, mut ctx) = flat_bootstrap_ctx();
         let mut menu = MainMenuComponent::default();
         menu.update(&mut ctx);
-        assert!(
-            !menu.items().contains(&MenuItem::Setup),
-            "the review cannot stow a flat package yet"
-        );
-        assert_eq!(menu.item_count(), MenuItem::ALL.len());
+        assert_eq!(menu.items().first(), Some(&MenuItem::Setup));
+        assert_eq!(menu.item_count(), MenuItem::ALL.len() + 1);
     }
 
     #[test]
