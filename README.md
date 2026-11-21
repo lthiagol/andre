@@ -142,7 +142,7 @@ selection colour and marked with a `▌` bar.
 | **packages** | Select groups and packages, then run the current action (stow, restow or unstow) |
 | **new package** | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
 | **unstow** | Remove symlinks interactively |
-| **verify status** | View stow status across all groups |
+| **verify status** | View stow status of every package |
 | **settings** | Edit config, add/remove groups, change options |
 | **help** | Keyboard reference |
 | **quit** | Exit andre |

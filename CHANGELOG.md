@@ -73,8 +73,8 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   name the profile; the dialog names the profiles that lose them. Enter runs the current
   action on the whole profile through the review screen. Errors (a cycle, an unknown
   include) show as the detail headline and as a toast on Enter.
-- **Profile editor (`e`).** Packages on the left, in the grouped tree: `Space` marks a
-  package or a whole group, `←` `→` fold (`←` on a package moves to its group's header). Own packages keep their place in the file and
+- **Profile editor (`e`).** Packages on the left, one flat list: `Space` marks a package,
+  and `*` marks or unmarks them all. Own packages keep their place in the file and
   new marks follow. Packages that come through an include are `via <profile>` and cannot
   be toggled. On the right, the form: the description (`Enter` edits it) and the
   includes (`Space` checks one), with the resolved facts under them. Including a profile
@@ -87,14 +87,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   profile resolves to. Its rendering is unchanged until the status redesign; a profile
   with no packages on disk shows `profile <name> has no packages on disk`.
 - **`StowAction::next`** (`andre-core`): the `s` cycle order, tested.
-- **Grouped package tree (no screen change yet).** `andre/src/ui/tree.rs`: `Tree`
-  holds groups, folds and marks; `rows()` flattens it for a list, `tree_line` paints
-  a row (fold, mark, status, name, right-hand text). A group header shows `on`,
-  `off` or `some` (`▣`) and `marked/total`. Space on a header marks every own
-  package, or unmarks them when all count as marked. Inherited packages (`via <profile>`)
-  cannot be toggled; `toggle_mark` says so. `marked()` lists own marks in config order.
-  `set_status` updates one package and `replace_groups` refreshes the data; both keep
-  the folds. List panes 44 cols or wider show the status word before the meta.
+- Package list rows: panes 44 cols or wider show the status word before the meta.
 - Per-package ignore lists, GNU Stow semantics (`andre-core/src/ignore.rs`). A
   package's `.stow-local-ignore` holds one Perl-style regex per line (`#` comments,
   blank lines skipped). A pattern with `/` matches the path below the package root
@@ -137,7 +130,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   gains a *Config discovery* section.
 - **Mouse on lists and chrome.** Mouse capture is always on. A click selects a list
   row; a click on the selected row runs its primary key (open, or Space to mark on
-  package lists). Checkboxes mark and fold triangles fold in one click. Top-bar chips
+  package lists). Checkboxes mark in one click. Top-bar chips
   and footer hints send their key; the wheel moves the cursor over a list. Clicks
   outside an open dialog or text field change nothing; the new-package name list is the
   exception, since its field is part of the step. `t` and `q` footer chips do nothing while
@@ -170,6 +163,10 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   says `no packages folder` (hint `6 settings`) or `no packages in <folder>` (hint
   `3 new package`); a click on the hint opens that screen. The main menu's packages and new
   package items show `folder` and `links to` instead of groups.
+- **The profile editor and the status screen are flat lists too.** The editor lists every
+  package in name order, then each ref the packages folder lacks as a `? name  missing` row
+  (unmarking it drops it on save). `*` marks or unmarks every package there. The status
+  screen has one row per package with no folds, so `←` and `→` do nothing there.
 - **The review is one flat list of packages.** It lists the selection in name order
   (`stow 3 packages`, one row per package, no group header) and runs in that order. A
   package's status and its stow preview count `global.ignore`, so a file the ignore list
@@ -210,21 +207,20 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   removal worked. `Space` on a folder says only links can be marked. The browse detail names
   the link, where it points and its package. The legend and the `Path:` line are gone; the
   folder is the list title.
-- **Status uses the list and detail layout.** `5 verify status` lists every group with its
-  packages folded under it, each with its status glyph. The chip row reads
+- **Status uses the list and detail layout.** `5 verify status` lists every package, one
+  row each, with its status glyph. The chip row reads
   `profile [all ▾]` with the status counts after it, at a fixed column. `f` opens the profile dropdown
   (every package first, then the profiles; `Enter` picks, `Esc` keeps the current choice).
   A filtered list is titled with the profile and its count (`agent-work 5`), and a package
-  that comes through an include reads `via <profile>`. `r` reads every status again. A
-  folded group shows its worst status and how many packages have it. The detail shows the
-  package's status, its group's target, how each of its files sits in the target (`linked`,
+  that comes through an include reads `via <profile>`. `r` reads every status again. The
+  detail shows the package's status, its target, how each of its files sits in the target (`linked`,
   `not linked`, `real file`, `wrong link`; the files in the way come first) and a fix line for
-  a conflict, a missing package or a missing target. A package whose group has no source or
-  target reads `·`, not `missing`. An empty profile says so with an `f` hint, not a `Press` line.
+  a conflict, a missing package or a missing target. A package whose target folder is
+  missing reads `·`, not `missing`. An empty profile says so with an `f` hint, not a `Press` line.
   The legend and the `stow status` panel title are gone; the status meanings are in the
   detail headline. `Enter` and `Esc` still leave the screen.
 - **Review and run screens use the list and detail layout.** The stow, restow and unstow
-  review is a tree of the selected groups and packages on the left, with the command,
+  review is a list of the selected packages on the left, with the command,
   target and link count of the cursor's row on the right. Its action bar reads
   `[ n cancel ]  [ y stow 3 ]`; the old `Press 'y' to confirm` line is gone. The run screen
   has a progress chip (`stow  ████  2/3  ⣼`) that becomes `done  ✓ 2 succeeded  ✗ 1 failed`
@@ -232,12 +228,10 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   result's outcome. A failure caused by a real file in the way names the fix; PgUp and PgDn
   scroll a long failure's detail. Enter leaves the run once it has finished. The single-link unlink review uses the same layout with
   `[ y remove 1 ]`.
-- **Packages is one browser.** Main menu `2 packages` opens a single grouped list in place
-  of the group picker and the package picker (both removed, with `ui/packages.rs`). Groups
-  are rows with their packages folded under them. `Space` marks a package, or every package
-  of a group on its row. `Enter` runs the marks, or else the cursor's package or group,
-  through the confirm screen; `Esc` there returns to the browser with its marks. `←` on a
-  package moves to its group's header, `←` on a header folds the group, `→` unfolds. The
+- **Packages is one browser.** Main menu `2 packages` opens a single list in place
+  of the group picker and the package picker (both removed, with `ui/packages.rs`).
+  `Space` marks a package. `Enter` runs the marks, or else the cursor's package,
+  through the confirm screen; `Esc` there returns to the browser with its marks. The
   detail shows a package's status, its group's source and target, its file count and the
   profiles that list it. The legend and the scanning splash are gone; a status not yet
   known shows `·`. Marking does not reread statuses. The help workflow lists the new steps.
@@ -258,7 +252,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   (filter row). The main menu is ported onto `ListView` and `Detail`; its cursor is
   now `list.cursor`. Footer hints are data (`Hint`, with a priority); a narrow row
   drops the lowest-priority hint whole. New `Icons` fields for the redesign
-  (`checkbox_some`, `radio_on/off`, `fold_open/closed`, `unknown`, menu icons).
+  (`radio_on/off`, `caret`, `unknown`, menu icons).
   At 120+ columns the main menu's list pane widens from 34 to 48 columns.
 - **Native engine: built-in ignore list.** A package without `.stow-local-ignore`
   (and without `~/.stow-global-ignore`) now skips GNU's built-in list, as `stow`

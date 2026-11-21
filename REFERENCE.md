@@ -228,7 +228,7 @@ the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 | **packages** | link / `⇢` | Select packages, then run the current action (stow, restow or unstow) |
 | **new package** | new package / `+` | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
 | **unstow** | unlink / `≠` | Pick the group, mark the links to remove in its target, then review and remove them together |
-| **verify status** | check / `✓` | View stow status across all groups |
+| **verify status** | check / `✓` | View stow status of every package |
 | **settings** | gear / `≡` | Edit the packages folder, theme, icons and global options |
 | **help** | question / `?` | Keyboard reference |
 | **quit** | power / `×` | Exit andre |
@@ -437,7 +437,6 @@ Mouse capture is always on. Hold Shift to select text in the terminal.
 |:---|:---|
 | List row | Select it. Clicking the selected row runs its primary key: open, or Space to mark on package lists |
 | `■` / `□` checkbox | Mark or unmark that row |
-| `▾` / `▸` fold | Fold or unfold the group |
 | Top-bar chip | Its key: the action pill cycles, `verbose` and each flag toggle |
 | Footer hint | Its key, such as `Esc back` |
 | Dialog or action-bar button | Its key, such as `y delete` or `n cancel` |
@@ -464,13 +463,13 @@ count) and the selected profile on the right: description, includes, its package
 | `+` | New profile (dialog; the name must be `a-z 0-9 _ -`, starting with a letter or digit) |
 | `r` | Rename the profile; includes that name it are rewritten |
 | `x` | Delete the profile after a confirm. Profiles that include it lose that include (the dialog names them). No files are unlinked |
-| `e` | Edit the profile. The left pane marks packages (`Space`; `Enter` does nothing there; `←` `→` fold a group). `Tab` moves to the form: the description (`Enter` edits it, `Enter` or `Esc` ends the edit) and the includes (`Space` checks one). Packages that come through an include are marked `via <profile>` and cannot be toggled. `w` saves. `Esc` with unsaved edits asks: `y` save, `n` discard, `Esc` stay. An include that would make a cycle is refused with a toast |
+| `e` | Edit the profile. The left pane is one flat list of packages: `Space` marks one, `*` marks every package or unmarks them all. A name the packages folder lacks is listed after the packages as `missing`; unmarking it drops it on save. `Tab` moves to the form: the description (`Enter` edits it, `Enter` or `Esc` ends the edit) and the includes (`Space` checks one). Packages that come through an include are marked `via <profile>` and cannot be toggled. `w` saves. `Esc` with unsaved edits asks: `y` save, `n` discard, `Esc` stay. An include that would make a cycle is refused with a toast |
 | `c` | Status of the profile's packages (the status screen, listing only them) |
 | `Esc` | Back |
 
 ### Status
 
-Main menu item `verify status` shows every group's packages, each with its status glyph.
+Main menu item `verify status` shows every package in the packages folder, one row each, with its status glyph.
 `c` on the profiles screen opens the same screen filtered to that profile. The chip row
 names the filter and shows the counts. The detail lists each file of the package with its link
 state, the files in the way first.
@@ -478,7 +477,6 @@ state, the files in the way first.
 | Key | Action |
 |:---|:---|
 | `f` | Choose the profile the rows show: a dropdown with every package first, then the profiles. `Enter` picks, `Esc` keeps the current choice |
-| `←` `→` | Fold or unfold a group. On a package, `←` moves to its group's header |
 | `r` | Read every status again |
 | `Esc` / `Enter` | Back |
 

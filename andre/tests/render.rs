@@ -1776,16 +1776,14 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
     }
 
     // The unstow browse screen has no legend: its detail says what a link is.
-    let (mut app, tmp) = make_test_app();
-    add_status_fixtures(tmp.path());
+    let (mut app, _tmp) = make_flat_status_app();
     push_screen(&mut app, "UnstowBrowse");
     let text = buffer_text(&render_updated(&mut app, 80, 24));
     assert!(!text.contains(" legend "), "UnstowBrowse: legend is back");
     assert!(!text.contains("Path:"), "UnstowBrowse: path line is back");
 
     // The status screen has no legend: its counts sit in the chip row instead.
-    let (mut app, tmp) = make_test_app();
-    add_status_fixtures(tmp.path());
+    let (mut app, _tmp) = make_flat_status_app();
     push_screen(&mut app, "Status");
     let text = buffer_text(&render_updated(&mut app, 80, 24));
     assert!(!text.contains(" legend "), "Status: legend is back");
@@ -1849,8 +1847,7 @@ fn test_package_status_glyphs_follow_the_icon_set() {
 fn test_package_with_a_broken_ignore_list_shows_invalid() {
     for set in [IconSet::Nerd, IconSet::Unicode] {
         let icons = Icons::for_set(set);
-        let (mut app, tmp) = make_test_app();
-        add_status_fixtures(tmp.path());
+        let (mut app, tmp) = make_flat_status_app();
         let broken = tmp.path().join("dotfiles/home/broken");
         std::fs::create_dir_all(&broken).unwrap();
         std::fs::write(broken.join(".broken_rc"), "x").unwrap();
@@ -1921,6 +1918,14 @@ fn add_status_fixtures(home: &std::path::Path) {
     std::fs::create_dir_all(source.join("hollow")).unwrap();
 }
 
+/// A flat app whose packages folder `dotfiles/home` holds the status fixtures and `test`.
+/// HOME is the target, so the fixtures' links and blocks sit in the test home.
+fn make_flat_status_app() -> (App, tempfile::TempDir) {
+    let (app, tmp) = make_flat_home_app();
+    add_status_fixtures(tmp.path());
+    (app, tmp)
+}
+
 /// The package status vocabulary is the same on the packages browser and the status screens:
 /// one glyph, one colour and one lowercase word per status.
 #[test]
@@ -1939,8 +1944,7 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
         let cursor_row = find_accent(&packages).map(|(_, y)| y);
         let border = list_border(&packages, "packages 6");
 
-        let (mut status_app, tmp) = make_test_app();
-        add_status_fixtures(tmp.path());
+        let (mut status_app, _tmp) = make_flat_status_app();
         status_app.ctx.core.icons = set;
         push_screen(&mut status_app, "Status");
         let status = render_updated(&mut status_app, 80, 25);
@@ -2253,8 +2257,8 @@ const STATUS_TITLE: &str = " packages ";
 
 #[test]
 fn test_status_list_draws_its_scrollbar_thumb_when_rows_overflow() {
-    let (mut app, tmp) = make_two_group_app();
-    // Eight more packages make 16 rows with the two group rows, more than the 13 that fit.
+    let (mut app, tmp) = make_flat_status_app();
+    // Eight more packages make 14 rows, more than the 13 that fit.
     for i in 0..8 {
         write_package(
             &tmp.path().join("dotfiles/home"),
@@ -2283,14 +2287,14 @@ fn test_status_list_draws_its_scrollbar_thumb_when_rows_overflow() {
 /// packages, and `f` opens the dropdown with every package first and the profile under the bar.
 #[test]
 fn test_status_profile_chip_title_and_dropdown_follow_the_filter() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     app.ctx
         .core
         .profiles
         .create(andre_core::profile::Profile {
             name: "work".into(),
-            packages: vec!["home/test".into()],
+            packages: vec!["test".into()],
             ..Default::default()
         })
         .unwrap();
@@ -2299,7 +2303,7 @@ fn test_status_profile_chip_title_and_dropdown_follow_the_filter() {
     ));
 
     let buf = render_updated(&mut app, 80, 24);
-    let chip = format!("profile [work {}]", UNICODE.fold_open);
+    let chip = format!("profile [work {}]", UNICODE.caret);
     let chip_y = (0..buf.area().height)
         .find(|&y| row_text(&buf, y).contains(&chip))
         .unwrap_or_else(|| panic!("{chip:?} chip missing"));
@@ -2325,14 +2329,13 @@ fn test_status_profile_chip_title_and_dropdown_follow_the_filter() {
 /// The filtered status screen with its profile dropdown open draws at the large sizes too.
 #[test]
 fn test_status_filter_dropdown_renders_at_120x40_and_200x50_without_panic() {
-    let (mut app, tmp) = make_test_app();
-    add_status_fixtures(tmp.path());
+    let (mut app, _tmp) = make_flat_status_app();
     app.ctx
         .core
         .profiles
         .create(andre_core::profile::Profile {
             name: "work".into(),
-            packages: vec!["home/clash".into()],
+            packages: vec!["clash".into()],
             ..Default::default()
         })
         .unwrap();
@@ -2349,8 +2352,7 @@ fn test_status_filter_dropdown_renders_at_120x40_and_200x50_without_panic() {
 /// they line up across profiles: 25 columns after `profile`, as in the 80x24 mockup.
 #[test]
 fn test_status_chip_row_names_all_and_puts_the_counts_at_a_fixed_column() {
-    let (mut app, tmp) = make_test_app();
-    add_status_fixtures(tmp.path());
+    let (mut app, _tmp) = make_flat_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     push_screen(&mut app, "Status");
 
@@ -2366,15 +2368,14 @@ fn test_status_chip_row_names_all_and_puts_the_counts_at_a_fixed_column() {
 /// A chip too long to leave room keeps three spaces before the counts.
 #[test]
 fn test_status_chip_row_keeps_three_columns_before_the_counts_after_a_long_profile() {
-    let (mut app, tmp) = make_test_app();
-    add_status_fixtures(tmp.path());
+    let (mut app, _tmp) = make_flat_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     app.ctx
         .core
         .profiles
         .create(andre_core::profile::Profile {
             name: "a-very-long-profile-name".into(),
-            packages: vec!["home/test".into()],
+            packages: vec!["test".into()],
             ..Default::default()
         })
         .unwrap();
@@ -2393,23 +2394,21 @@ fn test_status_chip_row_keeps_three_columns_before_the_counts_after_a_long_profi
     assert_eq!(counts - close - 1, 3, "{:?}", row_text(&buf, y));
 }
 
-/// A package in a group whose target is missing is on disk but unread: its row shows `·`, its
-/// detail says the status is not read, and the fix is the target's, not a missing package's.
+/// A package whose target is missing is on disk but unread: its row shows `·`, its detail says
+/// the status is not read, and the fix is the target's, not a missing package's.
 #[test]
-fn test_status_package_in_a_group_with_no_target_reads_unknown() {
+fn test_status_package_with_no_target_reads_unknown() {
     let (mut app, tmp) = make_empty_app();
     app.ctx.core.icons = IconSet::Unicode;
     let source = tmp.path().join("dotfiles/gone");
     std::fs::create_dir_all(source.join("pkg")).unwrap();
     std::fs::write(source.join("pkg/.rc"), "x").unwrap();
-    app.ctx.core.config.add_group(
-        "gone".into(),
-        source.display().to_string(),
-        tmp.path().join("nowhere").display().to_string(),
-    );
+    app.ctx
+        .core
+        .config
+        .set_packages(Some(source.display().to_string()));
+    app.ctx.core.config.target = Some(tmp.path().join("nowhere").display().to_string());
     push_screen(&mut app, "Status");
-    // The cursor starts on the group's header, so the package's detail needs one step down.
-    app.component_dispatch(down_key());
 
     let buf = render_updated(&mut app, 80, 24);
     let border = list_border(&buf, STATUS_TITLE);
@@ -2423,20 +2422,60 @@ fn test_status_package_in_a_group_with_no_target_reads_unknown() {
     );
     let text = buffer_text(&buf);
     assert!(text.contains("status not read yet"), "{text}");
-    assert!(text.contains("Fix: create the"), "{text}");
+    assert!(text.contains("Fix: create the target folder"), "{text}");
     assert!(!text.contains("the package is gone"), "{text}");
     assert!(!text.contains("restore the package folder"), "{text}");
+}
+
+/// The status rows start with their glyph in the list's first column, after the cursor bar,
+/// and the list draws no group header above them.
+#[test]
+fn test_status_rows_start_with_their_glyph_and_draw_no_group_header() {
+    let (mut app, _tmp) = make_flat_status_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    push_screen(&mut app, "Status");
+    let buf = render_updated(&mut app, 80, 24);
+    let border = list_border(&buf, STATUS_TITLE);
+    let texts: Vec<String> = panel_rows_at(&buf, STATUS_TITLE, border)
+        .map(|y| list_text(&buf, y, border))
+        .collect();
+
+    let glyphs = [
+        UNICODE.stowed,
+        UNICODE.unstowed,
+        UNICODE.partial,
+        UNICODE.conflict,
+        UNICODE.missing,
+        UNICODE.empty,
+        UNICODE.invalid,
+        UNICODE.unknown,
+    ];
+    for name in ["plain", "linked", "clash", "half", "hollow", "test"] {
+        let text = texts
+            .iter()
+            .find(|text| text.contains(name))
+            .unwrap_or_else(|| panic!("no {name} row in {texts:?}"));
+        let body = text.trim_start_matches(['│', '▌', ' ']);
+        assert!(
+            glyphs.iter().any(|glyph| body.starts_with(glyph)),
+            "{name} row does not start with its glyph: {body:?}"
+        );
+    }
+    assert!(
+        texts
+            .iter()
+            .all(|text| !text.contains("home") && !text.contains(UNICODE.caret)),
+        "a group header is drawn: {texts:?}"
+    );
 }
 
 /// A conflict's detail names the file in the way, as `real file`, and the fix.
 #[test]
 fn test_status_conflict_detail_names_the_real_file_in_the_way() {
-    let (mut app, tmp) = make_test_app();
-    add_status_fixtures(tmp.path());
+    let (mut app, _tmp) = make_flat_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     push_screen(&mut app, "Status");
-    // Packages sort by name, so `clash` is the first one under the group's header.
-    app.component_dispatch(down_key());
+    // Packages sort by name, so `clash` is the first row.
 
     let buf = render_updated(&mut app, 80, 24);
     let text = buffer_text(&buf);
@@ -2455,7 +2494,7 @@ fn test_status_empty_profile_has_an_f_hint_and_no_press_line() {
         .profiles
         .create(andre_core::profile::Profile {
             name: "bare".into(),
-            packages: vec!["home/nope".into()],
+            packages: vec!["nope".into()],
             ..Default::default()
         })
         .unwrap();
@@ -2709,7 +2748,7 @@ fn test_packages_with_an_empty_folder_name_it_and_offer_new_package_at_80x24() {
 }
 
 #[test]
-fn test_package_rows_read_mark_status_then_name_and_draw_no_fold_glyphs() {
+fn test_package_rows_read_mark_status_then_name_and_draw_no_caret_glyphs() {
     let (mut app, _tmp) = make_flat_packages_app(&["nvim", "tmux"]);
     app.ctx.core.icons = IconSet::Unicode;
     push_screen(&mut app, "Packages");
@@ -2730,8 +2769,7 @@ fn test_package_rows_read_mark_status_then_name_and_draw_no_fold_glyphs() {
         "{row:?}: the name comes first"
     );
     let text = buffer_text(&buf);
-    assert!(!text.contains(icons.fold_open), "a fold glyph is drawn");
-    assert!(!text.contains(icons.fold_closed), "a fold glyph is drawn");
+    assert!(!text.contains(icons.caret), "a fold glyph is drawn");
 }
 
 /// The cursor's row reads bar, checked box, status glyph, then name: `▌■ ◐ shell`.
@@ -2961,12 +2999,11 @@ fn test_touched_screens_render_at_120x40_and_200x50_without_panic() {
     }
 }
 
-/// An app whose config folder holds `profiles`, as `(name, yaml)` pairs. Besides the test
-/// package `home/test`, the group has `home/shell`.
+/// An app whose config folder holds `profiles`, as `(name, yaml)` pairs. The flat packages
+/// folder holds `shell` and `test`.
 fn make_profiles_app(profiles: &[(&str, &str)]) -> (App, tempfile::TempDir) {
-    let (mut app, tmp) = make_test_app();
+    let (mut app, tmp) = make_flat_packages_app(&["shell", "test"]);
     app.ctx.core.icons = IconSet::Unicode;
-    std::fs::create_dir_all(tmp.path().join("dotfiles/home/shell")).unwrap();
     let dir = tmp.path().join("profiles");
     std::fs::create_dir_all(&dir).unwrap();
     for (name, yaml) in profiles {
@@ -3017,22 +3054,40 @@ const PANE_ROW: u16 = 5;
 #[test]
 fn test_profile_edit_at_80x24_shows_the_packages_and_the_form() {
     let (mut app, _tmp) = make_profiles_app(&[
-        ("base", "packages: [home/shell]\n"),
+        ("base", "packages: [shell]\n"),
         (
             "agent",
-            "description: Work servers that run agents\nincludes: [base]\npackages: [home/test]\n",
+            "description: Work servers that run agents\nincludes: [base]\npackages: [test]\n",
         ),
     ]);
     open_editor_render(&mut app, "agent");
     let buf = render_updated(&mut app, 80, 24);
+    let border = list_border(&buf, "packages 2 of 2");
 
     assert!(
         line_contains(&buf, "packages 2 of 2"),
-        "tree title counts marks"
+        "list title counts marks"
     );
+    // Each row is a checkbox, a status glyph, then the name, with no group row above them.
+    let body = |name: &str| -> String {
+        (0..buf.area().height)
+            .map(|y| list_text(&buf, y, border))
+            .find(|text| text.contains(name))
+            .unwrap_or_else(|| panic!("no {name} row"))
+            .trim_start_matches(['│', '▌', ' '])
+            .trim_end()
+            .to_string()
+    };
+    assert_eq!(body("test"), "■ → test", "own package");
+    let shell = body("shell");
     assert!(
-        line_contains(&buf, "✓ ■ test") || line_contains(&buf, "test"),
-        "own package"
+        shell.starts_with("■ → shell") && shell.ends_with("via base"),
+        "inherited package: {shell:?}"
+    );
+    let text = buffer_text(&buf);
+    assert!(
+        !text.contains('▾') && !text.contains('▸'),
+        "a fold header is drawn"
     );
     assert!(
         line_contains(&buf, "via base"),
@@ -3048,7 +3103,7 @@ fn test_profile_edit_at_80x24_shows_the_packages_and_the_form() {
     assert!(line_contains(&buf, "2 packages"), "resolved count");
     assert!(line_contains(&buf, "via base"), "fact for the include");
     assert!(
-        footer_row(&buf).contains("Tab pane  Space toggle  w save  Esc back"),
+        footer_row(&buf).contains("Tab pane  Space toggle  * all  w save  Esc back"),
         "{}",
         footer_row(&buf)
     );
@@ -3056,7 +3111,7 @@ fn test_profile_edit_at_80x24_shows_the_packages_and_the_form() {
 
 #[test]
 fn test_profile_edit_title_says_unsaved_after_an_edit() {
-    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [test]\n")]);
     open_editor_render(&mut app, "agent");
     assert!(!line_contains(&render_updated(&mut app, 80, 24), "unsaved"));
 
@@ -3072,7 +3127,7 @@ fn test_profile_edit_title_says_unsaved_after_an_edit() {
 
 #[test]
 fn test_tab_moves_the_accent_border_to_the_pane_that_takes_keys() {
-    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [test]\n")]);
     open_editor_render(&mut app, "agent");
     let accent = ThemeColors::from_theme(app.ctx.core.theme).accent;
     let border = ThemeColors::from_theme(app.ctx.core.theme).border;
@@ -3097,7 +3152,7 @@ fn test_tab_moves_the_accent_border_to_the_pane_that_takes_keys() {
 
 #[test]
 fn test_profile_edit_footer_follows_what_space_and_enter_do() {
-    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [test]\n")]);
     open_editor_render(&mut app, "agent");
     app.component_dispatch(tab_key());
     let buf = render_updated(&mut app, 80, 24);
@@ -3118,7 +3173,7 @@ fn test_profile_edit_footer_follows_what_space_and_enter_do() {
 
 #[test]
 fn test_leave_dialog_names_the_profile_and_offers_stay_discard_save() {
-    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [test]\n")]);
     open_editor_render(&mut app, "agent");
     app.component_dispatch(down_key());
     app.component_dispatch(space_key());
@@ -3139,8 +3194,8 @@ fn test_leave_dialog_names_the_profile_and_offers_stay_discard_save() {
 #[test]
 fn test_profile_edit_and_profile_status_render_at_120x40_and_200x50() {
     let (mut app, _tmp) = make_profiles_app(&[
-        ("base", "packages: [home/shell]\n"),
-        ("agent", "includes: [base]\npackages: [home/test]\n"),
+        ("base", "packages: [shell]\n"),
+        ("agent", "includes: [base]\npackages: [test]\n"),
     ]);
     open_editor_render(&mut app, "agent");
     for (width, height) in [(120, 40), (200, 50)] {
@@ -3163,7 +3218,7 @@ fn test_profile_edit_and_profile_status_render_at_120x40_and_200x50() {
 #[test]
 fn test_profile_edit_form_scrolls_to_keep_the_cursor_row_in_view() {
     let names: Vec<String> = (1..=12).map(|n| format!("p{n:02}")).collect();
-    let mut profiles: Vec<(&str, &str)> = vec![("agent", "packages: [home/test]\n")];
+    let mut profiles: Vec<(&str, &str)> = vec![("agent", "packages: [test]\n")];
     profiles.extend(names.iter().map(|name| (name.as_str(), "packages: []\n")));
     let (mut app, _tmp) = make_profiles_app(&profiles);
     open_editor_render(&mut app, "agent");
@@ -3191,8 +3246,7 @@ fn test_profile_edit_form_scrolls_to_keep_the_cursor_row_in_view() {
 
 #[test]
 fn test_profile_edit_shows_a_broken_include_as_the_form_headline() {
-    let (mut app, _tmp) =
-        make_profiles_app(&[("agent", "includes: [ghost]\npackages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "includes: [ghost]\npackages: [test]\n")]);
     open_editor_render(&mut app, "agent");
     let buf = render_updated(&mut app, 80, 24);
     assert!(
@@ -3208,12 +3262,11 @@ fn test_profile_edit_shows_a_broken_include_as_the_form_headline() {
 #[test]
 fn test_profile_edit_renders_at_120x40_and_200x50_with_the_dialog_open() {
     let (mut app, _tmp) = make_profiles_app(&[
-        ("base", "packages: [home/shell]\n"),
-        ("agent", "includes: [base]\npackages: [home/test]\n"),
+        ("base", "packages: [shell]\n"),
+        ("agent", "includes: [base]\npackages: [test]\n"),
     ]);
     open_editor_render(&mut app, "agent");
-    // The header, then home/shell (inherited from base), then home/test: unmark test.
-    app.component_dispatch(down_key());
+    // Rows: shell (inherited from base), then test. Unmark test.
     app.component_dispatch(down_key());
     app.component_dispatch(space_key());
     app.component_dispatch(esc_key());
@@ -3256,11 +3309,11 @@ fn test_profiles_list_shows_the_profiles_with_their_counts() {
     let (mut app, _tmp) = make_profiles_app(&[
         (
             "base",
-            "description: Shared by every machine\npackages: [home/test]\n",
+            "description: Shared by every machine\npackages: [test]\n",
         ),
         (
             "agent-work",
-            "description: Work servers that run agents\nincludes: [base]\npackages: [home/shell]\n",
+            "description: Work servers that run agents\nincludes: [base]\npackages: [shell]\n",
         ),
     ]);
     open_profiles_render(&mut app);
@@ -3302,7 +3355,7 @@ fn test_profiles_empty_state_explains_itself_and_offers_a_new_profile() {
 
 #[test]
 fn test_profiles_footer_names_the_live_action_and_the_list_keys() {
-    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [test]\n")]);
     open_profiles_render(&mut app);
     let buf = render_updated(&mut app, 80, 24);
     let footer = footer_row(&buf);
@@ -3335,7 +3388,7 @@ fn test_empty_profiles_footer_offers_only_new_and_back() {
 
 #[test]
 fn test_profile_dialog_footers_say_what_enter_and_y_do() {
-    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [test]\n")]);
     open_profiles_render(&mut app);
     app.component_dispatch(key_char('+'));
     let buf = render_updated(&mut app, 80, 24);
@@ -3357,8 +3410,7 @@ fn test_profile_dialog_footers_say_what_enter_and_y_do() {
 
 #[test]
 fn test_profile_that_does_not_resolve_has_no_enter_hint() {
-    let (mut app, _tmp) =
-        make_profiles_app(&[("agent", "includes: [ghost]\npackages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "includes: [ghost]\npackages: [test]\n")]);
     open_profiles_render(&mut app);
     let buf = render_updated(&mut app, 80, 24);
     let footer = footer_row(&buf);
@@ -3390,7 +3442,7 @@ fn test_new_profile_dialog_offers_create_only_for_a_valid_name() {
 
 #[test]
 fn test_new_profile_dialog_says_when_the_name_is_taken() {
-    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [test]\n")]);
     open_profiles_render(&mut app);
     app.component_dispatch(key_char('+'));
     for c in "base".chars() {
@@ -3404,7 +3456,7 @@ fn test_new_profile_dialog_says_when_the_name_is_taken() {
 #[test]
 fn test_delete_dialog_names_the_includers_and_always_offers_delete() {
     let (mut app, _tmp) = make_profiles_app(&[
-        ("base", "packages: [home/test]\n"),
+        ("base", "packages: [test]\n"),
         ("agent", "includes: [base]\n"),
     ]);
     open_profiles_render(&mut app);
@@ -3460,8 +3512,7 @@ fn test_new_profile_dialog_puts_the_rule_under_the_name_value() {
 
 #[test]
 fn test_profile_with_an_unknown_include_shows_the_error_as_its_headline() {
-    let (mut app, _tmp) =
-        make_profiles_app(&[("agent", "includes: [ghost]\npackages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "includes: [ghost]\npackages: [test]\n")]);
     open_profiles_render(&mut app);
     let buf = render_updated(&mut app, 80, 24);
     assert!(
@@ -3472,7 +3523,7 @@ fn test_profile_with_an_unknown_include_shows_the_error_as_its_headline() {
 
 #[test]
 fn test_profiles_render_at_120x40_and_200x50_with_a_dialog_open() {
-    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [test]\n")]);
     open_profiles_render(&mut app);
     app.component_dispatch(key_char('x'));
     for (width, height) in [(120, 40), (200, 50)] {
@@ -4865,11 +4916,11 @@ fn test_help_status_glyph_topic_names_every_status_and_the_unknown_glyph() {
         "not stowed — nothing is linked",
         "partial — some files linked",
         "conflict — a real file is in place",
-        "missing — the package is gone",
+        "missing — no such package folder",
         "empty — the package has no files",
         "invalid — ignore list unreadable",
         "unknown — not scanned yet",
-        "marked, unmarked, some",
+        "marked, unmarked",
         "folder, symlink, file",
     ] {
         assert!(
@@ -4877,19 +4928,31 @@ fn test_help_status_glyph_topic_names_every_status_and_the_unknown_glyph() {
             "status glyph topic lacks {meaning:?}"
         );
     }
+    let text = buffer_text(&buf);
+    for gone in [
+        "▣",
+        "▸",
+        "▾",
+        "open, folded group",
+        "marked, unmarked, some",
+    ] {
+        assert!(
+            !text.contains(gone),
+            "status glyph topic still has {gone:?}"
+        );
+    }
 }
 
 #[test]
-fn test_help_mark_fold_and_kind_legend_lines_up_in_one_column() {
+fn test_help_mark_and_kind_legend_lines_up_in_one_column() {
     let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Help");
     app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     let buf = render_updated(&mut app, 80, 24);
     let meanings = [
-        "marked, unmarked, some",
+        "marked, unmarked",
         "chosen, not chosen",
-        "open, folded group",
         "folder, symlink, file",
     ];
     let column =
@@ -4902,6 +4965,56 @@ fn test_help_mark_fold_and_kind_legend_lines_up_in_one_column() {
             "{meaning:?} does not start in the meaning column"
         );
     }
+}
+
+/// A profile that names a package the folder lacks lists it after the packages, as a missing
+/// row that says so.
+#[test]
+fn test_profile_edit_lists_a_missing_ref_after_the_packages_as_missing() {
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [test, gone]\n")]);
+    open_editor_render(&mut app, "agent");
+    let buf = render_updated(&mut app, 80, 24);
+
+    let rows: Vec<String> = (0..buf.area().height).map(|y| row_text(&buf, y)).collect();
+    let test_y = rows
+        .iter()
+        .position(|row| row.contains("test"))
+        .expect("test row");
+    let gone_y = rows
+        .iter()
+        .position(|row| row.contains("? gone"))
+        .unwrap_or_else(|| panic!("no missing row in {}", buffer_text(&buf)));
+    assert!(gone_y > test_y, "the missing row comes after the packages");
+    assert!(rows[gone_y].contains("missing"), "{:?}", rows[gone_y]);
+    assert!(
+        line_contains(&buf, "packages 2 of 3"),
+        "the missing row is counted: {}",
+        buffer_text(&buf)
+    );
+}
+
+/// The status screen of every package, with the cursor on a conflict, draws at 120x40 and
+/// 200x50 without panic and keeps the flat rows.
+#[test]
+fn test_status_of_every_package_renders_at_120x40_and_200x50() {
+    let (mut app, _tmp) = make_flat_status_app();
+    push_screen(&mut app, "Status");
+    for (width, height) in [(120, 40), (200, 50)] {
+        let buf = render_updated(&mut app, width, height);
+        assert!(line_contains(&buf, "packages 6"), "{width}x{height}");
+        assert!(line_contains(&buf, "clash"), "{width}x{height}");
+    }
+}
+
+/// The help keys list names `*` for mark and unmark all, and no longer names the fold keys.
+#[test]
+fn test_help_keys_name_the_star_key_and_no_fold_keys() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Help");
+    let buf = render_updated(&mut app, 80, 24);
+    let text = buffer_text(&buf);
+    assert!(text.contains("mark / unmark all"), "{text}");
+    assert!(!text.contains("fold / unfold"), "{text}");
 }
 
 #[test]

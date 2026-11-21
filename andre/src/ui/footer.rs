@@ -384,18 +384,20 @@ pub fn delete_dialog_hints() -> Vec<Hint> {
 
 /// Hints for the profile editor. `space_toggles` is true when Space flips something under
 /// the cursor (a package, or an include), false on the description row, where Enter edits.
-pub fn profile_edit_hints(space_toggles: bool) -> Vec<Hint> {
+/// `all_marks` is true on the packages pane, where `*` marks or unmarks every package.
+pub fn profile_edit_hints(space_toggles: bool, all_marks: bool) -> Vec<Hint> {
     let middle = if space_toggles {
         Hint::new("Space", "toggle", PRIO_VERB)
     } else {
         Hint::new("Enter", "edit", PRIO_PRIMARY)
     };
-    vec![
-        Hint::new("Tab", "pane", PRIO_NAV),
-        middle,
-        Hint::new("w", "save", PRIO_VERB),
-        Hint::new("Esc", "back", PRIO_BACK),
-    ]
+    let mut hints = vec![Hint::new("Tab", "pane", PRIO_NAV), middle];
+    if all_marks {
+        hints.push(Hint::new("*", "all", PRIO_VERB));
+    }
+    hints.push(Hint::new("w", "save", PRIO_VERB));
+    hints.push(Hint::new("Esc", "back", PRIO_BACK));
+    hints
 }
 
 /// Hints while the profile description is being typed.
@@ -458,7 +460,6 @@ pub fn packages_hints(run: Option<String>, on_package: bool) -> Vec<Hint> {
 pub fn status_hints() -> Vec<Hint> {
     vec![
         Hint::new("f", "profile", PRIO_VERB),
-        Hint::new("\u{2190}\u{2192}", "fold", PRIO_VERB),
         Hint::new("r", "rescan", PRIO_VERB),
         Hint::new("Esc", "back", PRIO_BACK),
     ]

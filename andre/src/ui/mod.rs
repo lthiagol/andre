@@ -18,7 +18,6 @@ pub mod status_style;
 pub mod step_bar;
 pub mod text_field;
 mod toast;
-pub mod tree;
 pub mod unstow_confirm;
 pub mod widgets;
 

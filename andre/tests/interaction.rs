@@ -6,6 +6,7 @@ use andre::components::profiles::edit::ProfileEditComponent;
 use andre::components::profiles::{NameCheck, Popup, ProfilesComponent};
 use andre::components::status::StatusComponent;
 use andre::components::InputMode;
+use andre::ui::package_list::Mark;
 use andre_core::profile::ProfileSet;
 use andre_core::StowAction;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -1078,6 +1079,9 @@ fn profile_file(tmp: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
 
 const BASE: &str = "description: Shared by every machine\npackages: [home/test]\n";
 
+/// `BASE` for the flat packages folder the editor tests use.
+const FLAT_BASE: &str = "description: Shared by every machine\npackages: [test]\n";
+
 #[test]
 fn test_s_cycles_the_action_stow_restow_unstow() {
     let (mut app, _) = make_test_app();
@@ -1264,11 +1268,16 @@ fn test_c_on_a_profile_that_does_not_resolve_says_why_and_stays() {
 
 // --- The profile editor ---
 
-/// The `home/shell` package, next to the test package `home/test`, so the tree has two rows
-/// to move between.
+/// A flat app with packages `shell` and `test`, so the list has two rows to move between, and
+/// the profiles written to its config folder.
 fn make_editor_app(profiles: &[(&str, &str)]) -> (App, tempfile::TempDir) {
-    let (app, tmp) = make_app_with_profiles(profiles);
-    std::fs::create_dir_all(tmp.path().join("dotfiles/home/shell")).unwrap();
+    let (mut app, tmp) = make_flat_packages_app(&["shell", "test"]);
+    let dir = tmp.path().join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, yaml) in profiles {
+        std::fs::write(dir.join(format!("{name}.yml")), yaml).unwrap()
+    }
+    app.ctx.core.profiles = ProfileSet::load(&dir).unwrap();
     (app, tmp)
 }
 
@@ -1302,6 +1311,15 @@ fn tab_key() -> KeyEvent {
     KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)
 }
 
+/// The names of the editor's package rows, in list order.
+fn row_names(app: &App) -> Vec<String> {
+    editor(app)
+        .rows()
+        .iter()
+        .map(|row| row.name.clone())
+        .collect()
+}
+
 fn stored_packages(tmp: &tempfile::TempDir, name: &str) -> Vec<String> {
     let set = ProfileSet::load(&tmp.path().join("profiles")).unwrap();
     set.get(name).unwrap().packages.clone()
@@ -1309,7 +1327,7 @@ fn stored_packages(tmp: &tempfile::TempDir, name: &str) -> Vec<String> {
 
 #[test]
 fn test_e_opens_the_editor_on_the_selected_profile() {
-    let (mut app, _tmp) = make_editor_app(&[("base", BASE)]);
+    let (mut app, _tmp) = make_editor_app(&[("base", FLAT_BASE)]);
     open_editor(&mut app, "base");
     assert_eq!(component_id(&app), "ProfileEdit");
     assert_eq!(editor(&app).draft().name, "base");
@@ -1318,70 +1336,129 @@ fn test_e_opens_the_editor_on_the_selected_profile() {
 
 #[test]
 fn test_space_marks_a_package_and_w_writes_packages_in_order() {
-    let (mut app, tmp) = make_editor_app(&[("agent", "packages: [home/test]\n")]);
+    let (mut app, tmp) = make_editor_app(&[("agent", "packages: [test]\n")]);
     open_editor(&mut app, "agent");
 
-    // Rows: the `home` header, then shell and test. Move to shell and mark it.
-    app.component_dispatch(down_key());
+    // Rows: shell, then test. The cursor starts on shell, so Space marks it.
     app.component_dispatch(space_key());
     assert!(editor(&app).is_dirty());
-    assert_eq!(editor(&app).draft().packages, ["home/test", "home/shell"]);
+    assert_eq!(editor(&app).draft().packages, ["test", "shell"]);
 
     app.component_dispatch(key_char('w'));
     assert_eq!(
         stored_packages(&tmp, "agent"),
-        ["home/test", "home/shell"],
+        ["test", "shell"],
         "kept refs stay first, new marks follow"
     );
     assert!(!editor(&app).is_dirty(), "a save clears the unsaved mark");
 }
 
 #[test]
-fn test_space_on_a_group_header_marks_its_own_packages() {
+fn test_star_marks_every_package_and_a_second_star_unmarks_them() {
     let (mut app, tmp) = make_editor_app(&[("agent", "packages: []\n")]);
     open_editor(&mut app, "agent");
-    app.component_dispatch(space_key());
+    app.component_dispatch(key_char('*'));
     app.component_dispatch(key_char('w'));
-    assert_eq!(stored_packages(&tmp, "agent"), ["home/shell", "home/test"]);
+    assert_eq!(stored_packages(&tmp, "agent"), ["shell", "test"]);
+
+    app.component_dispatch(key_char('*'));
+    app.component_dispatch(key_char('w'));
+    assert!(stored_packages(&tmp, "agent").is_empty());
 }
 
 #[test]
-fn test_left_on_a_package_folds_its_group_and_moves_the_cursor_to_the_header() {
-    let (mut app, _tmp) = make_editor_app(&[("agent", "packages: []\n")]);
+fn test_star_leaves_an_inherited_package_alone() {
+    let (mut app, tmp) = make_editor_app(&[
+        ("base", "packages: [shell]\n"),
+        ("agent", "includes: [base]\n"),
+    ]);
     open_editor(&mut app, "agent");
-    // Rows: the `home` header, shell, test. Stand on shell, then fold its group with `←`.
-    app.component_dispatch(down_key());
-    app.component_dispatch(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    app.component_dispatch(key_char('*'));
+    app.component_dispatch(key_char('w'));
+    assert_eq!(stored_packages(&tmp, "agent"), ["test"]);
 
-    // The cursor is on the header now, so Space marks the group, not whichever package
-    // the old row index landed on.
-    app.component_dispatch(space_key());
-    assert_eq!(editor(&app).draft().packages, ["home/shell", "home/test"]);
+    // shell still comes from base: it stays inherited and is not written into agent.
+    let shell = editor(&app)
+        .rows()
+        .iter()
+        .find(|row| row.name == "shell")
+        .expect("shell row");
+    assert_eq!(shell.mark, Some(Mark::Inherited("base".to_string())));
+
+    app.component_dispatch(key_char('*'));
+    app.component_dispatch(key_char('w'));
+    assert!(stored_packages(&tmp, "agent").is_empty());
 }
 
 #[test]
-fn test_right_unfolds_the_group_and_keeps_the_cursor_on_the_header() {
+fn test_unmarking_a_missing_ref_drops_it_on_save() {
+    // `gone` is in the profile but not in the packages folder: it is listed after the packages.
+    let (mut app, tmp) = make_editor_app(&[("agent", "packages: [test, gone]\n")]);
+    open_editor(&mut app, "agent");
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(space_key());
+    assert_eq!(editor(&app).draft().packages, ["test"]);
+
+    app.component_dispatch(key_char('w'));
+    assert_eq!(stored_packages(&tmp, "agent"), ["test"]);
+    // The save dropped `gone`, so its row leaves the list too.
+    assert_eq!(row_names(&app), ["shell", "test"]);
+}
+
+#[test]
+fn test_unmarking_a_missing_ref_keeps_its_row_until_save() {
+    let (mut app, tmp) = make_editor_app(&[("agent", "packages: [test, gone]\n")]);
+    open_editor(&mut app, "agent");
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(space_key());
+    assert_eq!(editor(&app).draft().packages, ["test"]);
+    assert_eq!(row_names(&app), ["shell", "test", "gone"]);
+
+    // Space again marks `gone` back: the draft keeps it, and `w` writes it.
+    app.component_dispatch(space_key());
+    assert_eq!(editor(&app).draft().packages, ["test", "gone"]);
+    app.component_dispatch(key_char('w'));
+    assert_eq!(stored_packages(&tmp, "agent"), ["test", "gone"]);
+}
+
+#[test]
+fn test_star_marks_and_unmarks_a_missing_ref_with_the_rest() {
+    let (mut app, _tmp) = make_editor_app(&[("agent", "packages: [test, gone]\n")]);
+    open_editor(&mut app, "agent");
+    app.component_dispatch(key_char('*'));
+    assert_eq!(editor(&app).draft().packages, ["test", "gone", "shell"]);
+
+    app.component_dispatch(key_char('*'));
+    assert!(editor(&app).draft().packages.is_empty());
+    assert_eq!(row_names(&app), ["shell", "test", "gone"]);
+
+    app.component_dispatch(key_char('*'));
+    assert_eq!(editor(&app).draft().packages, ["shell", "test", "gone"]);
+}
+
+#[test]
+fn test_left_and_right_do_nothing_in_the_package_list() {
     let (mut app, _tmp) = make_editor_app(&[("agent", "packages: []\n")]);
     open_editor(&mut app, "agent");
     app.component_dispatch(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
     app.component_dispatch(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
 
-    // Unfolded again: one down reaches shell, and Space marks it.
-    app.component_dispatch(down_key());
+    // Still on the first row, `shell`: Space marks it.
     app.component_dispatch(space_key());
-    assert_eq!(editor(&app).draft().packages, ["home/shell"]);
+    assert_eq!(editor(&app).draft().packages, ["shell"]);
 }
 
 #[test]
 fn test_an_inherited_package_does_not_toggle_and_says_where_it_comes_from() {
     let (mut app, tmp) = make_editor_app(&[
-        ("base", "packages: [home/test]\n"),
+        ("base", "packages: [test]\n"),
         ("agent", "includes: [base]\n"),
     ]);
     open_editor(&mut app, "agent");
 
-    // home/test comes from base: it is the second package under the header.
-    app.component_dispatch(down_key());
+    // test comes from base: it is the second row.
     app.component_dispatch(down_key());
     app.component_dispatch(space_key());
 
@@ -1396,9 +1473,8 @@ fn test_an_inherited_package_does_not_toggle_and_says_where_it_comes_from() {
 
 #[test]
 fn test_esc_with_unsaved_edits_asks_and_n_discards() {
-    let (mut app, tmp) = make_editor_app(&[("agent", "packages: [home/test]\n")]);
+    let (mut app, tmp) = make_editor_app(&[("agent", "packages: [test]\n")]);
     open_editor(&mut app, "agent");
-    app.component_dispatch(down_key());
     app.component_dispatch(space_key());
 
     app.component_dispatch(esc_key());
@@ -1410,14 +1486,13 @@ fn test_esc_with_unsaved_edits_asks_and_n_discards() {
 
     app.component_dispatch(key_char('n'));
     assert_eq!(component_id(&app), "Profiles");
-    assert_eq!(stored_packages(&tmp, "agent"), ["home/test"]);
+    assert_eq!(stored_packages(&tmp, "agent"), ["test"]);
 }
 
 #[test]
 fn test_esc_then_esc_stays_and_y_saves_then_leaves() {
-    let (mut app, tmp) = make_editor_app(&[("agent", "packages: [home/test]\n")]);
+    let (mut app, tmp) = make_editor_app(&[("agent", "packages: [test]\n")]);
     open_editor(&mut app, "agent");
-    app.component_dispatch(down_key());
     app.component_dispatch(space_key());
 
     app.component_dispatch(esc_key());
@@ -1431,12 +1506,12 @@ fn test_esc_then_esc_stays_and_y_saves_then_leaves() {
     app.component_dispatch(esc_key());
     app.component_dispatch(key_char('y'));
     assert_eq!(component_id(&app), "Profiles");
-    assert_eq!(stored_packages(&tmp, "agent"), ["home/test", "home/shell"]);
+    assert_eq!(stored_packages(&tmp, "agent"), ["test", "shell"]);
 }
 
 #[test]
 fn test_esc_without_edits_leaves_at_once() {
-    let (mut app, _tmp) = make_editor_app(&[("base", BASE)]);
+    let (mut app, _tmp) = make_editor_app(&[("base", FLAT_BASE)]);
     open_editor(&mut app, "base");
     app.component_dispatch(esc_key());
     assert_eq!(component_id(&app), "Profiles");
@@ -1444,7 +1519,7 @@ fn test_esc_without_edits_leaves_at_once() {
 
 #[test]
 fn test_a_cycle_through_an_include_is_refused_with_a_toast() {
-    let (mut app, tmp) = make_editor_app(&[("base", BASE), ("agent", "includes: [base]\n")]);
+    let (mut app, tmp) = make_editor_app(&[("base", FLAT_BASE), ("agent", "includes: [base]\n")]);
     // Editing base: its only other profile is agent, which already includes base.
     open_editor(&mut app, "base");
     app.component_dispatch(tab_key());
@@ -1464,7 +1539,7 @@ fn test_a_cycle_through_an_include_is_refused_with_a_toast() {
 #[test]
 fn test_a_problem_that_was_already_there_does_not_block_another_include() {
     let (mut app, tmp) = make_editor_app(&[
-        ("base", "packages: [home/test]\n"),
+        ("base", "packages: [test]\n"),
         ("agent", "includes: [ghost]\n"),
     ]);
     // The draft has an unknown include, so it does not resolve. Adding base is still allowed.
@@ -1481,17 +1556,15 @@ fn test_a_problem_that_was_already_there_does_not_block_another_include() {
 
 #[test]
 fn test_including_a_profile_brings_its_packages_in_and_w_saves_the_include() {
-    let (mut app, tmp) = make_editor_app(&[
-        ("base", "packages: [home/test]\n"),
-        ("agent", "packages: []\n"),
-    ]);
+    let (mut app, tmp) =
+        make_editor_app(&[("base", "packages: [test]\n"), ("agent", "packages: []\n")]);
     open_editor(&mut app, "agent");
     app.component_dispatch(tab_key());
     app.component_dispatch(down_key());
     app.component_dispatch(space_key());
 
     assert_eq!(editor(&app).draft().includes, ["base"]);
-    assert_eq!(editor(&app).resolved_names(), ["home/test"]);
+    assert_eq!(editor(&app).resolved_names(), ["test"]);
 
     app.component_dispatch(key_char('w'));
     let stored = ProfileSet::load(&tmp.path().join("profiles")).unwrap();
@@ -1543,8 +1616,7 @@ fn test_a_blank_description_is_saved_as_no_description() {
 
 #[test]
 fn test_an_unresolved_profile_opens_so_its_broken_include_can_be_removed() {
-    let (mut app, tmp) =
-        make_editor_app(&[("agent", "includes: [ghost]\npackages: [home/test]\n")]);
+    let (mut app, tmp) = make_editor_app(&[("agent", "includes: [ghost]\npackages: [test]\n")]);
     open_editor(&mut app, "agent");
     assert_eq!(component_id(&app), "ProfileEdit");
 

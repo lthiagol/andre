@@ -53,7 +53,7 @@ pub fn status_meaning(status: StowStatus) -> &'static str {
         StowStatus::Unstowed => "not stowed \u{2014} nothing is linked",
         StowStatus::Partial => "partial \u{2014} some files linked",
         StowStatus::Conflict => "conflict \u{2014} a real file is in place",
-        StowStatus::Missing => "missing \u{2014} the package is gone",
+        StowStatus::Missing => "missing \u{2014} no such package folder",
         StowStatus::Empty => "empty \u{2014} the package has no files",
         StowStatus::Invalid => "invalid \u{2014} ignore list unreadable",
     }

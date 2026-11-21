@@ -90,18 +90,6 @@ fn editor(app: &App) -> &ProfileEditComponent {
         .expect("profile edit on top")
 }
 
-/// `make_test_app` with one profile, `agent`, written from `yaml`, and the `shell` package
-/// beside `test` in the `home` group.
-fn make_editor_app(yaml: &str) -> (App, TempDir) {
-    let (mut app, tmp) = make_test_app();
-    std::fs::create_dir_all(tmp.path().join("dotfiles/home/shell")).unwrap();
-    let dir = tmp.path().join("profiles");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("agent.yml"), yaml).unwrap();
-    app.ctx.core.profiles = ProfileSet::load(&dir).unwrap();
-    (app, tmp)
-}
-
 /// A flat app with the packages `shell` and `test`, and the profile `agent` written from `yaml`.
 fn make_flat_membership_app(yaml: &str) -> (App, TempDir) {
     let (mut app, tmp) = make_flat_packages_app(&["shell", "test"]);
@@ -598,30 +586,11 @@ fn test_click_on_a_group_selects_it_and_a_second_click_opens_its_browse() {
 }
 
 #[test]
-fn test_a_click_on_a_status_fold_triangle_folds_its_group() {
-    let (mut app, _tmp) = make_two_group_app();
-    push_component(&mut app, "Status");
-    app.update_components();
-    let icons = Icons::for_set(app.ctx.core.icons);
-    let buf = draw(&mut app, 80, 24);
-    assert!(
-        find_text(&buf, icons.fold_closed).is_none(),
-        "every group starts open"
-    );
-    // The cursor's row is the first group; its fold cell sits just after the cursor bar.
-    let (x, y) = find_text(&buf, "▌").expect("the cursor row");
-    click(&mut app, x + 1, y);
-    let buf = draw(&mut app, 80, 24);
-    assert!(
-        find_text(&buf, icons.fold_closed).is_some(),
-        "the group folded"
-    );
-}
-
-#[test]
 fn test_click_on_a_package_row_focuses_the_packages_then_a_second_click_toggles_it() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open_editor(&mut app);
+    // The cursor starts on shell; move to test so the first click on shell only moves there.
+    app.component_dispatch(down_key());
     app.component_dispatch(input::key(KeyCode::Tab));
     let buf = draw(&mut app, 80, 24);
     assert!(
@@ -634,16 +603,10 @@ fn test_click_on_a_package_row_focuses_the_packages_then_a_second_click_toggles_
         editor(&app).on_packages(),
         "the click focuses the packages pane"
     );
-    assert!(!editor(&app)
-        .draft()
-        .packages
-        .contains(&"home/shell".to_string()));
+    assert!(!editor(&app).draft().packages.contains(&"shell".to_string()));
     draw(&mut app, 80, 24);
     click(&mut app, x, y);
-    assert!(editor(&app)
-        .draft()
-        .packages
-        .contains(&"home/shell".to_string()));
+    assert!(editor(&app).draft().packages.contains(&"shell".to_string()));
 }
 
 #[test]
@@ -696,7 +659,7 @@ fn status(app: &App) -> &StatusComponent {
 
 #[test]
 fn test_click_on_the_delete_button_deletes_the_profile() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open_profiles(&mut app);
     app.component_dispatch(key_char('x'));
     let buf = draw(&mut app, 80, 24);
@@ -711,7 +674,7 @@ fn test_click_on_the_delete_button_deletes_the_profile() {
 
 #[test]
 fn test_click_on_the_keep_button_closes_the_delete_dialog_and_keeps_the_profile() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open_profiles(&mut app);
     app.component_dispatch(key_char('x'));
     let buf = draw(&mut app, 80, 24);
@@ -723,7 +686,7 @@ fn test_click_on_the_keep_button_closes_the_delete_dialog_and_keeps_the_profile(
 
 #[test]
 fn test_click_on_the_list_behind_the_delete_dialog_does_not_enter_the_profile() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open_profiles(&mut app);
     app.component_dispatch(key_char('x'));
     let buf = draw(&mut app, 80, 24);
@@ -820,7 +783,7 @@ fn test_click_on_the_cancel_button_of_a_review_goes_back() {
 fn open_status_dropdown(app: &mut App, width: u16, height: u16) {
     let buf = draw(app, width, height);
     let icons = Icons::for_set(app.ctx.core.icons);
-    let chip = format!("all {}", icons.fold_open);
+    let chip = format!("all {}", icons.caret);
     let (x, y) = find_text(&buf, &chip).expect("the profile chip");
     click(app, x, y);
     let buf = draw(app, width, height);
@@ -832,7 +795,7 @@ fn open_status_dropdown(app: &mut App, width: u16, height: u16) {
 
 #[test]
 fn test_click_on_the_profile_chip_opens_the_dropdown_and_a_second_click_picks_a_profile() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open(&mut app, "Status");
     open_status_dropdown(&mut app, 80, 24);
     // The first click on an option moves the cursor there; the second picks it.
@@ -852,7 +815,7 @@ fn test_click_on_the_profile_chip_opens_the_dropdown_and_a_second_click_picks_a_
 
 #[test]
 fn test_wheel_over_the_dropdown_moves_its_cursor_and_enter_picks_the_option() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open(&mut app, "Status");
     open_status_dropdown(&mut app, 80, 24);
     let buf = draw(&mut app, 80, 24);
@@ -881,12 +844,12 @@ fn test_help_mouse_topic_says_shift_selects_text() {
 #[test]
 fn test_the_dialogs_and_bars_this_batch_touched_render_at_120x40_and_200x50() {
     for (width, height) in [(120, 40), (200, 50)] {
-        let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+        let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
         open_profiles(&mut app);
         app.component_dispatch(key_char('x'));
         draw(&mut app, width, height);
 
-        let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+        let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
         open(&mut app, "Status");
         open_status_dropdown(&mut app, width, height);
 
@@ -999,7 +962,7 @@ fn test_click_on_the_discard_button_of_the_settings_leave_dialog_leaves_settings
     assert_ne!(component_id(&app), "Settings", "settings was left");
 }
 
-/// The membership dialog of the only package, `home/test`, opened from the packages screen.
+/// The membership dialog of the only package, `test`, opened from the packages screen.
 fn open_membership(app: &mut App) {
     open(app, "Packages");
     app.component_dispatch(key_char('p'));
@@ -1071,10 +1034,10 @@ fn test_wheel_over_the_membership_dialog_moves_its_cursor() {
     );
 }
 
-/// The profile editor with `home/test` marked, left with Esc so its leave dialog is open.
+/// The profile editor with `test` marked, left with Esc so its leave dialog is open.
 fn open_leave_dialog_on_the_profile_edit(app: &mut App) {
     open_editor(app);
-    app.component_dispatch(down_key());
+    // The cursor starts on `shell`, so Space marks it.
     app.component_dispatch(space_key());
     app.component_dispatch(esc_key());
     assert!(
@@ -1085,7 +1048,7 @@ fn open_leave_dialog_on_the_profile_edit(app: &mut App) {
 
 #[test]
 fn test_click_on_the_save_button_of_the_profile_edit_leave_dialog_writes_the_profile() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open_leave_dialog_on_the_profile_edit(&mut app);
     let buf = draw(&mut app, 80, 24);
     let (x, y) = find_text(&buf, "y save").expect("the save button");
@@ -1093,12 +1056,12 @@ fn test_click_on_the_save_button_of_the_profile_edit_leave_dialog_writes_the_pro
     assert_ne!(component_id(&app), "ProfileEdit", "the editor closed");
     let agent = app.ctx.core.profiles.get("agent").expect("the profile");
     assert!(
-        agent.packages.iter().any(|p| p == "home/shell"),
+        agent.packages.iter().any(|p| p == "shell"),
         "the mark was saved: {:?}",
         agent.packages
     );
     assert!(
-        agent.packages.iter().any(|p| p == "home/test"),
+        agent.packages.iter().any(|p| p == "test"),
         "the package it was saved with is kept: {:?}",
         agent.packages
     );
@@ -1106,7 +1069,7 @@ fn test_click_on_the_save_button_of_the_profile_edit_leave_dialog_writes_the_pro
 
 #[test]
 fn test_click_on_the_discard_button_of_the_profile_edit_leave_dialog_keeps_the_profile() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open_leave_dialog_on_the_profile_edit(&mut app);
     let buf = draw(&mut app, 80, 24);
     let (x, y) = find_text(&buf, "n discard").expect("the discard button");
@@ -1115,14 +1078,14 @@ fn test_click_on_the_discard_button_of_the_profile_edit_leave_dialog_keeps_the_p
     let agent = app.ctx.core.profiles.get("agent").expect("the profile");
     assert_eq!(
         agent.packages,
-        vec!["home/test".to_string()],
+        vec!["test".to_string()],
         "nothing was saved"
     );
 }
 
 #[test]
 fn test_a_click_off_the_profile_edit_leave_dialog_changes_nothing() {
-    let (mut app, _tmp) = make_editor_app("packages: [home/test]\n");
+    let (mut app, _tmp) = make_flat_membership_app("packages: [test]\n");
     open_leave_dialog_on_the_profile_edit(&mut app);
     let buf = draw(&mut app, 80, 24);
     let (x, y) = find_text(&buf, "agent").expect("a row behind the dialog");
@@ -1141,9 +1104,9 @@ fn test_a_click_off_the_profile_edit_leave_dialog_changes_nothing() {
 
 #[test]
 fn test_wheel_over_a_long_profile_detail_moves_its_sections() {
-    let packages: Vec<String> = (0..14).map(|i| format!("home/pkg{i:02}")).collect();
+    let packages: Vec<String> = (0..14).map(|i| format!("pkg{i:02}")).collect();
     let yaml = format!("packages: [{}]\n", packages.join(", "));
-    let (mut app, _tmp) = make_editor_app(&yaml);
+    let (mut app, _tmp) = make_flat_membership_app(&yaml);
     open_profiles(&mut app);
     let before = draw(&mut app, 80, 24);
     let (x, y) = find_text(&before, "more").expect("the sections overflow");

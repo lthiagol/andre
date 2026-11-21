@@ -59,12 +59,6 @@ pub mod wizard;
 
 pub use menu::MainMenuComponent;
 
-/// The name of a package in a grouped config, `group/package`, as `PackageEntry` names it.
-/// Interim: G10 removes groups, and with them this helper.
-pub(crate) fn grouped_name(group: &str, package: &str) -> String {
-    format!("{group}/{package}")
-}
-
 /// Resources shared by all components.
 pub struct AppContext {
     pub core: CoreState,

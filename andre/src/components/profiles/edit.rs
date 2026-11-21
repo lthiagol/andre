@@ -1,4 +1,4 @@
-//! The profile editor. The left pane is the package tree with a mark on each package; the
+//! The profile editor. The left pane is the flat package list with a mark on each package; the
 //! right pane is the description and the includes, with the resolved facts under them.
 //! Edits go to a draft. `w` writes the draft to the profile file. Esc with unsaved edits
 //! asks first.
@@ -6,15 +6,13 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
-use andre_core::profile::{
-    known_packages, split_package_ref, Origin, Profile, ProfileError, ResolvedProfile,
-};
-use andre_core::Error;
+use andre_core::profile::{known_packages, Origin, Profile, ProfileError, ResolvedProfile};
+use andre_core::{Error, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::{layout::Rect, Frame};
 
 use super::edit_view;
-use crate::components::{grouped_name, AppContext, Component, InputMode, Transition};
+use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, Input};
 use crate::theme::ThemeColors;
 use crate::ui::dialog::{dialog_click, dialog_rect, leave_dialog, render_dialog};
@@ -22,8 +20,8 @@ use crate::ui::footer::{field_edit_hints, leave_dialog_hints, profile_edit_hints
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, click_list, render_focused_list_panel, Empty, ListView};
+use crate::ui::package_list::{mark_hit, package_line, Mark, PackageList, PackageRow, Toggle};
 use crate::ui::text_field::TextField;
-use crate::ui::tree::{click_key, tree_line, Mark, Toggle, Tree, TreeGroup, TreePackage, TreeRow};
 
 /// Which pane takes keys. The focused pane has the accent border.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -39,19 +37,17 @@ pub struct ProfileEditComponent {
     saved: Profile,
     /// The profile as the user has left it. `w` writes it.
     draft: Profile,
-    /// Every package on disk, as `group/package`.
+    /// Every package on disk, by name.
     known: BTreeSet<String>,
     /// The draft resolved against `known`. `None` when it does not resolve.
     resolved: Option<ResolvedProfile>,
     /// Why the draft does not resolve, shown in the form.
     resolve_error: Option<String>,
-    /// Packages marked, and packages in all, as of the last refresh.
-    marked: usize,
-    total: usize,
-    tree: Tree,
-    /// The tree's visible rows, as of the last refresh.
-    rows: Vec<TreeRow>,
-    packages: ListView,
+    /// One row per package on disk, then one per ref the packages folder lacks. Built by
+    /// `refresh`.
+    packages: PackageList,
+    /// The cursor and the window over the package rows.
+    list: ListView,
     /// The profiles the form offers as includes, in name order.
     includes: Vec<String>,
     pane: Pane,
@@ -94,6 +90,11 @@ impl ProfileEditComponent {
         self.pane == Pane::Packages
     }
 
+    /// The package rows in list order: packages on disk, then the missing refs.
+    pub fn rows(&self) -> &[PackageRow] {
+        self.packages.rows()
+    }
+
     /// The packages the draft resolves to, in resolution order. Empty when it does not resolve.
     pub fn resolved_names(&self) -> Vec<String> {
         self.resolved
@@ -102,8 +103,9 @@ impl ProfileEditComponent {
             .unwrap_or_default()
     }
 
-    /// Rebuilds everything the draft shows: the resolution, the tree and the form. Folds and
-    /// the cursor survive. Reads package status from disk for packages the cache has not seen.
+    /// Rebuilds everything the draft shows: the resolution, the package rows and the form.
+    /// The cursor survives, clamped to the rows there are. Reads package status from disk for
+    /// packages the cache has not seen.
     fn refresh(&mut self, ctx: &AppContext) {
         self.known = known_packages(&ctx.core.config, &ctx.config_dir, &ctx.home_dir);
         let resolved = ctx.core.profiles.resolve_draft(&self.draft, &self.known);
@@ -117,60 +119,62 @@ impl ProfileEditComponent {
             .cloned()
             .collect();
         super::prefetch(ctx, refs.iter().map(String::as_str));
-        let groups = self.tree_groups(ctx, &refs);
-        self.marked = groups.iter().map(count_marked).sum();
-        self.total = groups.iter().map(|g| g.packages.len()).sum();
-        self.tree.replace_groups(groups);
-        self.rows = self.tree.rows();
+        self.packages = PackageList::new(self.package_rows(ctx));
+        self.list.cursor = self
+            .list
+            .cursor
+            .min(self.packages.rows().len().saturating_sub(1));
 
         self.includes = self.form_includes(ctx);
         self.form_cursor = self.form_cursor.min(self.includes.len());
     }
 
-    /// The tree's groups: every configured group, then any other group a ref names, each
-    /// with its packages in name order.
-    fn tree_groups(&self, ctx: &AppContext, refs: &BTreeSet<String>) -> Vec<TreeGroup> {
-        let mut names: BTreeSet<String> = ctx.core.config.groups.keys().cloned().collect();
-        names.extend(
-            refs.iter()
-                .filter_map(|r| split_package_ref(r))
-                .map(|(g, _)| g.to_string()),
-        );
-        names
-            .into_iter()
-            .map(|group| {
-                let packages = refs
-                    .iter()
-                    .filter_map(|reference| {
-                        let (g, package) = split_package_ref(reference)?;
-                        (g == group).then(|| self.tree_package(ctx, reference, g, package))
-                    })
-                    .collect();
-                TreeGroup {
-                    name: group,
-                    packages,
-                }
-            })
-            .collect()
+    /// One row per package on disk, in name order, then one per missing ref. A missing ref is
+    /// marked as the draft holds it, so unmarking it keeps its row until `w` drops it.
+    fn package_rows(&self, ctx: &AppContext) -> Vec<PackageRow> {
+        let mut rows: Vec<PackageRow> = self
+            .known
+            .iter()
+            .map(|name| self.known_row(ctx, name))
+            .collect();
+        for name in self.missing_refs() {
+            let mark = if self.draft.packages.contains(&name) {
+                Mark::On
+            } else {
+                Mark::Off
+            };
+            rows.push(PackageRow {
+                name,
+                status: Some(StowStatus::Missing),
+                mark: Some(mark),
+                meta: "missing".to_string(),
+            });
+        }
+        rows
     }
 
-    /// One package row. Own packages are marked on; packages an include brings in are marked
+    /// The refs the packages folder lacks: the ones the file held when the editor opened, then
+    /// any the draft adds. Kept from the file, not the draft, so an unmarked ref stays listed.
+    fn missing_refs(&self) -> Vec<String> {
+        let mut refs: Vec<String> = Vec::new();
+        for name in self.saved.packages.iter().chain(&self.draft.packages) {
+            if !self.known.contains(name) && !refs.contains(name) {
+                refs.push(name.clone());
+            }
+        }
+        refs
+    }
+
+    /// A package on disk. Own packages are marked on; packages an include brings in are marked
     /// by that include and cannot be toggled; the rest are off.
-    fn tree_package(
-        &self,
-        ctx: &AppContext,
-        reference: &str,
-        group: &str,
-        package: &str,
-    ) -> TreePackage {
-        let on_disk = self.known.contains(reference);
-        let mark = if self.draft.packages.iter().any(|p| p == reference) {
+    fn known_row(&self, ctx: &AppContext, name: &str) -> PackageRow {
+        let mark = if self.draft.packages.iter().any(|p| p == name) {
             Mark::On
         } else {
             match self
                 .resolved
                 .as_ref()
-                .and_then(|r| r.entries.iter().find(|e| e.package == reference))
+                .and_then(|r| r.entries.iter().find(|e| e.package == name))
             {
                 Some(entry) => match &entry.origin {
                     Origin::Included { include, .. } => Mark::Inherited(include.clone()),
@@ -179,17 +183,11 @@ impl ProfileEditComponent {
                 None => Mark::Off,
             }
         };
-        TreePackage {
-            name: package.to_string(),
-            status: on_disk
-                .then(|| ctx.status_cache.borrow().get(&grouped_name(group, package)))
-                .flatten(),
+        PackageRow {
+            name: name.to_string(),
+            status: ctx.status_cache.borrow().get(name),
             mark: Some(mark),
-            meta: if on_disk {
-                String::new()
-            } else {
-                "missing".to_string()
-            },
+            meta: String::new(),
         }
     }
 
@@ -206,25 +204,30 @@ impl ProfileEditComponent {
         names.into_iter().collect()
     }
 
-    /// The packages the tree marks, as the draft's `packages`. Refs that were already listed
-    /// keep their place; new marks follow in tree order.
+    /// Packages marked in the list, own marks and inherited ones both: the count the title
+    /// shows.
+    fn marked_count(&self) -> usize {
+        self.packages
+            .rows()
+            .iter()
+            .filter(|row| matches!(row.mark, Some(Mark::On | Mark::Inherited(_))))
+            .count()
+    }
+
+    /// The packages the list marks, as the draft's `packages`. Refs that were already listed
+    /// keep their place; new marks follow in list order.
     fn marked_refs(&self) -> Vec<String> {
-        let marked: Vec<String> = self
-            .tree
-            .marked()
-            .into_iter()
-            .map(|(group, package)| format!("{group}/{package}"))
-            .collect();
+        let marked = self.packages.marked();
         let mut next: Vec<String> = self
             .draft
             .packages
             .iter()
-            .filter(|reference| marked.contains(reference))
+            .filter(|name| marked.contains(name))
             .cloned()
             .collect();
-        for reference in marked {
-            if !next.contains(&reference) {
-                next.push(reference);
+        for name in marked {
+            if !next.contains(&name) {
+                next.push(name);
             }
         }
         next
@@ -236,6 +239,8 @@ impl ProfileEditComponent {
             Ok(()) => {
                 ctx.show_toast(format!("saved profile {}", self.draft.name));
                 self.saved = self.draft.clone();
+                // A ref the save dropped leaves the list with it.
+                self.refresh(ctx);
                 true
             }
             Err(err) => {
@@ -275,44 +280,36 @@ impl ProfileEditComponent {
     }
 
     fn handle_packages_key(&mut self, key: KeyEvent, ctx: &mut AppContext) -> Transition {
-        if Input::handle_list_navigation(&key, &mut self.packages.cursor, self.rows.len()) {
+        if Input::handle_list_navigation(&key, &mut self.list.cursor, self.packages.rows().len()) {
             return Transition::Handled;
         }
         match key.code {
-            KeyCode::Char(' ') => match self.tree.toggle_mark(self.packages.cursor) {
-                Toggle::Changed => {
-                    self.draft.packages = self.marked_refs();
-                    self.refresh(ctx);
-                }
-                Toggle::Inherited { via } => {
-                    ctx.show_toast(format!("comes from {via} — edit {via} or drop the include"));
-                }
-                Toggle::Unmarkable => {}
-            },
-            KeyCode::Left => {
-                // Folding hides the package under the cursor, so the cursor moves to the
-                // group's header first, and stays on it.
-                let header = self.group_header(self.packages.cursor);
-                self.tree.fold(header, true);
-                self.rows = self.tree.rows();
-                self.packages.cursor = header;
+            KeyCode::Char(' ') => {
+                let toggle = self.packages.toggle_mark(self.list.cursor);
+                self.apply_toggle(toggle, ctx);
             }
-            KeyCode::Right => {
-                self.tree.fold(self.packages.cursor, false);
-                self.rows = self.tree.rows();
+            KeyCode::Char('*') => {
+                let toggle = self.packages.toggle_all();
+                self.apply_toggle(toggle, ctx);
             }
             _ => return Transition::None,
         }
         Transition::Handled
     }
 
-    /// The row of the group header that `row` sits under, or `row` when it is a header.
-    fn group_header(&self, row: usize) -> usize {
-        self.rows
-            .iter()
-            .take(row + 1)
-            .rposition(|r| matches!(r, TreeRow::Group { .. }))
-            .unwrap_or(row)
+    /// Acts on what a mark change did. A change is written to the draft and the rows rebuilt.
+    /// A row an include marks cannot change here, and the toast says which include.
+    fn apply_toggle(&mut self, toggle: Toggle, ctx: &mut AppContext) {
+        match toggle {
+            Toggle::Changed => {
+                self.draft.packages = self.marked_refs();
+                self.refresh(ctx);
+            }
+            Toggle::Inherited { via } => {
+                ctx.show_toast(format!("comes from {via} — edit {via} or drop the include"));
+            }
+            Toggle::Unmarkable => {}
+        }
     }
 
     fn handle_form_key(&mut self, key: KeyEvent, ctx: &mut AppContext) -> Transition {
@@ -420,7 +417,7 @@ impl Component for ProfileEditComponent {
             field_edit_hints()
         } else {
             let space_toggles = self.pane == Pane::Packages || self.form_cursor > 0;
-            profile_edit_hints(space_toggles)
+            profile_edit_hints(space_toggles, self.pane == Pane::Packages)
         }
     }
 
@@ -441,21 +438,24 @@ impl Component for ProfileEditComponent {
         if self.editing.is_some() {
             return Transition::None;
         }
-        let len = self.rows.len();
-        let Some(click) = click_list(&mut self.packages, ev, len) else {
+        let len = self.packages.rows().len();
+        let Some(click) = click_list(&mut self.list, ev, len) else {
             return Transition::None;
         };
         self.pane = Pane::Packages;
-        match click_key(&self.rows[click.row], click, true, Some(KeyCode::Char(' '))) {
-            Some(code) => self.handle_key(input::key(code), ctx),
-            None => Transition::Handled,
+        // A click on the checkbox marks the row; a click on the row the cursor already rests on
+        // marks it too, as Space does.
+        let marks = mark_hit(&self.packages.rows()[click.row], click.col, true);
+        if marks || click.activate {
+            return self.handle_key(input::key(KeyCode::Char(' ')), ctx);
         }
+        Transition::Handled
     }
 
     fn prepare(&mut self, area: Rect) {
         self.content = area;
         let rects = screen_rects(area, Shape::TwoPane);
-        self.packages.prepare(rects.list, self.rows.len());
+        self.list.prepare(rects.list, self.packages.rows().len());
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
@@ -466,15 +466,16 @@ impl Component for ProfileEditComponent {
 
         let width = list_panel::inner(rects.list).width;
         let lines = self
-            .rows
+            .packages
+            .rows()
             .iter()
             .enumerate()
             .map(|(i, row)| {
-                let selected = packages_focused && i == self.packages.cursor;
-                tree_line(row, selected, icons, &colors, width)
+                let selected = packages_focused && i == self.list.cursor;
+                package_line(row, selected, true, icons, &colors, width)
             })
             .collect();
-        let title = edit_view::packages_title(self.marked, self.total);
+        let title = edit_view::packages_title(self.marked_count(), self.packages.rows().len());
         let empty = Empty {
             message: "no packages on disk",
             hint: None,
@@ -486,7 +487,7 @@ impl Component for ProfileEditComponent {
             packages_focused,
             &title,
             lines,
-            &self.packages,
+            &self.list,
             Some(empty),
         );
 
@@ -515,15 +516,6 @@ fn tidy(description: Option<String>) -> Option<String> {
     description
         .map(|text| text.trim().to_string())
         .filter(|text| !text.is_empty())
-}
-
-/// Marked packages in a group: own marks and inherited ones both count as marked.
-fn count_marked(group: &TreeGroup) -> usize {
-    group
-        .packages
-        .iter()
-        .filter(|p| matches!(p.mark, Some(Mark::On | Mark::Inherited(_))))
-        .count()
 }
 
 /// A name field holding `value` with the cursor at its end.

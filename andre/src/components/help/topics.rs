@@ -20,8 +20,8 @@ use crate::ui::status_style::{status_color, status_meaning};
 /// Columns the key column takes in the keys topic, after its one-column indent.
 const KEY_WIDTH: usize = 11;
 
-/// Columns the glyph cell takes in the mark, radio, fold and kind rows (`■ □ ▣` is the widest).
-/// Those rows pad their glyphs to this width, so their meanings line up in one column.
+/// Columns the glyph cell takes in the mark, radio and kind rows (`■ □` and `/ ~ •` are the
+/// widest). Those rows pad their glyphs to this width, so their meanings line up in one column.
 const MARK_CELL: usize = 5;
 
 /// Every stow status, in the order the glyph topic lists them.
@@ -49,7 +49,7 @@ const EVERYWHERE: [(&str, &str); 8] = [
 
 /// The keys that work on lists.
 const LISTS: [(&str, &str); 3] = [
-    ("\u{2190}\u{2192}", "fold / unfold groups"),
+    ("*", "mark / unmark all"),
     ("+ e r x", "new, edit, rename, delete"),
     ("w", "save edits"),
 ];
@@ -274,8 +274,8 @@ fn keys(colors: &ThemeColors) -> Detail {
     }
 }
 
-/// Every status glyph in its colour, then the unknown glyph, then the marks, folds and
-/// kinds the lists draw.
+/// Every status glyph in its colour, then the unknown glyph, then the marks and kinds the
+/// lists draw.
 fn status_glyphs(icons: &Icons, colors: &ThemeColors) -> Detail {
     let mut sections: Vec<Line<'static>> = STATUSES
         .iter()
@@ -301,10 +301,9 @@ fn status_glyphs(icons: &Icons, colors: &ThemeColors) -> Detail {
         &[
             (icons.checkbox_on, colors.accent),
             (icons.checkbox_off, colors.text_dim),
-            (icons.checkbox_some, colors.accent),
         ],
         MARK_CELL,
-        "marked, unmarked, some",
+        "marked, unmarked",
         colors,
     ));
     sections.push(glyph_line(
@@ -314,15 +313,6 @@ fn status_glyphs(icons: &Icons, colors: &ThemeColors) -> Detail {
         ],
         MARK_CELL,
         "chosen, not chosen",
-        colors,
-    ));
-    sections.push(glyph_line(
-        &[
-            (icons.fold_open, colors.text_dim),
-            (icons.fold_closed, colors.text_dim),
-        ],
-        MARK_CELL,
-        "open, folded group",
         colors,
     ));
     // The kinds are the file browser's own glyphs, the same in both icon sets.

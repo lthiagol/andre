@@ -1,7 +1,6 @@
-//! The stow status screen. Every configured group is a row with its packages folded under it,
-//! each package with its status glyph. `f` filters the rows to one profile, `r` reads every
-//! status again, and the detail shows the cursor's status with the fix for a conflict or a
-//! missing package.
+//! The stow status screen. Every package in the packages folder is a row with its status glyph.
+//! `f` filters the rows to one profile, `r` reads every status again, and the detail shows the
+//! cursor's status with the fix for a conflict or a missing package.
 
 mod view;
 
@@ -11,7 +10,7 @@ use std::hash::{Hash, Hasher};
 
 use andre_core::ignore::global_ignore_in;
 use andre_core::profile::{known_packages, Origin};
-use andre_core::{discover_packages, IconSet, PackageEntry, StowStatus};
+use andre_core::{IconSet, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     layout::{Position, Rect},
@@ -19,7 +18,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::components::{grouped_name, AppContext, Component, InputMode, Transition};
+use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::{self, step_cursor, Input};
 use crate::theme::ThemeColors;
 use crate::ui::detail::{fit_scroll, render_detail_scrolled, wheel_over, wheel_scroll, Detail};
@@ -27,9 +26,7 @@ use crate::ui::footer::{status_filter_hints, status_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, click_list, render_list_panel, Empty, ListView};
-use crate::ui::tree::{
-    click_key, tree_line_without_checkboxes, Tree, TreeGroup, TreePackage, TreeRow,
-};
+use crate::ui::package_list::{package_line, PackageRow};
 
 /// The profile dropdown open over the screen.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,12 +42,8 @@ pub struct StatusComponent {
     list: ListView,
     /// Rows the list shows at once, as of the last `prepare`. Page keys move by half of it.
     viewport_height: usize,
-    /// Groups and their folds. Built by `rebuild`; the tree holds no marks.
-    tree: Tree,
-    /// The tree's visible rows, with folded groups summarised. Built by `rebuild` and by folds.
-    rows: Vec<TreeRow>,
-    /// The statuses of each group's shown packages, in row order. Built by `rebuild`.
-    statuses: BTreeMap<String, Vec<Option<StowStatus>>>,
+    /// One row per package the screen shows, in name order. Built by `rebuild`.
+    rows: Vec<PackageRow>,
     /// The counts for the chip row. Built by `rebuild`.
     summary: view::Summary,
     /// The cursor's facts. Built by `rebuild`.
@@ -127,22 +120,7 @@ impl Component for StatusComponent {
         ) {
             return Transition::Handled;
         }
-        let icons = Icons::for_set(ctx.core.icons);
         match key.code {
-            KeyCode::Left => {
-                // On a package, Left moves to its group's header. On a header, it folds the group.
-                let header = self.group_header(self.list.cursor);
-                if header != self.list.cursor {
-                    self.list.cursor = header;
-                } else {
-                    self.tree.fold(header, true);
-                    self.rows = self.flatten(icons);
-                }
-            }
-            KeyCode::Right => {
-                self.tree.fold(self.list.cursor, false);
-                self.rows = self.flatten(icons);
-            }
             KeyCode::Char('f') => self.open_filter(ctx),
             KeyCode::Char('r') => {
                 ctx.status_cache.borrow_mut().invalidate_all();
@@ -187,14 +165,12 @@ impl Component for StatusComponent {
             self.scroll = wheel_scroll(&self.detail, self.detail_rect, &colors, self.scroll, down);
             return Transition::Handled;
         }
+        // A click selects its row; the rows have nothing else to click.
         let len = self.rows.len();
-        let Some(click) = click_list(&mut self.list, ev, len) else {
+        if click_list(&mut self.list, ev, len).is_none() {
             return Transition::None;
-        };
-        match click_key(&self.rows[click.row], click, false, None) {
-            Some(code) => self.handle_key(input::key(code), ctx),
-            None => Transition::Handled,
         }
+        Transition::Handled
     }
 
     fn prepare(&mut self, area: Rect) {
@@ -227,9 +203,7 @@ impl Component for StatusComponent {
             .rows
             .iter()
             .enumerate()
-            .map(|(i, row)| {
-                tree_line_without_checkboxes(row, i == self.list.cursor, icons, &colors, width)
-            })
+            .map(|(i, row)| package_line(row, i == self.list.cursor, false, icons, &colors, width))
             .collect();
         let title = view::list_title(self.profile.as_deref(), self.summary.total);
         let empty = Empty {
@@ -292,10 +266,14 @@ impl StatusComponent {
         ctx.status_cache.borrow().generation().hash(&mut hasher);
         ctx.core.theme.name().hash(&mut hasher);
         matches!(ctx.core.icons, IconSet::Nerd).hash(&mut hasher);
+        ctx.core.config.packages.hash(&mut hasher);
+        ctx.core.config.target.hash(&mut hasher);
+        // Interim: a `groups:` config still yields entries until G10 removes groups.
         for (name, group) in &ctx.core.config.groups {
             name.hash(&mut hasher);
             group.source.hash(&mut hasher);
             group.target.hash(&mut hasher);
+            group.ignore.hash(&mut hasher);
         }
         for profile in ctx.core.profiles.iter() {
             profile.name.hash(&mut hasher);
@@ -306,142 +284,61 @@ impl StatusComponent {
     }
 
     /// Reads the statuses through the cache and builds the rows, the counts and the detail.
-    /// A group with no package to show is left out. A package the profile reaches through an
-    /// include says which one.
+    /// A package the profile reaches through an include says which one.
     fn rebuild(&mut self, ctx: &AppContext) {
         let only = self.profile.as_deref().map(|name| profile_refs(ctx, name));
         let global = global_ignore_in(&ctx.home_dir);
         let entries = ctx.package_entries();
-        let mut groups = Vec::new();
-        let mut statuses: BTreeMap<String, Vec<Option<StowStatus>>> = BTreeMap::new();
-        for name in ctx.core.config.groups.keys() {
-            let source = ctx
-                .core
-                .config
-                .get_group_source(name, &ctx.config_dir, &ctx.home_dir);
-            let target = ctx
-                .core
-                .config
-                .get_group_target(name, &ctx.config_dir, &ctx.home_dir);
-            let discovered = source.as_deref().map(discover_packages).unwrap_or_default();
-            if let (Some(_), Some(_)) = (&source, &target) {
-                let group_entries: Vec<PackageEntry> = entries
-                    .iter()
-                    .filter(|entry| entry.name.starts_with(&format!("{name}/")))
-                    .cloned()
-                    .collect();
-                ctx.status_cache
-                    .borrow_mut()
-                    .prefetch_all(&group_entries, Some(&global));
-            }
+        // A package whose target folder is missing has no status to read. It reads as unknown,
+        // as the packages browser shows it.
+        let mut cache = ctx.status_cache.borrow_mut();
+        for entry in entries.iter().filter(|entry| entry.target.is_dir()) {
+            cache.prefetch(entry, Some(&global));
+        }
+        drop(cache);
 
-            let mut shown = Vec::new();
-            for package in &discovered {
+        self.rows = entries
+            .iter()
+            .filter_map(|entry| {
                 let via = match &only {
                     None => None,
-                    Some(refs) => match refs.get(&format!("{name}/{package}")) {
+                    Some(refs) => match refs.get(&entry.name) {
                         Some(via) => via.clone(),
-                        None => continue,
+                        None => return None,
                     },
                 };
-                // A group whose source or target is missing has no status to read. Its packages
-                // show `·`, as on the packages browser.
-                let status = match (&source, &target) {
-                    (Some(_), Some(_)) => {
-                        ctx.status_cache.borrow().get(&grouped_name(name, package))
-                    }
-                    _ => None,
-                };
-                shown.push(TreePackage {
-                    name: package.clone(),
-                    status,
+                Some(PackageRow {
+                    name: entry.name.clone(),
+                    status: ctx.status_cache.borrow().get(&entry.name),
                     mark: None,
                     meta: via.map(|via| format!("via {via}")).unwrap_or_default(),
-                });
-            }
-            if shown.is_empty() {
-                continue;
-            }
-            statuses.insert(name.clone(), shown.iter().map(|p| p.status).collect());
-            groups.push(TreeGroup {
-                name: name.clone(),
-                packages: shown,
-            });
-        }
-
-        let all: Vec<Option<StowStatus>> = statuses
-            .values()
-            .flat_map(|group| group.iter().copied())
+                })
+            })
             .collect();
-        self.summary = view::summarize(&all);
-        self.tree.replace_groups(groups);
-        self.statuses = statuses;
-        self.rows = self.flatten(Icons::for_set(ctx.core.icons));
+        let statuses: Vec<Option<StowStatus>> = self.rows.iter().map(|row| row.status).collect();
+        self.summary = view::summarize(&statuses);
         self.list.cursor = self.list.cursor.min(self.rows.len().saturating_sub(1));
         self.detail = self.build_detail(ctx);
     }
 
-    /// The visible rows: the tree's, with each folded group's row showing its worst status.
-    fn flatten(&self, icons: &Icons) -> Vec<TreeRow> {
-        self.tree
-            .rows()
-            .into_iter()
-            .map(|row| match row {
-                TreeRow::Group {
-                    name,
-                    folded: true,
-                    mark,
-                    meta,
-                } => {
-                    let meta = self
-                        .statuses
-                        .get(&name)
-                        .map_or(meta, |statuses| view::folded_meta(statuses, icons));
-                    TreeRow::Group {
-                        name,
-                        folded: true,
-                        mark,
-                        meta,
-                    }
-                }
-                row => row,
-            })
-            .collect()
-    }
-
-    /// The detail of the cursor's row: the package's status, or the group's summary.
+    /// The detail of the cursor's package, or the empty state's when there is none.
     fn build_detail(&self, ctx: &AppContext) -> Detail {
-        match self.rows.get(self.list.cursor) {
-            Some(TreeRow::Package {
-                group,
-                name,
-                status,
-                ..
-            }) => view::package_detail(ctx, group, name, *status),
-            Some(TreeRow::Group { name, .. }) => {
-                let statuses = self.statuses.get(name).map_or(&[][..], Vec::as_slice);
-                view::group_detail(ctx, name, statuses)
-            }
+        let shown = self
+            .rows
+            .get(self.list.cursor)
+            .and_then(|row| ctx.package(&row.name).map(|entry| (entry, row.status)));
+        match shown {
+            Some((entry, status)) => view::package_detail(ctx, &entry, status),
             None => view::empty_detail(ctx, self.profile.as_deref()),
         }
     }
 
-    /// The detail title: `group/package` for a package, the group's name for a group.
+    /// The detail title: the cursor's package name, or `status` when there are no rows.
     fn detail_title(&self) -> String {
         match self.rows.get(self.list.cursor) {
-            Some(TreeRow::Package { group, name, .. }) => format!("{group}/{name}"),
-            Some(TreeRow::Group { name, .. }) => name.clone(),
+            Some(row) => row.name.clone(),
             None => "status".to_string(),
         }
-    }
-
-    /// The row of the group header that `row` sits under, or `row` when it is a header.
-    fn group_header(&self, row: usize) -> usize {
-        self.rows
-            .iter()
-            .take(row + 1)
-            .rposition(|r| matches!(r, TreeRow::Group { .. }))
-            .unwrap_or(row)
     }
 
     /// Opens the profile dropdown with the current choice under the cursor.
@@ -507,8 +404,8 @@ impl StatusComponent {
     }
 }
 
-/// The `group/package` refs profile `name` runs, each with the include that brings it in, or
-/// `None` for the profile's own. A profile that does not resolve runs none.
+/// The package names profile `name` runs, each with the include that brings it in, or `None`
+/// for the profile's own. A profile that does not resolve runs none.
 fn profile_refs(ctx: &AppContext, name: &str) -> BTreeMap<String, Option<String>> {
     let known = known_packages(&ctx.core.config, &ctx.config_dir, &ctx.home_dir);
     match ctx.core.profiles.resolve(name, &known) {
@@ -538,8 +435,8 @@ mod tests {
     use crossterm::event::{KeyCode, KeyModifiers};
     use ratatui::text::Line;
 
-    /// One group `dots` with packages `alpha` (file `f`) and `beta` (file `g`). Nothing links
-    /// them, so both are unstowed.
+    /// A flat config whose packages folder `src` holds `alpha` (file `f`) and `beta` (file
+    /// `g`), both linked into `tgt`. Nothing links them, so both are unstowed.
     fn fixture() -> (tempfile::TempDir, AppContext) {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join("src/alpha")).unwrap();
@@ -548,11 +445,8 @@ mod tests {
         std::fs::write(tmp.path().join("src/alpha/f"), "").unwrap();
         std::fs::write(tmp.path().join("src/beta/g"), "").unwrap();
         let mut config = Config::default_empty();
-        config.add_group(
-            "dots".into(),
-            tmp.path().join("src").display().to_string(),
-            tmp.path().join("tgt").display().to_string(),
-        );
+        config.set_packages(Some(tmp.path().join("src").display().to_string()));
+        config.target = Some(tmp.path().join("tgt").display().to_string());
         let ctx = AppContext::for_tests(config, tmp.path());
         (tmp, ctx)
     }
@@ -563,30 +457,16 @@ mod tests {
 
     /// The package names in the rows, in order.
     fn package_names(component: &StatusComponent) -> Vec<&str> {
-        component
-            .rows
-            .iter()
-            .filter_map(|row| match row {
-                TreeRow::Package { name, .. } => Some(name.as_str()),
-                _ => None,
-            })
-            .collect()
+        component.rows.iter().map(|row| row.name.as_str()).collect()
     }
 
     /// The `meta` of each package row, in order.
     fn package_metas(component: &StatusComponent) -> Vec<&str> {
-        component
-            .rows
-            .iter()
-            .filter_map(|row| match row {
-                TreeRow::Package { meta, .. } => Some(meta.as_str()),
-                _ => None,
-            })
-            .collect()
+        component.rows.iter().map(|row| row.meta.as_str()).collect()
     }
 
-    /// `fixture` with a profile `one` that runs `dots/alpha` and includes `two`, which runs
-    /// `dots/beta` and also names a package that is not on disk.
+    /// `fixture` with a profile `one` that runs `alpha` and includes `two`, which runs `beta`
+    /// and also names a package that is not on disk.
     fn profile_fixture() -> (tempfile::TempDir, AppContext) {
         let (tmp, mut ctx) = fixture();
         let mut profiles = andre_core::profile::ProfileSet::new(tmp.path().join("profiles"));
@@ -598,10 +478,10 @@ mod tests {
                 ..Default::default()
             };
         profiles
-            .create(profile("two", &[], &["dots/beta", "dots/ghost"]))
+            .create(profile("two", &[], &["beta", "ghost"]))
             .unwrap();
         profiles
-            .create(profile("one", &["two"], &["dots/alpha"]))
+            .create(profile("one", &["two"], &["alpha"]))
             .unwrap();
         ctx.core.profiles = profiles;
         (tmp, ctx)
@@ -618,25 +498,16 @@ mod tests {
     }
 
     #[test]
-    fn test_rebuild_lists_each_package_under_its_group() {
+    fn test_rebuild_lists_each_package_in_name_order() {
         let (_tmp, ctx) = fixture();
         let component = synced(&ctx, None);
 
-        assert_eq!(
-            component.rows[0],
-            TreeRow::Group {
-                name: "dots".into(),
-                folded: false,
-                mark: None,
-                meta: String::new(),
-            }
-        );
         assert_eq!(package_names(&component), vec!["alpha", "beta"]);
         assert_eq!(component.summary.total, 2);
     }
 
     #[test]
-    fn test_a_group_with_no_packages_is_left_out_and_the_list_is_empty() {
+    fn test_an_empty_packages_folder_leaves_the_list_empty() {
         let tmp = tempfile::TempDir::new().unwrap();
         let ctx = AppContext::for_tests(Config::default_empty(), tmp.path());
         let component = synced(&ctx, None);
@@ -650,15 +521,16 @@ mod tests {
         let mut component = synced(&ctx, None);
         ctx.status_cache
             .borrow_mut()
-            .insert("dots/alpha".into(), StowStatus::Conflict);
+            .insert("alpha".into(), StowStatus::Conflict);
         component.sync(&ctx);
         assert_eq!(
             component.summary.counts,
             vec![(StowStatus::Unstowed, 1), (StowStatus::Conflict, 1)],
             "the cached conflict shows"
         );
+        assert_eq!(component.summary.unknown, 0, "beta is read too");
 
-        // A new visit reads the disk again: nothing is linked, so alpha is unstowed.
+        // A new visit reads the disk again: nothing is linked, so both are unstowed.
         let visit = synced(&ctx, None);
         assert_eq!(visit.summary.counts, vec![(StowStatus::Unstowed, 2)]);
     }
@@ -751,35 +623,40 @@ mod tests {
     }
 
     #[test]
-    fn test_left_moves_to_the_header_then_folds_the_group() {
+    fn test_left_and_right_do_nothing_now_that_there_are_no_folds() {
         let (_tmp, mut ctx) = fixture();
         let mut component = synced(&ctx, None);
-        component.list.cursor = 2;
+        component.list.cursor = 1;
 
-        component.handle_key(key(KeyCode::Left), &mut ctx);
-        assert_eq!(
-            component.list.cursor, 0,
-            "on a package, Left goes to the header"
-        );
-        assert_eq!(component.rows.len(), 3);
+        assert!(matches!(
+            component.handle_key(key(KeyCode::Left), &mut ctx),
+            Transition::None
+        ));
+        assert!(matches!(
+            component.handle_key(key(KeyCode::Right), &mut ctx),
+            Transition::None
+        ));
+        assert_eq!(component.list.cursor, 1);
+        assert_eq!(package_names(&component), vec!["alpha", "beta"]);
+    }
 
-        component.handle_key(key(KeyCode::Left), &mut ctx);
-        assert_eq!(
-            component.rows.len(),
-            1,
-            "on the header, Left folds the group"
-        );
-        let icons = Icons::for_set(ctx.core.icons);
-        assert_eq!(
-            component.rows[0],
-            TreeRow::Group {
-                name: "dots".into(),
-                folded: true,
-                mark: None,
-                meta: format!("{} 2", icons.status(StowStatus::Unstowed)),
-            },
-            "a folded group shows its worst status and how many have it"
-        );
+    #[test]
+    fn test_a_click_on_a_row_moves_the_cursor_there() {
+        let (_tmp, mut ctx) = fixture();
+        let mut component = synced(&ctx, None);
+        let area = Rect::new(0, 0, 80, 24);
+        component.prepare(area);
+        let list = list_panel::inner(screen_rects(area, Shape::ChipTwoPane).list);
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: list.x + 1,
+            row: list.y + 1,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        component.handle_mouse(click, &mut ctx);
+        assert_eq!(component.list.cursor, 1, "the second row is beta");
+        assert_eq!(component.detail_title(), "beta");
     }
 
     #[test]
@@ -788,18 +665,18 @@ mod tests {
         let mut component = synced(&ctx, None);
         ctx.status_cache
             .borrow_mut()
-            .insert("dots/alpha".into(), StowStatus::Conflict);
+            .insert("alpha".into(), StowStatus::Conflict);
 
-        component.list.cursor = 1;
+        component.list.cursor = 0;
         component.sync(&ctx);
-        assert_eq!(component.detail_title(), "dots/alpha");
+        assert_eq!(component.detail_title(), "alpha");
         let sections = texts(&component.detail.sections);
         assert!(
             sections.last().unwrap().starts_with("Fix:"),
             "conflict has a fix line: {sections:?}"
         );
 
-        component.list.cursor = 2;
+        component.list.cursor = 1;
         component.sync(&ctx);
         let sections = texts(&component.detail.sections);
         assert!(
@@ -811,7 +688,8 @@ mod tests {
     #[test]
     fn test_an_unread_package_says_so_in_its_headline() {
         let (_tmp, ctx) = fixture();
-        let detail = view::package_detail(&ctx, "dots", "alpha", None);
+        let entry = ctx.package("alpha").unwrap();
+        let detail = view::package_detail(&ctx, &entry, None);
         let headline: String = detail.headline[0]
             .spans
             .iter()
@@ -844,9 +722,9 @@ mod tests {
             "nothing is read without a target"
         );
 
-        component.list.cursor = 1;
+        component.list.cursor = 0;
         component.sync(&ctx);
-        assert_eq!(component.detail_title(), "dots/alpha");
+        assert_eq!(component.detail_title(), "alpha");
         assert!(
             texts(&component.detail.headline)[0].contains("status not read yet"),
             "{:?}",
@@ -859,7 +737,7 @@ mod tests {
             .any(|(label, value)| label == "target" && value == "not found"));
         assert_eq!(
             texts(&component.detail.sections),
-            vec!["Fix: create the group's target folder, or fix its path in andre.yml."],
+            vec!["Fix: create the target folder, or fix `target:` in andre.yml."],
         );
     }
 
@@ -870,7 +748,7 @@ mod tests {
         std::fs::write(tmp.path().join("tgt/f"), "real").unwrap();
         std::fs::write(tmp.path().join("src/alpha/a_first"), "").unwrap();
         let mut component = synced(&ctx, None);
-        component.list.cursor = 1;
+        component.list.cursor = 0;
         component.sync(&ctx);
 
         let icons = Icons::for_set(ctx.core.icons);
@@ -944,14 +822,14 @@ mod tests {
 
         component.handle_key(key(KeyCode::Down), &mut ctx);
         component.update(&mut ctx);
-        assert_eq!(component.list.cursor, 1, "the cursor is on alpha");
+        assert_eq!(component.list.cursor, 1, "the cursor is on beta");
         let colors = ThemeColors::from_theme(ctx.core.theme);
         assert!(
             detail_rows(&component.detail, pane, &colors)
                 > usize::from(WHEEL_ROWS) + usize::from(detail_inner(pane).height),
-            "alpha's detail overflows the pane"
+            "beta's detail overflows the pane"
         );
-        assert_eq!(component.scroll, 0, "alpha's detail starts at its top");
+        assert_eq!(component.scroll, 0, "beta's detail starts at its top");
     }
 
     /// A wheel notch at column `x`, row `y`.

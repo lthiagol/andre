@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 
-use andre_core::{file_links, ignore::global_ignore_in, FileLink, StowStatus};
+use andre_core::{file_links, ignore::global_ignore_in, FileLink, PackageEntry, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     layout::Rect,
@@ -37,7 +37,7 @@ const COUNTS_GAP: usize = 3;
 /// The fix line a conflict's, a missing package's or a missing target's detail shows.
 const CONFLICT_FIX: &str = "Fix: move the real file out of the way, then stow again.";
 const MISSING_FIX: &str = "Fix: restore the package folder, or take it out of its profiles.";
-const TARGET_FIX: &str = "Fix: create the group's target folder, or fix its path in andre.yml.";
+const TARGET_FIX: &str = "Fix: create the target folder, or fix `target:` in andre.yml.";
 /// Most files the package detail lists. Files that block a link come first; the rest are
 /// counted. Five keeps the fix line on screen at 80x24.
 const FILES_SHOWN: usize = 5;
@@ -83,7 +83,7 @@ pub fn list_title(profile: Option<&str>, total: usize) -> String {
 pub fn empty_message(profile: Option<&str>) -> &'static str {
     match profile {
         Some(_) => "No packages on disk.",
-        None => "No packages in any group yet.",
+        None => "No packages in the folder yet.",
     }
 }
 
@@ -116,41 +116,10 @@ pub fn summary_spans(summary: &Summary, icons: &Icons, colors: &ThemeColors) -> 
     spans
 }
 
-/// The meta of a folded group's row: the worst status among its packages and how many have
-/// it, as `✓ 2`. A group whose statuses are all unread shows `·` and its count.
-pub fn folded_meta(statuses: &[Option<StowStatus>], icons: &Icons) -> String {
-    match statuses
-        .iter()
-        .flatten()
-        .copied()
-        .max_by_key(|status| severity(*status))
-    {
-        Some(worst) => {
-            let count = statuses.iter().filter(|s| **s == Some(worst)).count();
-            format!("{} {count}", icons.status(worst))
-        }
-        None => format!("{} {}", icons.unknown, statuses.len()),
-    }
-}
-
-/// How much a status needs attention, for picking a folded group's worst status. Higher is
-/// worse.
-fn severity(status: StowStatus) -> u8 {
-    match status {
-        StowStatus::Conflict => 6,
-        StowStatus::Invalid => 5,
-        StowStatus::Missing => 4,
-        StowStatus::Partial => 3,
-        StowStatus::Unstowed => 2,
-        StowStatus::Empty => 1,
-        StowStatus::Stowed => 0,
-    }
-}
-
-/// The profile chip: the profile the rows show, with the fold glyph that says it opens a menu.
+/// The profile chip: the profile the rows show, with the caret that says it opens a menu.
 fn profile_chip(profile: Option<&str>, icons: &Icons) -> Chip {
     Chip {
-        label: format!("{} {}", profile.unwrap_or("all"), icons.fold_open),
+        label: format!("{} {}", profile.unwrap_or("all"), icons.caret),
         active: true,
         key: KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
     }
@@ -253,36 +222,34 @@ fn option_label(option: &Option<String>) -> &str {
     option.as_deref().unwrap_or("all packages")
 }
 
-/// The detail for one package: its status, the group's target, how each file of the package
-/// sits in the target (files that block a link first) and the fix for what is wrong.
+/// The detail for one package: its status, the target it links into, how each file of the
+/// package sits in the target (files that block a link first) and the fix for what is wrong.
 pub fn package_detail(
     ctx: &AppContext,
-    group: &str,
-    package: &str,
+    entry: &PackageEntry,
     status: Option<StowStatus>,
 ) -> Detail {
     let colors = ThemeColors::from_theme(ctx.core.theme);
     let icons = Icons::for_set(ctx.core.icons);
-    let config = &ctx.core.config;
-    let source = config.get_group_source(group, &ctx.config_dir, &ctx.home_dir);
-    let target = config.get_group_target(group, &ctx.config_dir, &ctx.home_dir);
-    let ignores = config
-        .groups
-        .get(group)
-        .and_then(|g| g.ignore.clone())
-        .unwrap_or_default();
     let global = global_ignore_in(&ctx.home_dir);
+    let target_found = entry.target.is_dir();
 
-    let mut links = match (&source, &target) {
-        (Some(source), Some(target)) => {
-            file_links(source, target, package, &ignores, Some(&global)).unwrap_or_default()
-        }
-        _ => Vec::new(),
+    let mut links = if target_found {
+        file_links(
+            &entry.source,
+            &entry.target,
+            &entry.folder_name(),
+            &entry.ignores,
+            Some(&global),
+        )
+        .unwrap_or_default()
+    } else {
+        Vec::new()
     };
     links.sort_by_key(|(_, link)| attention(*link));
 
-    let fix = match (status, &target) {
-        (_, None) => Some(TARGET_FIX),
+    let fix = match (status, target_found) {
+        (_, false) => Some(TARGET_FIX),
         (Some(StowStatus::Conflict), _) => Some(CONFLICT_FIX),
         (Some(StowStatus::Missing), _) => Some(MISSING_FIX),
         _ => None,
@@ -310,7 +277,10 @@ pub fn package_detail(
         headline: vec![status_headline(status, icons, &colors)],
         facts: vec![fact(
             "target",
-            target.map_or("not found".to_string(), |path| shown(&path, ctx)),
+            match target_found {
+                true => shown(&entry.target, ctx),
+                false => "not found".to_string(),
+            },
         )],
         sections,
     }
@@ -354,32 +324,6 @@ fn attention(link: FileLink) -> u8 {
     }
 }
 
-/// The detail for one group: where it links, and a summary of its packages' statuses.
-pub fn group_detail(ctx: &AppContext, group: &str, statuses: &[Option<StowStatus>]) -> Detail {
-    let colors = ThemeColors::from_theme(ctx.core.theme);
-    let icons = Icons::for_set(ctx.core.icons);
-    let target = ctx
-        .core
-        .config
-        .get_group_target(group, &ctx.config_dir, &ctx.home_dir);
-
-    Detail {
-        headline: vec![Line::from(summary_spans(
-            &summarize(statuses),
-            icons,
-            &colors,
-        ))],
-        facts: vec![
-            fact(
-                "target",
-                target.map_or("not found".to_string(), |path| shown(&path, ctx)),
-            ),
-            fact("packages", statuses.len().to_string()),
-        ],
-        sections: Vec::new(),
-    }
-}
-
 /// The key hint under the empty list's message. A filtered profile with no packages on disk
 /// is one `f` away from every package.
 pub fn empty_hint(profile: Option<&str>) -> Option<(&'static str, &'static str)> {
@@ -395,8 +339,8 @@ pub fn empty_detail(ctx: &AppContext, profile: Option<&str>) -> Detail {
             "The rows are this profile's packages that are on disk.",
         ),
         None => (
-            "No packages found in any configured group.".to_string(),
-            "Groups come from andre.yml. Each one has a source folder of packages.",
+            "No packages found in the packages folder.".to_string(),
+            "Every folder in the packages folder is a package. andre.yml sets the folder.",
         ),
     };
     Detail {
@@ -443,34 +387,6 @@ mod tests {
             vec![(StowStatus::Stowed, 2), (StowStatus::Conflict, 1)]
         );
         assert_eq!(summary.unknown, 1);
-    }
-
-    #[test]
-    fn test_folded_meta_is_the_worst_status_and_how_many_have_it() {
-        let icons = Icons::for_set(IconSet::Unicode);
-        let stowed = Some(StowStatus::Stowed);
-        assert_eq!(
-            folded_meta(&[stowed, stowed], icons),
-            format!("{} 2", icons.status(StowStatus::Stowed))
-        );
-        assert_eq!(
-            folded_meta(&[stowed, Some(StowStatus::Partial), stowed], icons),
-            format!("{} 1", icons.status(StowStatus::Partial)),
-            "partial outranks stowed"
-        );
-        assert_eq!(
-            folded_meta(
-                &[Some(StowStatus::Partial), Some(StowStatus::Conflict)],
-                icons
-            ),
-            format!("{} 1", icons.status(StowStatus::Conflict)),
-            "conflict outranks partial"
-        );
-        assert_eq!(
-            folded_meta(&[None, None], icons),
-            format!("{} 2", icons.unknown),
-            "unread statuses only"
-        );
     }
 
     #[test]

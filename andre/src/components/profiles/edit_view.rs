@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use andre_core::profile::{split_package_ref, Origin, Profile, ProfileSet, ResolvedProfile};
+use andre_core::profile::{Origin, Profile, ProfileSet, ResolvedProfile};
 use ratatui::{
     layout::{Margin, Rect},
     style::Style,
@@ -190,14 +190,12 @@ fn fact_lines(resolved: &ResolvedProfile, width: u16, colors: &ThemeColors) -> V
 }
 
 /// The resolved facts: the total, the profile's own packages, and the packages each include
-/// brings in. Package names are shown without their group.
+/// brings in.
 fn facts(resolved: &ResolvedProfile) -> Vec<(String, String)> {
     let mut own = Vec::new();
     let mut via: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for entry in &resolved.entries {
-        let name = split_package_ref(&entry.package)
-            .map_or(entry.package.as_str(), |(_, package)| package)
-            .to_string();
+        let name = entry.package.clone();
         match &entry.origin {
             Origin::Own => own.push(name),
             Origin::Included { include, .. } => {
@@ -240,16 +238,16 @@ mod tests {
         let resolved = ResolvedProfile {
             name: "personal".into(),
             entries: vec![
-                entry("home/ssh", Origin::Own),
+                entry("ssh", Origin::Own),
                 entry(
-                    "home/git",
+                    "git",
                     Origin::Included {
                         include: "base".into(),
                         declared_in: "base".into(),
                     },
                 ),
                 entry(
-                    "home/shell",
+                    "shell",
                     Origin::Included {
                         include: "base".into(),
                         declared_in: "base".into(),
@@ -273,7 +271,7 @@ mod tests {
         let resolved = ResolvedProfile {
             name: "personal".into(),
             entries: vec![entry(
-                "home/ssh",
+                "ssh",
                 Origin::Included {
                     include: "agent-work".into(),
                     declared_in: "agent-work".into(),
@@ -293,7 +291,7 @@ mod tests {
         let resolved = ResolvedProfile {
             name: "personal".into(),
             entries: vec![entry(
-                "home/ssh",
+                "ssh",
                 Origin::Included {
                     include: "agent-work".into(),
                     declared_in: "agent-work".into(),
