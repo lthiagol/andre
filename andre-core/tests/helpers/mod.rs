@@ -98,7 +98,12 @@ impl TestEnv {
     }
 
     pub fn run_andre(&self, args: &[&str]) -> std::io::Result<CommandResult> {
-        run(&Self::andre_binary(), self.temp_dir.path(), args)
+        // andre no longer looks in its working directory for a config, so the scenario's
+        // andre.yml is named explicitly.
+        let config = self.config_path.to_string_lossy().into_owned();
+        let mut full = vec!["--config", config.as_str()];
+        full.extend_from_slice(args);
+        run(&Self::andre_binary(), self.temp_dir.path(), &full)
     }
 
     pub fn target_snapshot(&self) -> HashMap<String, TargetSnapshotEntry> {

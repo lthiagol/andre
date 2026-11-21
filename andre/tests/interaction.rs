@@ -2,8 +2,12 @@ use std::collections::HashMap;
 
 use andre::app::App;
 use andre::components::confirm::ConfirmComponent;
+use andre::components::profiles::{NameCheck, Popup, ProfilesComponent};
 use andre::components::settings::rows::*;
 use andre::components::stow::GroupSelectComponent;
+use andre_core::profile::ProfileSet;
+use andre_core::StowAction;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{backend::TestBackend, Terminal};
 
 mod helpers;
@@ -52,13 +56,13 @@ fn test_menu_up_wraps() {
     let (mut app, _) = make_test_app();
     assert_eq!(menu(&app).list.cursor, 0);
     app.component_dispatch(up_key());
-    assert_eq!(menu(&app).list.cursor, 6);
+    assert_eq!(menu(&app).list.cursor, 7);
 }
 
 #[test]
 fn test_menu_down_wraps() {
     let (mut app, _) = make_test_app();
-    for _ in 0..7 {
+    for _ in 0..8 {
         app.component_dispatch(down_key());
     }
     assert_eq!(menu(&app).list.cursor, 0);
@@ -75,21 +79,30 @@ fn test_menu_j_down() {
 fn test_menu_k_up() {
     let (mut app, _) = make_test_app();
     app.component_dispatch(key_char('k'));
-    assert_eq!(menu(&app).list.cursor, 6);
+    assert_eq!(menu(&app).list.cursor, 7);
 }
 
 // --- Screen Transitions ---
 
 #[test]
-fn test_enter_on_stow_goes_to_group_select() {
+fn test_enter_on_profiles_goes_to_profiles() {
     let (mut app, _) = make_test_app();
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Profiles");
+}
+
+#[test]
+fn test_enter_on_packages_goes_to_group_select() {
+    let (mut app, _) = make_test_app();
+    app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "GroupSelect");
 }
 
 #[test]
-fn test_enter_on_adopt_goes_to_adopt_target() {
+fn test_enter_on_new_package_goes_to_adopt_target() {
     let (mut app, _) = make_two_group_app();
+    app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "AdoptTargetSelect");
@@ -98,8 +111,9 @@ fn test_enter_on_adopt_goes_to_adopt_target() {
 #[test]
 fn test_enter_on_unstow_goes_to_unstow_target() {
     let (mut app, _) = make_two_group_app();
-    app.component_dispatch(down_key());
-    app.component_dispatch(down_key());
+    for _ in 0..3 {
+        app.component_dispatch(down_key());
+    }
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "UnstowTargetSelect");
 }
@@ -107,7 +121,7 @@ fn test_enter_on_unstow_goes_to_unstow_target() {
 #[test]
 fn test_enter_on_status_goes_to_status() {
     let (mut app, _) = make_test_app();
-    for _ in 0..3 {
+    for _ in 0..4 {
         app.component_dispatch(down_key());
     }
     app.component_dispatch(enter_key());
@@ -117,7 +131,7 @@ fn test_enter_on_status_goes_to_status() {
 #[test]
 fn test_enter_on_config_goes_to_settings() {
     let (mut app, _) = make_test_app();
-    for _ in 0..4 {
+    for _ in 0..5 {
         app.component_dispatch(down_key());
     }
     app.component_dispatch(enter_key());
@@ -127,7 +141,7 @@ fn test_enter_on_config_goes_to_settings() {
 #[test]
 fn test_enter_on_help_goes_to_help() {
     let (mut app, _) = make_test_app();
-    for _ in 0..5 {
+    for _ in 0..6 {
         app.component_dispatch(down_key());
     }
     app.component_dispatch(enter_key());
@@ -137,7 +151,7 @@ fn test_enter_on_help_goes_to_help() {
 #[test]
 fn test_enter_on_quit_sets_quit() {
     let (mut app, _) = make_test_app();
-    for _ in 0..6 {
+    for _ in 0..7 {
         app.component_dispatch(down_key());
     }
     app.component_dispatch(enter_key());
@@ -146,24 +160,25 @@ fn test_enter_on_quit_sets_quit() {
 
 #[test]
 fn test_digit_key_jumps_and_activates() {
-    // Each digit 1..=7 should jump straight to the Nth menu item and
+    // Each digit 1..=8 should jump straight to the Nth menu item and
     // produce the same transition as Enter on that index. Mirrors the
     // `test_enter_on_*` block above but exercises the digit-key path.
-    let cases: [(char, &str); 7] = [
-        ('1', "GroupSelect"),
-        ('2', "AdoptTargetSelect"),
-        ('3', "UnstowTargetSelect"),
-        ('4', "Status"),
-        ('5', "Settings"),
-        ('6', "Help"),
-        ('7', "MainMenu"), // Quit pops to the still-mounted MainMenu via quitting
+    let cases: [(char, &str); 8] = [
+        ('1', "Profiles"),
+        ('2', "GroupSelect"),
+        ('3', "AdoptTargetSelect"),
+        ('4', "UnstowTargetSelect"),
+        ('5', "Status"),
+        ('6', "Settings"),
+        ('7', "Help"),
+        ('8', "MainMenu"), // Quit pops to the still-mounted MainMenu via quitting
     ];
     for (digit, expected) in cases {
         let (mut app, _) = make_test_app();
         app.component_dispatch(key_char(digit));
-        // '7' quits; on quit the top remains MainMenu and `quitting` is true.
-        if digit == '7' {
-            assert!(app.quitting, "digit '7' should set quitting");
+        // '8' quits; on quit the top remains MainMenu and `quitting` is true.
+        if digit == '8' {
+            assert!(app.quitting, "digit '8' should set quitting");
             assert_eq!(component_id(&app), expected);
         } else {
             assert_eq!(component_id(&app), expected, "digit '{digit}'");
@@ -173,9 +188,9 @@ fn test_digit_key_jumps_and_activates() {
 
 #[test]
 fn test_digit_key_out_of_range_is_ignored() {
-    // '0' and '8'..='9' fall outside the 7-item menu and must not panic
+    // '0' and '9' fall outside the 8-item menu and must not panic
     // or change the highlighted index.
-    for c in ['0', '8', '9'] {
+    for c in ['0', '9'] {
         let (mut app, _) = make_test_app();
         let before = menu(&app).list.cursor;
         app.component_dispatch(key_char(c));
@@ -199,8 +214,8 @@ fn test_digit_key_updates_highlight_for_next_enter() {
     // confirms the same item. (Activate-on-press already gives feedback via
     // the transition; this guards the index update itself.)
     let (mut app, _) = make_test_app();
-    app.component_dispatch(key_char('4'));
-    // '4' would push Status — pop back, then press Enter and confirm Status again.
+    app.component_dispatch(key_char('5'));
+    // '5' would push Status — pop back, then press Enter and confirm Status again.
     app.component_dispatch(esc_key());
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "Status");
@@ -922,8 +937,9 @@ fn top_component<T: 'static>(app: &App) -> &T {
 #[test]
 fn test_unstow_target_enter_opens_highlighted_group() {
     let (mut app, tmp) = make_two_group_app();
-    app.component_dispatch(down_key());
-    app.component_dispatch(down_key());
+    for _ in 0..3 {
+        app.component_dispatch(down_key());
+    }
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "UnstowTargetSelect");
 
@@ -940,8 +956,9 @@ fn test_unstow_target_enter_opens_highlighted_group() {
 #[test]
 fn test_unstow_target_second_row_opens_second_group() {
     let (mut app, tmp) = make_two_group_app();
-    app.component_dispatch(down_key());
-    app.component_dispatch(down_key());
+    for _ in 0..3 {
+        app.component_dispatch(down_key());
+    }
     app.component_dispatch(enter_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
@@ -956,6 +973,7 @@ fn test_unstow_target_second_row_opens_second_group() {
 #[test]
 fn test_adopt_target_enter_opens_highlighted_group() {
     let (mut app, tmp) = make_two_group_app();
+    app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "AdoptTargetSelect");
@@ -972,6 +990,7 @@ fn test_adopt_target_enter_opens_highlighted_group() {
 #[test]
 fn test_adopt_target_second_row_opens_second_group() {
     let (mut app, tmp) = make_two_group_app();
+    app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
     app.component_dispatch(down_key());
@@ -1131,4 +1150,306 @@ fn test_review_stow_preview_follows_dry_run_toggle() {
         screen_text(&mut app).contains(" -n "),
         "dry-run toggled on the review screen must show in the stow preview"
     );
+}
+
+// --- Profiles and the action key ---
+
+fn profiles(app: &App) -> &ProfilesComponent {
+    app.component_stack
+        .last()
+        .unwrap()
+        .as_any()
+        .downcast_ref()
+        .unwrap()
+}
+
+/// An app whose config folder holds `profiles`, as `(name, yaml)` pairs.
+fn make_app_with_profiles(profiles: &[(&str, &str)]) -> (App, tempfile::TempDir) {
+    let (mut app, tmp) = make_test_app();
+    let dir = tmp.path().join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, yaml) in profiles {
+        std::fs::write(dir.join(format!("{name}.yml")), yaml).unwrap();
+    }
+    app.ctx.core.profiles = ProfileSet::load(&dir).unwrap();
+    (app, tmp)
+}
+
+/// Opens the profiles screen from the menu and runs one update, as the main loop does.
+fn open_profiles(app: &mut App) {
+    app.component_dispatch(key_char('1'));
+    app.update_components();
+}
+
+fn type_text(app: &mut App, text: &str) {
+    for c in text.chars() {
+        app.component_dispatch(key_char(c));
+    }
+}
+
+fn backspace(app: &mut App, times: usize) {
+    for _ in 0..times {
+        app.component_dispatch(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    }
+}
+
+fn profile_file(tmp: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
+    tmp.path().join("profiles").join(format!("{name}.yml"))
+}
+
+const BASE: &str = "description: Shared by every machine\npackages: [home/test]\n";
+
+#[test]
+fn test_s_cycles_the_action_stow_restow_unstow() {
+    let (mut app, _) = make_test_app();
+    assert_eq!(app.ctx.core.flags.action, StowAction::Stow);
+    app.component_dispatch(key_char('s'));
+    assert_eq!(app.ctx.core.flags.action, StowAction::Restow);
+    app.component_dispatch(key_char('s'));
+    assert_eq!(app.ctx.core.flags.action, StowAction::Unstow);
+    app.component_dispatch(key_char('s'));
+    assert_eq!(app.ctx.core.flags.action, StowAction::Stow);
+}
+
+#[test]
+fn test_s_is_typed_into_a_name_not_cycled() {
+    let (mut app, _tmp) = make_app_with_profiles(&[]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('+'));
+    type_text(&mut app, "s");
+    assert_eq!(app.ctx.core.flags.action, StowAction::Stow);
+    assert!(matches!(profiles(&app).popup(), Some(Popup::New(f)) if f.field.value == "s"));
+}
+
+#[test]
+fn test_q_is_typed_into_a_name_and_does_not_quit() {
+    let (mut app, _tmp) = make_app_with_profiles(&[]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('+'));
+    type_text(&mut app, "q");
+    assert!(!app.quitting);
+}
+
+#[test]
+fn test_plus_creates_a_profile_and_selects_it() {
+    let (mut app, tmp) = make_app_with_profiles(&[("base", BASE)]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('+'));
+    type_text(&mut app, "laptop");
+    app.component_dispatch(enter_key());
+
+    assert!(profiles(&app).popup().is_none());
+    assert!(profile_file(&tmp, "laptop").exists());
+    app.update_components();
+    assert_eq!(profiles(&app).list.cursor, 1, "base sorts before laptop");
+}
+
+#[test]
+fn test_an_invalid_or_taken_name_keeps_the_new_dialog_open() {
+    let (mut app, tmp) = make_app_with_profiles(&[("base", BASE)]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('+'));
+    type_text(&mut app, "Bad Name");
+    app.component_dispatch(enter_key());
+    assert!(matches!(profiles(&app).popup(), Some(Popup::New(f)) if f.field.value == "Bad Name"));
+
+    backspace(&mut app, 8);
+    type_text(&mut app, "base");
+    app.component_dispatch(enter_key());
+    assert!(matches!(profiles(&app).popup(), Some(Popup::New(_))));
+    assert!(!profile_file(&tmp, "Bad Name").exists());
+}
+
+#[test]
+fn test_esc_closes_the_dialog_and_keeps_the_screen() {
+    let (mut app, _tmp) = make_app_with_profiles(&[]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('+'));
+    app.component_dispatch(esc_key());
+    assert!(profiles(&app).popup().is_none());
+    assert_eq!(component_id(&app), "Profiles");
+}
+
+#[test]
+fn test_rename_moves_the_file_and_repoints_includes() {
+    let (mut app, tmp) = make_app_with_profiles(&[
+        ("agent", "includes: [base]\npackages: [home/test]\n"),
+        ("base", BASE),
+    ]);
+    open_profiles(&mut app);
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('r'));
+    assert!(matches!(profiles(&app).popup(), Some(Popup::Rename { from, .. }) if from == "base"));
+
+    backspace(&mut app, 4);
+    type_text(&mut app, "shared");
+    app.component_dispatch(enter_key());
+
+    assert!(!profile_file(&tmp, "base").exists());
+    assert!(profile_file(&tmp, "shared").exists());
+    let agent = std::fs::read_to_string(profile_file(&tmp, "agent")).unwrap();
+    assert!(
+        agent.contains("shared"),
+        "agent now includes shared: {agent}"
+    );
+}
+
+#[test]
+fn test_delete_removes_the_profile_and_the_includes_that_name_it() {
+    let (mut app, tmp) = make_app_with_profiles(&[
+        ("agent", "includes: [base]\npackages: [home/test]\n"),
+        ("base", BASE),
+    ]);
+    open_profiles(&mut app);
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('x'));
+    assert!(matches!(
+        profiles(&app).popup(),
+        Some(Popup::Delete { included_by, .. }) if included_by == &["agent".to_string()]
+    ));
+
+    app.component_dispatch(key_char('y'));
+    assert!(profiles(&app).popup().is_none());
+    assert!(!profile_file(&tmp, "base").exists());
+    let agent = std::fs::read_to_string(profile_file(&tmp, "agent")).unwrap();
+    assert!(
+        !agent.contains("base"),
+        "agent no longer includes base: {agent}"
+    );
+    let toast = app.ctx.toast.as_ref().expect("a toast after the delete");
+    assert_eq!(
+        toast.message,
+        "deleted profile base; removed it from 1 profile"
+    );
+}
+
+#[test]
+fn test_n_keeps_an_included_profile() {
+    let (mut app, tmp) = make_app_with_profiles(&[
+        ("agent", "includes: [base]\npackages: [home/test]\n"),
+        ("base", BASE),
+    ]);
+    open_profiles(&mut app);
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('x'));
+    app.component_dispatch(key_char('n'));
+    assert!(profiles(&app).popup().is_none());
+    assert!(profile_file(&tmp, "base").exists());
+}
+
+#[test]
+fn test_a_name_is_checked_when_it_changes() {
+    let (mut app, _tmp) = make_app_with_profiles(&[("base", BASE)]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('+'));
+    type_text(&mut app, "base");
+    assert!(matches!(
+        profiles(&app).popup(),
+        Some(Popup::New(name)) if name.check == NameCheck::Exists
+    ));
+    backspace(&mut app, 1);
+    assert!(matches!(
+        profiles(&app).popup(),
+        Some(Popup::New(name)) if name.check == NameCheck::Valid
+    ));
+}
+
+#[test]
+fn test_e_and_c_say_they_are_not_there_yet() {
+    let (mut app, _tmp) = make_app_with_profiles(&[("base", BASE)]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('e'));
+    assert_eq!(
+        app.ctx.toast.as_ref().expect("e toasts").message,
+        "profile edit: coming soon"
+    );
+    app.component_dispatch(key_char('c'));
+    assert_eq!(
+        app.ctx.toast.as_ref().expect("c toasts").message,
+        "profile status: coming soon"
+    );
+    assert_eq!(component_id(&app), "Profiles");
+}
+
+#[test]
+fn test_x_then_y_deletes_an_unincluded_profile_file() {
+    let (mut app, tmp) = make_app_with_profiles(&[("base", BASE)]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('x'));
+    app.component_dispatch(key_char('y'));
+    assert!(!profile_file(&tmp, "base").exists());
+    assert!(profiles(&app).popup().is_none());
+}
+
+#[test]
+fn test_enter_runs_the_own_and_included_packages_and_skips_the_missing_ones() {
+    let (mut app, tmp) = make_app_with_profiles(&[
+        (
+            "agent",
+            "includes: [base]\npackages: [home/own, home/ghost]\n",
+        ),
+        ("base", BASE),
+    ]);
+    std::fs::create_dir_all(tmp.path().join("dotfiles/home/own")).unwrap();
+    open_profiles(&mut app);
+    // `agent` sorts first, so Enter runs it.
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Confirm");
+    let review: &ConfirmComponent = top_component(&app);
+    let mut packages = review
+        .selected_packages
+        .get("home")
+        .cloned()
+        .unwrap_or_default();
+    packages.sort();
+    assert_eq!(
+        packages,
+        ["own", "test"],
+        "own and included packages run; home/ghost names no package and does not"
+    );
+}
+
+#[test]
+fn test_s_on_settings_waits_for_save_like_the_other_settings() {
+    let (mut app, _tmp) = make_test_app();
+    push_component(&mut app, "Settings");
+    app.component_dispatch(key_char('s'));
+    assert_eq!(
+        app.ctx.core.flags.action,
+        StowAction::Stow,
+        "the core action is unchanged until save"
+    );
+    assert!(settings(&app).config_dirty);
+    assert!(
+        screen_text(&mut app).contains("restow"),
+        "the Settings action row shows the pending action"
+    );
+
+    app.component_dispatch(esc_key());
+    app.component_dispatch(key_char('y'));
+    assert_eq!(component_id(&app), "MainMenu");
+    assert_eq!(app.ctx.core.flags.action, StowAction::Restow);
+}
+
+#[test]
+fn test_n_still_toggles_no_fold_on_the_profiles_screen() {
+    let (mut app, _tmp) = make_app_with_profiles(&[("base", BASE)]);
+    open_profiles(&mut app);
+    app.component_dispatch(key_char('n'));
+    assert!(app.ctx.core.flags.no_folding);
+    assert_eq!(component_id(&app), "Profiles");
+}
+
+#[test]
+fn test_enter_on_a_profile_with_no_packages_says_so_and_stays() {
+    let (mut app, _tmp) = make_app_with_profiles(&[("empty", "description: nothing yet\n")]);
+    open_profiles(&mut app);
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Profiles");
+    let toast = app
+        .ctx
+        .toast
+        .as_ref()
+        .expect("a toast explains the refusal");
+    assert!(toast.message.contains("no packages"), "{}", toast.message);
 }

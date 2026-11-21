@@ -133,15 +133,16 @@ Select your group, pick packages, and stow them.
 The main menu lists the actions on the left. The panel on the right describes
 the selected one and shows what it touches: group and package counts, how many
 packages are stowed once their status has been checked (`–` until then), and
-the target directories. Move with `↑`/`↓`, or press `1`–`7` to jump to an
+the target directories. Move with `↑`/`↓`, or press `1`–`8` to jump to an
 action. Every other screen shows a one-row title with its breadcrumb instead of
 the full banner. On the list screens the cursor row is filled with the theme's
 selection colour and marked with a `▌` bar.
 
 | Option | What it does |
 |--------|-------------|
-| **stow packages** | Select groups and packages, then run the current action (stow, restow or unstow) |
-| **adopt files** | Import existing target files into a new package |
+| **profiles** | Named sets of packages. Pick one and run the current action on all of it |
+| **packages** | Select groups and packages, then run the current action (stow, restow or unstow) |
+| **new package** | Create a package from files that already sit in a target |
 | **unstow** | Remove symlinks interactively |
 | **verify status** | View stow status across all groups |
 | **settings** | Edit config, add/remove groups, change options |
@@ -157,6 +158,7 @@ selection colour and marked with a `▌` bar.
 | `Enter` | Confirm / Select |
 | `Space` | Toggle selection |
 | `Escape` | Back / Cancel |
+| `s` | Cycle the action: stow, restow, unstow |
 | `v` | Cycle verbosity (0-5) |
 | `d` | Toggle dry-run |
 | `t` | Cycle theme |

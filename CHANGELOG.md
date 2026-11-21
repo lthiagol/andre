@@ -11,6 +11,16 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- **Profiles screen.** Main menu `1 profiles`: the profiles on the left
+  (name and resolved package count), the selected profile on the right (description,
+  includes, packages with `via <profile>` for included ones, and the status summary
+  of its packages). `+` creates a profile, `r` renames it (rewriting the includes that
+  name it) and `x` deletes it after a confirm dialog. Deleting drops the includes that
+  name the profile; the dialog names the profiles that lose them. Enter runs the current
+  action on the whole profile through the review screen. Errors (a cycle, an unknown
+  include) show as the detail headline and as a toast on Enter. Profile edit (`e`)
+  and status filtered to a profile (`c`) come later; both show a toast until then.
+- **`StowAction::next`** (`andre-core`): the `s` cycle order, tested.
 - **Grouped package tree (no screen change yet).** `andre/src/ui/tree.rs`: `Tree`
   holds groups, folds and marks; `rows()` flattens it for a list, `tree_line` paints
   a row (fold, mark, status, name, right-hand text). A group header shows `on`,
@@ -62,6 +72,14 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **Main menu has eight items.** `1 profiles`, `2 packages` (the old
+  stow flow, now labelled `packages` without the action name: the top bar pill shows
+  the action), `3 new package` (still the adopt flow until F4), `4 unstow`,
+  `5 verify status`, `6 settings`, `7 help`, `8 quit`. `1`–`8` jump to an item.
+  Its facts for profiles show the profile count, packages and stowed count.
+- **Action key `s`.** `s` cycles the action stow → restow → unstow from
+  any list screen, like the other global keys. The top-bar pill underlines its `s`.
+  It is typed, not handled, while a text field or a dialog is open.
 - **UI pattern kit (no screen change at 80x24).** Shared building blocks for the
   screen redesign, in `andre/src/ui/`: `layout.rs` (one split for every screen:
   list pane `clamp(width * 2 / 5, 34, 48)`, detail the rest), `list_panel.rs`
@@ -411,6 +429,9 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Fixed
 
+- The end-to-end tests pass `--config` with their scenario's `andre.yml`. Config
+  discovery no longer reads the working directory, so these tests had passed only
+  against a stale binary left in `target/llvm-cov-target`.
 - Scrollbars never drew on any list screen (package select, group select, status,
   settings, confirm, execute, help). Each one reserved a single column that was
   narrower than the scrollbar's minimum, so the column stayed blank and no thumb

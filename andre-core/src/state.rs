@@ -112,6 +112,15 @@ impl StowAction {
         }
     }
 
+    /// The next action in the `s` cycle: stow, restow, unstow, then stow again.
+    pub fn next(self) -> Self {
+        match self {
+            StowAction::Stow => StowAction::Restow,
+            StowAction::Restow => StowAction::Unstow,
+            StowAction::Unstow => StowAction::Stow,
+        }
+    }
+
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         if s.eq_ignore_ascii_case("stow") {
@@ -266,6 +275,13 @@ mod tests {
         }
         assert_eq!(theme, Theme::Default);
         assert_eq!(seen, Theme::ALL);
+    }
+
+    #[test]
+    fn test_stow_action_next_cycles_stow_restow_unstow() {
+        assert_eq!(StowAction::Stow.next(), StowAction::Restow);
+        assert_eq!(StowAction::Restow.next(), StowAction::Unstow);
+        assert_eq!(StowAction::Unstow.next(), StowAction::Stow);
     }
 
     #[test]

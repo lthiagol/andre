@@ -8,7 +8,7 @@ mod confirm;
 pub mod detail;
 pub mod dialog;
 mod execute;
-mod footer;
+pub mod footer;
 pub mod help;
 pub mod icons;
 pub mod layout;
@@ -83,6 +83,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     let stack_ids: Vec<&'static str> = app.component_stack.iter().map(|c| c.id()).collect();
     let screen_id = stack_ids.last().copied().unwrap_or("");
+    let hints = app
+        .component_stack
+        .last()
+        .map(|c| c.hints(&app.ctx))
+        .unwrap_or_default();
     let banner_rows = if screen_id == "MainMenu" {
         BIG_BANNER_ROWS
     } else {
@@ -148,7 +153,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         frame,
         v[6].inner(Margin::new(1, 0)),
         &colors,
-        screen_id,
+        &hints,
         app.ctx.core.theme.name(),
     );
 
@@ -209,6 +214,15 @@ fn render_too_small_overlay(frame: &mut Frame, cols: u16, rows: u16, colors: &Th
     frame.render_widget(paragraph, horizontal[1]);
 }
 
+/// `path` with the home directory shown as `~`.
+pub fn display_path(path: &std::path::Path, home: &std::path::Path) -> String {
+    match path.strip_prefix(home) {
+        Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Ok(rest) => format!("~/{}", rest.display()),
+        Err(_) => path.display().to_string(),
+    }
+}
+
 /// Truncate a string to `max_width` display columns, appending `…` if truncated.
 pub fn elide(s: &str, max_width: usize) -> String {
     if max_width < 2 {
@@ -235,7 +249,19 @@ pub fn elide(s: &str, max_width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{elide, plural};
+    use super::{display_path, elide, plural};
+    use std::path::Path;
+
+    #[test]
+    fn test_display_path_uses_tilde_only_under_home() {
+        let home = Path::new("/home/me");
+        assert_eq!(display_path(Path::new("/home/me"), home), "~");
+        assert_eq!(
+            display_path(Path::new("/home/me/.config"), home),
+            "~/.config"
+        );
+        assert_eq!(display_path(Path::new("/etc/andre"), home), "/etc/andre");
+    }
 
     #[test]
     fn test_plural_uses_singular_only_for_one() {

@@ -63,7 +63,7 @@ andre
 
 ### Navigation Flow
 
-1. **Main Menu** — Choose an action (stow packages, adopt files, unstow, verify status, etc.)
+1. **Main Menu** — Choose an action (profiles, packages, new package, unstow, verify status, etc.)
 2. **Group Selection** — Pick which config groups to operate on
 3. **Package Selection** — Pick individual packages within each group
 4. **Confirmation** — Review the stow commands before execution
@@ -196,7 +196,7 @@ andre
 The main menu is a list on the left and a detail panel on the right. The detail
 panel describes the selected action and shows its facts: group and package
 counts, the stowed count (`–` until every package's status has been checked),
-and the target directories. Keys: `↑`/`↓` (or `j`/`k`) move, `1`–`7` jump to and
+and the target directories. Keys: `↑`/`↓` (or `j`/`k`) move, `1`–`8` jump to and
 open an item, `Enter` opens the selected item, `q` quits. The full banner shows
 on the main menu only; every other screen has a one-row `andre` title with the
 breadcrumb. The cursor row on every list is filled with the theme's selection
@@ -205,8 +205,9 @@ the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 
 | Option | Icon (nerd / unicode) | What it does |
 |--------|------|-------------|
-| **stow packages** | link / `⇢` | Select groups and packages, then run the current action (stow, restow or unstow) |
-| **adopt files** | import / `⇣` | Move existing target files into a package |
+| **profiles** | profiles / `◈` | Named sets of packages; run the current action on one (see Profiles) |
+| **packages** | link / `⇢` | Select groups and packages, then run the current action (stow, restow or unstow) |
+| **new package** | new package / `+` | Create a package from files that already sit in a target |
 | **unstow** | unlink / `≠` | Remove symlinks interactively, one link at a time |
 | **verify status** | check / `✓` | View stow status across all groups |
 | **settings** | gear / `≡` | Edit config, add/remove/edit groups, change global options |
@@ -269,8 +270,8 @@ packages:                                   # optional: "group/package" refs
 - **Missing packages**: a ref to a group or package that does not exist is kept and
   shown as `missing`, with a warning at startup. It is not fatal.
 - Renaming a package or group through andre rewrites the refs in every profile;
-  deleting a package removes its refs. A profile cannot be deleted while another
-  profile includes it.
+  deleting a package removes its refs. Deleting a profile removes the includes that
+  name it.
 - Each profile file is written whole, through a temp file in the same folder. If a
   write fails, the files already changed by that operation are restored, and the
   profiles in memory are left as they were.
@@ -381,10 +382,26 @@ groups:
 | `Space` | Toggle selection |
 | `Escape` | Back / Cancel |
 
+### Profiles
+
+Main menu item `profiles` lists the profiles on the left (name and resolved package
+count) and the selected profile on the right: description, includes, its packages
+(`via <profile>` marks the ones that come through an include) and their status.
+
+| Key | Action |
+|:---|:---|
+| `Enter` | Run the current action on the whole profile (review screen) |
+| `+` | New profile (dialog; the name must be `a-z 0-9 _ -`, starting with a letter or digit) |
+| `r` | Rename the profile; includes that name it are rewritten |
+| `x` | Delete the profile after a confirm. Profiles that include it lose that include (the dialog names them). No files are unlinked |
+| `e`, `c` | Edit and status filter: not yet available (a toast says so) |
+| `Esc` | Back |
+
 ### Global Settings Toggles
 
 | Key | Action |
 |:---|:---|
+| `s` | Cycle the action: stow, restow, unstow |
 | `v` | Cycle verbosity (0-5) |
 | `d` | Toggle dry-run |
 | `n` | Toggle no-folding |

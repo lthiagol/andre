@@ -95,7 +95,8 @@ fn pump_until_complete(app: &mut App, timeout_secs: u64) {
 }
 
 fn navigate_to_confirm(app: &mut App) {
-    app.component_dispatch(key(KeyCode::Enter));
+    // `2` opens packages from the main menu (row 1 is profiles).
+    app.component_dispatch(key(KeyCode::Char('2')));
     app.component_dispatch(key(KeyCode::Char(' ')));
     app.component_dispatch(key(KeyCode::Enter));
     app.component_dispatch(key(KeyCode::Char(' ')));

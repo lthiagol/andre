@@ -187,6 +187,13 @@ impl Component for SettingsComponent {
                 }
                 return Transition::Handled;
             }
+            KeyCode::Char('s') => {
+                if let Some(ref mut pending) = self.pending {
+                    pending.flags.action = pending.flags.action.next();
+                    self.config_dirty = true;
+                }
+                return Transition::Handled;
+            }
             _ => {
                 if let Some(flag) = flag_for_key(key.code) {
                     self.toggle_flag(flag);

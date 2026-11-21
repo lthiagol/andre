@@ -39,6 +39,7 @@ pub fn breadcrumb_label(id: &str) -> &str {
         "Status" => "Status",
         "Help" => "Help",
         "Confirm" => "Confirm",
+        "Profiles" => "Profiles",
         "Execute" => "Execute",
         "AdoptTargetSelect" => "Adopt",
         "AdoptFileSelect" => "Files",
@@ -141,7 +142,8 @@ fn left_chips(
         )]);
     }
 
-    let mut spans = vec![action_pill(colors, flags.action.as_str()), Span::raw(" ")];
+    let mut spans = action_pill(colors, flags.action.as_str());
+    spans.push(Span::raw(" "));
     spans.extend(verbose_chip(colors, icons, flags.verbosity, labels));
     spans.push(Span::raw(" ".repeat(GAP)));
     spans.push(Span::styled(DIVIDER, Style::default().fg(colors.border)));
@@ -152,12 +154,21 @@ fn left_chips(
     spans
 }
 
-/// The current action, lowercase, as a filled pill.
-fn action_pill(colors: &ThemeColors, action: &str) -> Span<'static> {
-    Span::styled(
-        format!(" {action} "),
-        Style::default().fg(colors.on_accent).bg(colors.accent),
-    )
+/// The current action, lowercase, as a filled pill. Its first `s` is the hotkey (`s` cycles
+/// the action), so that letter is bold and underlined.
+fn action_pill(colors: &ThemeColors, action: &str) -> Vec<Span<'static>> {
+    let style = Style::default().fg(colors.on_accent).bg(colors.accent);
+    let Some(at) = action.find('s') else {
+        return vec![Span::styled(format!(" {action} "), style)];
+    };
+    vec![
+        Span::styled(format!(" {}", &action[..at]), style),
+        Span::styled(
+            "s",
+            style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        ),
+        Span::styled(format!("{} ", &action[at + 1..]), style),
+    ]
 }
 
 /// Verbosity is a level, not a flag, so the chip has no mark. Its meter has one
@@ -386,9 +397,40 @@ mod tests {
             ..all_off()
         };
         let line = bar(&flags, &NERD, false, 76);
-        let pill = span(&line, " unstow ");
-        assert_eq!(pill.style.bg, Some(colors().accent));
-        assert_eq!(pill.style.fg, Some(colors().on_accent));
+        let pill: Vec<&Span> = line
+            .spans
+            .iter()
+            .filter(|s| s.style.bg == Some(colors().accent))
+            .collect();
+        let words: String = pill.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(words, " unstow ");
+        for part in pill {
+            assert_eq!(part.style.fg, Some(colors().on_accent));
+        }
+    }
+
+    #[test]
+    fn test_top_bar_action_pill_underlines_the_s_hotkey() {
+        for (action, before) in [
+            (StowAction::Stow, " "),
+            (StowAction::Restow, " re"),
+            (StowAction::Unstow, " un"),
+        ] {
+            let flags = StowFlags {
+                action,
+                ..all_off()
+            };
+            let line = bar(&flags, &NERD, false, 76);
+            let hotkey = span(&line, "s");
+            assert!(hotkey.style.add_modifier.contains(Modifier::UNDERLINED));
+            assert!(hotkey.style.add_modifier.contains(Modifier::BOLD));
+            let at = line
+                .spans
+                .iter()
+                .position(|s| std::ptr::eq(s, hotkey))
+                .unwrap();
+            assert_eq!(line.spans[at - 1].content, before);
+        }
     }
 
     #[test]

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
 
 use andre_core::{discover_packages, EngineKind, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -15,6 +14,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::components::help::HelpComponent;
+use crate::components::profiles::ProfilesComponent;
 use crate::components::settings::SettingsComponent;
 use crate::components::status::StatusComponent;
 use crate::components::stow::GroupSelectComponent;
@@ -27,12 +27,14 @@ use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, render_list_panel, ListView};
 use crate::ui::selection;
+use crate::ui::{display_path, plural};
 
-/// The seven rows of the main menu, in jump-digit order (`1`..`7`).
+/// The eight rows of the main menu, in jump-digit order (`1`..`8`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuItem {
+    Profiles,
     Stow,
-    Adopt,
+    NewPackage,
     Unstow,
     Status,
     Settings,
@@ -41,9 +43,10 @@ pub enum MenuItem {
 }
 
 impl MenuItem {
-    pub const ALL: [MenuItem; 7] = [
+    pub const ALL: [MenuItem; 8] = [
+        MenuItem::Profiles,
         MenuItem::Stow,
-        MenuItem::Adopt,
+        MenuItem::NewPackage,
         MenuItem::Unstow,
         MenuItem::Status,
         MenuItem::Settings,
@@ -51,23 +54,24 @@ impl MenuItem {
         MenuItem::Quit,
     ];
 
-    /// Row label. The first item names the current action (`stow packages`, `restow packages`).
-    pub fn label(self, action: &str) -> String {
+    pub fn label(self) -> &'static str {
         match self {
-            MenuItem::Stow => format!("{action} packages"),
-            MenuItem::Adopt => "adopt files".to_string(),
-            MenuItem::Unstow => "unstow".to_string(),
-            MenuItem::Status => "verify status".to_string(),
-            MenuItem::Settings => "settings".to_string(),
-            MenuItem::Help => "help".to_string(),
-            MenuItem::Quit => "quit".to_string(),
+            MenuItem::Profiles => "profiles",
+            MenuItem::Stow => "packages",
+            MenuItem::NewPackage => "new package",
+            MenuItem::Unstow => "unstow",
+            MenuItem::Status => "verify status",
+            MenuItem::Settings => "settings",
+            MenuItem::Help => "help",
+            MenuItem::Quit => "quit",
         }
     }
 
     fn icon(self, icons: &Icons) -> &'static str {
         match self {
+            MenuItem::Profiles => icons.menu_profiles,
             MenuItem::Stow => icons.link,
-            MenuItem::Adopt => icons.import,
+            MenuItem::NewPackage => icons.menu_new_package,
             MenuItem::Unstow => icons.unlink,
             MenuItem::Status => icons.check,
             MenuItem::Settings => icons.gear,
@@ -78,8 +82,11 @@ impl MenuItem {
 
     fn description(self) -> &'static str {
         match self {
+            MenuItem::Profiles => {
+                "Named sets of packages. Pick one and run the current action on all of it."
+            }
             MenuItem::Stow => "Pick groups and packages, then run the current action.",
-            MenuItem::Adopt => "Import files that already sit in a target into a package.",
+            MenuItem::NewPackage => "Create a package from files that already sit in a target.",
             MenuItem::Unstow => "Remove symlinks from a target, one link at a time.",
             MenuItem::Status => "Check every package's links against its source tree.",
             MenuItem::Settings => "Edit the config file, groups, theme, icons and stow options.",
@@ -126,9 +133,9 @@ impl Component for MainMenuComponent {
         } else if key.code == KeyCode::Enter {
             return Self::activate(MenuItem::ALL[self.list.cursor]);
         } else if let KeyCode::Char(c) = key.code {
-            // Unmodified digit keys 1..=7 jump to and activate the Nth menu
-            // item, matching the labels rendered in `render`. '0' and '8'..='9'
-            // are out of range and ignored so they cannot crash input.
+            // Unmodified digit keys 1..=8 jump to and activate the Nth menu
+            // item, matching the labels rendered in `render`. '0' and '9' are
+            // out of range and ignored so they cannot crash input.
             if key.modifiers.is_empty() {
                 if let Some(d) = c.to_digit(10) {
                     if (1..=items_len as u32).contains(&d) {
@@ -160,7 +167,6 @@ impl Component for MainMenuComponent {
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
         let icons = Icons::for_set(ctx.core.icons);
-        let action = ctx.core.flags.action.as_str();
         let selected = MenuItem::ALL[self.list.cursor];
         let rects = screen_rects(area, Shape::TwoPane);
 
@@ -168,28 +174,12 @@ impl Component for MainMenuComponent {
         let rows: Vec<Line> = MenuItem::ALL
             .iter()
             .enumerate()
-            .map(|(i, item)| {
-                list_row(
-                    *item,
-                    i,
-                    i == self.list.cursor,
-                    action,
-                    icons,
-                    &colors,
-                    width,
-                )
-            })
+            .map(|(i, item)| list_row(*item, i, i == self.list.cursor, icons, &colors, width))
             .collect();
         render_list_panel(
             frame, rects.list, &colors, "actions", rows, &self.list, None,
         );
-        render_detail(
-            frame,
-            rects.detail,
-            &colors,
-            &selected.label(action),
-            &self.detail,
-        );
+        render_detail(frame, rects.detail, &colors, selected.label(), &self.detail);
     }
 }
 
@@ -205,7 +195,6 @@ impl MainMenuComponent {
         let mut hasher = DefaultHasher::new();
         self.list.cursor.hash(&mut hasher);
         ctx.status_cache.borrow().generation().hash(&mut hasher);
-        ctx.core.flags.action.as_str().hash(&mut hasher);
         ctx.core.theme.name().hash(&mut hasher);
         engine_label(ctx.core.config.effective_engine()).hash(&mut hasher);
         ctx.config_path.hash(&mut hasher);
@@ -214,6 +203,11 @@ impl MainMenuComponent {
             group.source.hash(&mut hasher);
             group.target.hash(&mut hasher);
         }
+        for profile in ctx.core.profiles.iter() {
+            profile.name.hash(&mut hasher);
+            profile.includes.hash(&mut hasher);
+            profile.packages.hash(&mut hasher);
+        }
         hasher.finish()
     }
 
@@ -221,8 +215,9 @@ impl MainMenuComponent {
     /// same transition table.
     fn activate(item: MenuItem) -> Transition {
         match item {
+            MenuItem::Profiles => Transition::Push(Box::new(ProfilesComponent::default())),
             MenuItem::Stow => Transition::Push(Box::new(GroupSelectComponent::default())),
-            MenuItem::Adopt => Transition::Push(Box::new(TargetSelectComponent::adopt())),
+            MenuItem::NewPackage => Transition::Push(Box::new(TargetSelectComponent::adopt())),
             MenuItem::Unstow => Transition::Push(Box::new(TargetSelectComponent::unstow())),
             MenuItem::Status => Transition::Push(Box::new(StatusComponent::default())),
             MenuItem::Settings => Transition::Push(Box::new(SettingsComponent::default())),
@@ -238,12 +233,11 @@ fn list_row(
     item: MenuItem,
     index: usize,
     selected: bool,
-    action: &str,
     icons: &Icons,
     colors: &ThemeColors,
     width: u16,
 ) -> Line<'static> {
-    let label = item.label(action);
+    let label = item.label();
     let label_style = if selected {
         Style::default()
             .fg(colors.text)
@@ -354,6 +348,22 @@ fn targets(ctx: &AppContext) -> String {
 fn build_detail(item: MenuItem, ctx: &AppContext) -> Detail {
     let colors = ThemeColors::from_theme(ctx.core.theme);
     let facts: Vec<(&'static str, String)> = match item {
+        MenuItem::Profiles => {
+            let t = tally(ctx);
+            vec![
+                ("profiles", ctx.core.profiles.iter().count().to_string()),
+                (
+                    "packages",
+                    format!(
+                        "{} in {} {}",
+                        t.packages,
+                        t.groups,
+                        plural(t.groups, "group", "groups")
+                    ),
+                ),
+                ("stowed", t.stowed_text()),
+            ]
+        }
         MenuItem::Stow | MenuItem::Status => {
             let t = tally(ctx);
             let mut facts = Vec::new();
@@ -364,7 +374,7 @@ fn build_detail(item: MenuItem, ctx: &AppContext) -> Detail {
             facts.push(("stowed", t.stowed_text()));
             facts
         }
-        MenuItem::Adopt => vec![
+        MenuItem::NewPackage => vec![
             ("groups", ctx.core.config.groups.len().to_string()),
             ("targets", targets(ctx)),
         ],
@@ -379,7 +389,7 @@ fn build_detail(item: MenuItem, ctx: &AppContext) -> Detail {
         ],
         MenuItem::Help => vec![(
             "keys",
-            "\u{2191}\u{2193} move, 1\u{2013}7 jump, Enter open, q quit".to_string(),
+            "\u{2191}\u{2193} move, 1\u{2013}8 jump, Enter open, q quit".to_string(),
         )],
         MenuItem::Quit => Vec::new(),
     };
@@ -403,20 +413,10 @@ fn engine_label(kind: EngineKind) -> &'static str {
     }
 }
 
-/// `path` with the home directory shown as `~`.
-fn display_path(path: &Path, home: &Path) -> String {
-    match path.strip_prefix(home) {
-        Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
-        Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => path.display().to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use andre_core::config::Config;
-    use andre_core::StowAction;
 
     /// A context whose only group `home` lives under a temp dir, holding `packages`.
     /// The temp dir is returned so it outlives the test body.
@@ -469,13 +469,56 @@ mod tests {
     }
 
     #[test]
-    fn test_first_item_names_the_current_action() {
-        assert_eq!(MenuItem::Stow.label("stow"), "stow packages");
-        assert_eq!(MenuItem::Stow.label("restow"), "restow packages");
-        assert_eq!(MenuItem::Stow.label("unstow"), "unstow packages");
-        assert_eq!(MenuItem::Adopt.label("stow"), "adopt files");
-        assert_eq!(MenuItem::Status.label("stow"), "verify status");
-        assert_eq!(MenuItem::Settings.label("stow"), "settings");
+    fn test_menu_items_are_labelled_in_digit_order() {
+        let labels: Vec<&str> = MenuItem::ALL.iter().map(|item| item.label()).collect();
+        assert_eq!(
+            labels,
+            [
+                "profiles",
+                "packages",
+                "new package",
+                "unstow",
+                "verify status",
+                "settings",
+                "help",
+                "quit",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_profiles_facts_count_profiles_packages_and_stowed() {
+        let (_dir, mut ctx) = fixture(&["bash", "nvim"]);
+        let detail = detail_of(MenuItem::Profiles, &mut ctx);
+        assert_eq!(fact(&detail, "profiles"), "0");
+        assert_eq!(fact(&detail, "packages"), "2 in 1 group");
+        assert_eq!(fact(&detail, "stowed"), "\u{2013}");
+
+        let dir = ctx.config_dir.join("profiles");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("base.yml"), "packages: [home/bash]\n").unwrap();
+        ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
+        let detail = detail_of(MenuItem::Profiles, &mut ctx);
+        assert_eq!(fact(&detail, "profiles"), "1");
+    }
+
+    #[test]
+    fn test_profile_change_rebuilds_the_profiles_facts() {
+        let (_dir, mut ctx) = fixture(&["bash"]);
+        let mut menu = MainMenuComponent::default();
+        menu.list.cursor = 0;
+        menu.update(&mut ctx);
+        let before = menu.detail_key;
+
+        let dir = ctx.config_dir.join("profiles");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("base.yml"), "packages: [home/bash]\n").unwrap();
+        ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
+        menu.update(&mut ctx);
+        assert_ne!(
+            menu.detail_key, before,
+            "the profile set is part of the key"
+        );
     }
 
     #[test]
@@ -505,11 +548,11 @@ mod tests {
     }
 
     #[test]
-    fn test_adopt_and_unstow_list_the_targets_relative_to_home() {
+    fn test_new_package_and_unstow_list_the_targets_relative_to_home() {
         let (_dir, mut ctx) = fixture(&["bash"]);
-        let adopt = detail_of(MenuItem::Adopt, &mut ctx);
-        assert_eq!(fact(&adopt, "groups"), "1");
-        assert_eq!(fact(&adopt, "targets"), "~");
+        let new_package = detail_of(MenuItem::NewPackage, &mut ctx);
+        assert_eq!(fact(&new_package, "groups"), "1");
+        assert_eq!(fact(&new_package, "targets"), "~");
 
         let unstow = detail_of(MenuItem::Unstow, &mut ctx);
         assert_eq!(fact(&unstow, "targets"), "~");
@@ -536,6 +579,7 @@ mod tests {
     fn test_help_shows_a_key_reminder_and_quit_has_no_facts() {
         let (_dir, mut ctx) = fixture(&[]);
         let help = detail_of(MenuItem::Help, &mut ctx);
+        assert!(fact(&help, "keys").contains("1\u{2013}8 jump"));
         assert!(fact(&help, "keys").contains("Enter open"));
         let quit = detail_of(MenuItem::Quit, &mut ctx);
         assert!(quit.facts.is_empty());
@@ -556,29 +600,6 @@ mod tests {
         menu.list.cursor = 1;
         menu.update(&mut ctx);
         assert_ne!(menu.detail_key, first, "selection is part of the key");
-        assert_eq!(headline(menu.detail()), MenuItem::Adopt.description());
-    }
-
-    #[test]
-    fn test_action_change_relabels_and_rebuilds_the_first_item() {
-        let (_dir, mut ctx) = fixture(&["bash"]);
-        let mut menu = MainMenuComponent::default();
-        menu.update(&mut ctx);
-        let before = menu.detail_key;
-
-        ctx.core.flags.action = StowAction::Restow;
-        menu.update(&mut ctx);
-        assert_ne!(menu.detail_key, before, "the action is part of the key");
-    }
-
-    #[test]
-    fn test_display_path_uses_tilde_only_under_home() {
-        let home = Path::new("/home/me");
-        assert_eq!(display_path(Path::new("/home/me"), home), "~");
-        assert_eq!(
-            display_path(Path::new("/home/me/.config"), home),
-            "~/.config"
-        );
-        assert_eq!(display_path(Path::new("/etc/andre"), home), "/etc/andre");
+        assert_eq!(headline(menu.detail()), MenuItem::Stow.description());
     }
 }

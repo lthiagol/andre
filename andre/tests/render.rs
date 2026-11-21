@@ -12,7 +12,7 @@ use andre::ui::status_style::{status_color, status_word};
 use andre_core::{IconSet, StowAction, StowStatus, Theme};
 
 mod helpers;
-use helpers::{make_empty_app, make_test_app};
+use helpers::{esc_key, key_char, make_empty_app, make_test_app};
 
 fn render_app(app: &mut App, width: u16, height: u16) -> Buffer {
     app.set_terminal_size(width, height);
@@ -102,6 +102,9 @@ fn push_screen(app: &mut App, name: &str) {
         "GroupSelect" => app.component_stack.push(Box::new(
             andre::components::stow::GroupSelectComponent::default(),
         )),
+        "Profiles" => app.component_stack.push(Box::new(
+            andre::components::profiles::ProfilesComponent::default(),
+        )),
         "PackageSelect" => {
             // Skip the one-second scanning splash so the package rows are drawn.
             let mut packages =
@@ -159,6 +162,7 @@ fn push_screen(app: &mut App, name: &str) {
 fn screen_names() -> Vec<&'static str> {
     vec![
         "MainMenu",
+        "Profiles",
         "GroupSelect",
         "Settings",
         "Status",
@@ -751,7 +755,8 @@ fn test_footer_narrow_area_shows_screen_hints() {
     let colors = ThemeColors::from_theme(Theme::Default);
     terminal
         .draw(|f| {
-            andre::ui::render_footer(f, Rect::new(0, 0, 40, 2), &colors, "MainMenu", "default");
+            let hints = andre::ui::footer::screen_hints("MainMenu");
+            andre::ui::render_footer(f, Rect::new(0, 0, 40, 2), &colors, &hints, "default");
         })
         .unwrap();
     let buf = terminal.backend().buffer().clone();
@@ -801,14 +806,14 @@ fn test_footer_context_hints_per_screen_family() {
         );
     }
 
-    // MainMenu advertises 1–7 jump alongside the arrows + Enter.
+    // MainMenu advertises 1–8 jump alongside the arrows + Enter.
     // Guarded separately so the digit-key feature is observable from
     // rendered output, not just dispatch logic.
     let (mut app, _tmp) = make_test_app();
     let buf = render_app(&mut app, 120, 24);
     assert!(
-        line_contains(&buf, "jump"),
-        "MainMenu footer must advertise the 1–7 jump hint"
+        line_contains(&buf, "1–8 jump"),
+        "MainMenu footer must advertise the 1–8 jump hint"
     );
 }
 
@@ -1447,11 +1452,11 @@ fn test_detail_facts_are_built_in_update_not_render() {
 #[test]
 fn test_detail_panel_describes_the_selected_item() {
     let (mut app, _tmp) = make_test_app();
-    menu_mut(&mut app).list.cursor = 1;
+    menu_mut(&mut app).list.cursor = 2;
     let buf = render_updated(&mut app, 80, 24);
     assert!(
-        line_contains(&buf, "Import files"),
-        "adopt description missing"
+        line_contains(&buf, "Create a package"),
+        "new package description missing"
     );
     assert!(
         row_containing(&buf, "targets")
@@ -1466,9 +1471,9 @@ fn test_detail_text_is_inset_from_the_panel_border() {
     let (mut app, _tmp) = make_test_app();
     let buf = render_updated(&mut app, 80, 24);
     let y = (0..buf.area().height)
-        .find(|&y| row_text(&buf, y).contains("Pick groups"))
-        .expect("stow description missing from the detail panel");
-    let x = column_of(&buf, y, "Pick groups").expect("description column");
+        .find(|&y| row_text(&buf, y).contains("Named sets"))
+        .expect("profiles description missing from the detail panel");
+    let x = column_of(&buf, y, "Named sets").expect("description column");
     assert_eq!(
         buf[(x - 2, y)].symbol(),
         "\u{2502}",
@@ -2354,6 +2359,7 @@ fn test_package_detail_needs_two_columns_of_room() {
 fn test_touched_screens_render_at_120x40_and_200x50_without_panic() {
     let screens = [
         "MainMenu",
+        "Profiles",
         "GroupSelect",
         "Settings",
         "Status",
@@ -2377,5 +2383,288 @@ fn test_touched_screens_render_at_120x40_and_200x50_without_panic() {
                 "{name} at {width}x{height}: footer missing"
             );
         }
+    }
+}
+
+/// An app whose config folder holds `profiles`, as `(name, yaml)` pairs. Besides the test
+/// package `home/test`, the group has `home/shell`.
+fn make_profiles_app(profiles: &[(&str, &str)]) -> (App, tempfile::TempDir) {
+    let (mut app, tmp) = make_test_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    std::fs::create_dir_all(tmp.path().join("dotfiles/home/shell")).unwrap();
+    let dir = tmp.path().join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, yaml) in profiles {
+        std::fs::write(dir.join(format!("{name}.yml")), yaml).unwrap();
+    }
+    app.ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
+    (app, tmp)
+}
+
+/// The profiles screen, opened from the menu with its rows built.
+fn open_profiles_render(app: &mut App) {
+    app.component_dispatch(key_char('1'));
+    app.update_components();
+}
+
+#[test]
+fn test_main_menu_lists_the_eight_items_at_80x24() {
+    let (mut app, _tmp) = make_test_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    let buf = render_updated(&mut app, 80, 24);
+    for (digit, label) in [
+        ("1", "profiles"),
+        ("2", "packages"),
+        ("3", "new package"),
+        ("4", "unstow"),
+        ("5", "verify status"),
+        ("6", "settings"),
+        ("7", "help"),
+        ("8", "quit"),
+    ] {
+        // Two spaces after the glyph tell the item row from the detail title.
+        let row =
+            row_containing(&buf, &format!("  {label}")).unwrap_or_else(|| panic!("no {label} row"));
+        assert!(
+            row.contains(&format!(" {digit} \u{2502}")),
+            "{label} is not numbered {digit}: {row}"
+        );
+    }
+}
+
+#[test]
+fn test_profiles_list_shows_the_profiles_with_their_counts() {
+    let (mut app, _tmp) = make_profiles_app(&[
+        (
+            "base",
+            "description: Shared by every machine\npackages: [home/test]\n",
+        ),
+        (
+            "agent-work",
+            "description: Work servers that run agents\nincludes: [base]\npackages: [home/shell]\n",
+        ),
+    ]);
+    open_profiles_render(&mut app);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "profiles 2"),
+        "list title counts the profiles"
+    );
+    assert!(
+        row_containing(&buf, "\u{25c8} agent-work").is_some(),
+        "agent-work row"
+    );
+    assert!(row_containing(&buf, "\u{25c8} base").is_some(), "base row");
+    assert!(
+        line_contains(&buf, "Work servers that run agents"),
+        "description headline"
+    );
+    assert!(line_contains(&buf, "includes  base"), "includes fact");
+    assert!(
+        line_contains(&buf, "2  (1 own, 1 via base)"),
+        "packages fact splits own from included"
+    );
+    assert!(
+        line_contains(&buf, "via base"),
+        "included package says where it comes from"
+    );
+}
+
+#[test]
+fn test_profiles_empty_state_explains_itself_and_offers_a_new_profile() {
+    let (mut app, _tmp) = make_profiles_app(&[]);
+    open_profiles_render(&mut app);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "no profiles yet"));
+    assert!(line_contains(&buf, "+ new profile"));
+    assert!(line_contains(&buf, "A profile is a named set of packages"));
+    assert!(line_contains(&buf, "Profiles can include other profiles."));
+}
+
+#[test]
+fn test_profiles_footer_names_the_live_action_and_the_list_keys() {
+    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [home/test]\n")]);
+    open_profiles_render(&mut app);
+    let buf = render_updated(&mut app, 80, 24);
+    let footer = footer_row(&buf);
+    assert!(
+        footer.contains("Enter stow  + new  r rename  x delete  Esc back"),
+        "{footer}"
+    );
+    assert!(footer.contains("q quit"), "{footer}");
+
+    app.ctx.core.flags.action = StowAction::Restow;
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        footer_row(&buf).contains("Enter restow  + new"),
+        "{}",
+        footer_row(&buf)
+    );
+}
+
+#[test]
+fn test_empty_profiles_footer_offers_only_new_and_back() {
+    let (mut app, _tmp) = make_profiles_app(&[]);
+    open_profiles_render(&mut app);
+    let buf = render_updated(&mut app, 80, 24);
+    let footer = footer_row(&buf);
+    assert!(footer.contains("+ new  Esc back"), "{footer}");
+    assert!(!footer.contains("Enter"), "nothing to run: {footer}");
+    assert!(!footer.contains("rename"), "nothing to rename: {footer}");
+    assert!(!footer.contains("delete"), "nothing to delete: {footer}");
+}
+
+#[test]
+fn test_profile_dialog_footers_say_what_enter_and_y_do() {
+    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [home/test]\n")]);
+    open_profiles_render(&mut app);
+    app.component_dispatch(key_char('+'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        footer_row(&buf).contains("Enter create  Esc cancel"),
+        "{}",
+        footer_row(&buf)
+    );
+
+    app.component_dispatch(esc_key());
+    app.component_dispatch(key_char('x'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        footer_row(&buf).contains("y delete  n keep"),
+        "{}",
+        footer_row(&buf)
+    );
+}
+
+#[test]
+fn test_profile_that_does_not_resolve_has_no_enter_hint() {
+    let (mut app, _tmp) =
+        make_profiles_app(&[("agent", "includes: [ghost]\npackages: [home/test]\n")]);
+    open_profiles_render(&mut app);
+    let buf = render_updated(&mut app, 80, 24);
+    let footer = footer_row(&buf);
+    assert!(
+        footer.contains("+ new  r rename  x delete  Esc back"),
+        "{footer}"
+    );
+    assert!(!footer.contains("Enter"), "{footer}");
+}
+
+#[test]
+fn test_new_profile_dialog_offers_create_only_for_a_valid_name() {
+    let (mut app, _tmp) = make_profiles_app(&[]);
+    open_profiles_render(&mut app);
+    app.component_dispatch(key_char('+'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "[ Esc cancel ]"));
+    assert!(
+        !line_contains(&buf, "[ Enter create ]"),
+        "no create button for an empty name"
+    );
+
+    for c in "laptop".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "[ Enter create ]"));
+}
+
+#[test]
+fn test_new_profile_dialog_says_when_the_name_is_taken() {
+    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [home/test]\n")]);
+    open_profiles_render(&mut app);
+    app.component_dispatch(key_char('+'));
+    for c in "base".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "already exists"));
+    assert!(!line_contains(&buf, "[ Enter create ]"));
+}
+
+#[test]
+fn test_delete_dialog_names_the_includers_and_always_offers_delete() {
+    let (mut app, _tmp) = make_profiles_app(&[
+        ("base", "packages: [home/test]\n"),
+        ("agent", "includes: [base]\n"),
+    ]);
+    open_profiles_render(&mut app);
+    // `agent` sorts before `base`. Nothing includes `agent`.
+    app.component_dispatch(key_char('x'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "Delete profile `agent`?"));
+    assert!(line_contains(&buf, "[ y delete ]"));
+    assert!(!line_contains(&buf, "included by"));
+
+    // `base` is included by `agent`: the dialog says the include goes with it.
+    app.component_dispatch(key_char('n'));
+    app.component_dispatch(key_char('j'));
+    app.component_dispatch(key_char('x'));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "Delete profile `base`?"));
+    assert!(line_contains(&buf, "It is included by: agent."));
+    assert!(line_contains(&buf, "Those includes are removed too."));
+    assert!(line_contains(&buf, "[ y delete ]"));
+}
+
+#[test]
+fn test_new_profile_dialog_puts_the_rule_under_the_name_value() {
+    let (mut app, _tmp) = make_profiles_app(&[]);
+    open_profiles_render(&mut app);
+    app.component_dispatch(key_char('+'));
+    for c in "laptop".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    let buf = render_updated(&mut app, 80, 24);
+    let rows: Vec<String> = (0..buf.area().height).map(|y| row_text(&buf, y)).collect();
+    let name = (0..buf.area().height)
+        .find(|&y| row_text(&buf, y).contains("name  laptop"))
+        .expect("name row");
+    let value = column_of(&buf, name, "laptop");
+    assert_eq!(
+        column_of(&buf, name + 1, "a-z 0-9"),
+        value,
+        "the rule starts under the value: {:?}",
+        rows[name as usize + 1]
+    );
+    let blank = &rows[name as usize + 2];
+    assert!(
+        !blank.contains("a-z") && !blank.contains("laptop"),
+        "a blank row separates the rule from the buttons: {blank:?}"
+    );
+    let buttons = &rows[name as usize + 3];
+    assert!(
+        buttons.contains("[ Enter create ]"),
+        "the buttons follow the blank row: {buttons:?}"
+    );
+}
+
+#[test]
+fn test_profile_with_an_unknown_include_shows_the_error_as_its_headline() {
+    let (mut app, _tmp) =
+        make_profiles_app(&[("agent", "includes: [ghost]\npackages: [home/test]\n")]);
+    open_profiles_render(&mut app);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "includes unknown"),
+        "the resolution error is the headline"
+    );
+}
+
+#[test]
+fn test_profiles_render_at_120x40_and_200x50_with_a_dialog_open() {
+    let (mut app, _tmp) = make_profiles_app(&[("base", "packages: [home/test]\n")]);
+    open_profiles_render(&mut app);
+    app.component_dispatch(key_char('x'));
+    for (width, height) in [(120, 40), (200, 50)] {
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            row_containing(&buf, "q quit").is_some(),
+            "footer at {width}x{height}"
+        );
+        assert!(
+            line_contains(&buf, "Delete profile `base`?"),
+            "dialog at {width}x{height}"
+        );
     }
 }

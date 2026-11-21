@@ -18,11 +18,11 @@ const GAP: usize = 2;
 const HINT_GAP: usize = 2;
 
 /// Priorities for [`Hint::prio`]. When the row is too narrow the lowest go first.
-const PRIO_NAV: u8 = 1;
-const PRIO_BACK: u8 = 2;
-const PRIO_JUMP: u8 = 2;
-const PRIO_VERB: u8 = 3;
-const PRIO_PRIMARY: u8 = 4;
+pub const PRIO_NAV: u8 = 1;
+pub const PRIO_BACK: u8 = 2;
+pub const PRIO_JUMP: u8 = 2;
+pub const PRIO_VERB: u8 = 3;
+pub const PRIO_PRIMARY: u8 = 4;
 
 /// One key hint on the footer: the key as shown, what it does, and how much it matters
 /// when the row is narrow. The footer drops the lowest-priority hints whole, never a
@@ -37,10 +37,10 @@ pub struct Hint {
 }
 
 impl Hint {
-    fn new(key: &'static str, label: &'static str, prio: u8) -> Self {
+    pub fn new(key: &'static str, label: impl Into<Cow<'static, str>>, prio: u8) -> Self {
         Self {
             key: Cow::Borrowed(key),
-            label: Cow::Borrowed(label),
+            label: label.into(),
             prio,
         }
     }
@@ -98,13 +98,13 @@ pub fn render_footer(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
-    screen_id: &str,
+    hints: &[Hint],
     theme_name: &str,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let line = footer_line(colors, screen_id, theme_name, area.width as usize);
+    let line = footer_line(colors, hints, theme_name, area.width as usize);
     frame.render_widget(
         Paragraph::new(line).style(Style::default().fg(colors.text_dim)),
         area,
@@ -117,13 +117,12 @@ pub fn render_footer(
 /// whole. `q quit` is always kept.
 pub fn footer_line(
     colors: &ThemeColors,
-    screen_id: &str,
+    hints: &[Hint],
     theme_name: &str,
     width: usize,
 ) -> Line<'static> {
-    let hints = screen_hints(screen_id);
     let quit = quit_spans(colors);
-    let hints_len = hints_width(&hints);
+    let hints_len = hints_width(hints);
 
     for theme in [
         theme_chip(colors, Some(theme_name)),
@@ -134,12 +133,12 @@ pub fn footer_line(
             let mut right = theme;
             right.push(Span::raw(" ".repeat(GAP)));
             right.extend(quit);
-            return join(hint_spans(&hints, colors), right, width);
+            return join(hint_spans(hints, colors), right, width);
         }
     }
 
     let room = width.saturating_sub(GAP + spans_width(&quit));
-    let kept = fit(hints, room);
+    let kept = fit(hints.to_vec(), room);
     join(hint_spans(&kept, colors), quit, width)
 }
 
@@ -197,7 +196,7 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
     match screen_id {
         "MainMenu" => vec![
             arrows("navigate"),
-            Hint::new("1\u{2013}7", "jump", PRIO_JUMP),
+            Hint::new("1\u{2013}8", "jump", PRIO_JUMP),
             enter("select"),
         ],
         "GroupSelect" | "PackageSelect" => vec![
@@ -236,9 +235,44 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
     }
 }
 
+/// Hints for the profiles list. `run` is the live action that Enter runs on the selected
+/// profile, or `None` when Enter is off. `r` and `x` need a selected profile.
+pub fn profiles_hints(run: Option<&'static str>, selected: bool) -> Vec<Hint> {
+    let mut hints = Vec::new();
+    if let Some(action) = run {
+        hints.push(Hint::new("Enter", action, PRIO_PRIMARY));
+    }
+    hints.push(Hint::new("+", "new", PRIO_VERB));
+    if selected {
+        hints.push(Hint::new("r", "rename", PRIO_VERB));
+        hints.push(Hint::new("x", "delete", PRIO_VERB));
+    }
+    hints.push(Hint::new("Esc", "back", PRIO_BACK));
+    hints
+}
+
+/// Hints for the new and rename dialogs. `verb` is what Enter does: `create` or `rename`.
+pub fn name_dialog_hints(verb: &'static str) -> Vec<Hint> {
+    vec![
+        Hint::new("Enter", verb, PRIO_PRIMARY),
+        Hint::new("Esc", "cancel", PRIO_BACK),
+    ]
+}
+
+/// Hints for the delete dialog.
+pub fn delete_dialog_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("y", "delete", PRIO_PRIMARY),
+        Hint::new("n", "keep", PRIO_BACK),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{fit, footer_line, hint_spans, hints_width as hint_row_width, screen_hints, Hint};
+    use super::{
+        delete_dialog_hints, fit, footer_line, hint_spans, hints_width as hint_row_width,
+        name_dialog_hints, profiles_hints, screen_hints, Hint,
+    };
     use crate::theme::ThemeColors;
     use andre_core::Theme;
     use ratatui::{
@@ -326,7 +360,7 @@ mod tests {
         let hints = hint_text(&screen_hints("MainMenu"));
         assert_eq!(
             hints,
-            "\u{2191}\u{2193} navigate  1\u{2013}7 jump  Enter select"
+            "\u{2191}\u{2193} navigate  1\u{2013}8 jump  Enter select"
         );
     }
 
@@ -372,7 +406,7 @@ mod tests {
         for theme in Theme::ALL {
             let line = footer_line(
                 &ThemeColors::from_theme(theme),
-                "MainMenu",
+                &screen_hints("MainMenu"),
                 theme.name(),
                 INNER_WIDTH,
             );
@@ -389,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_theme_chip_colours_are_pinned() {
-        let line = footer_line(&colors(), "MainMenu", "nord", INNER_WIDTH);
+        let line = footer_line(&colors(), &screen_hints("MainMenu"), "nord", INNER_WIDTH);
         let t = span(&line, "t");
         assert_eq!(t.style.fg, Some(colors().key));
         assert!(t.style.add_modifier.contains(Modifier::BOLD));
@@ -399,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_quit_key_is_key_and_label_is_text_dim() {
-        let line = footer_line(&colors(), "MainMenu", "nord", INNER_WIDTH);
+        let line = footer_line(&colors(), &screen_hints("MainMenu"), "nord", INNER_WIDTH);
         assert_eq!(span(&line, "q").style.fg, Some(colors().key));
         assert_eq!(span(&line, " quit").style.fg, Some(colors().text_dim));
     }
@@ -410,13 +444,13 @@ mod tests {
         let width = full_chip_width(screen, Theme::CatppuccinMacchiato);
         let line = footer_line(
             &ThemeColors::from_theme(Theme::CatppuccinMacchiato),
-            screen,
+            &screen_hints(screen),
             "catppuccin-macchiato",
             width,
         );
         assert_eq!(
             line_text(&line),
-            "\u{2191}\u{2193} navigate  1\u{2013}7 jump  Enter select  theme catppuccin-macchiato  q quit"
+            "\u{2191}\u{2193} navigate  1\u{2013}8 jump  Enter select  theme catppuccin-macchiato  q quit"
         );
     }
 
@@ -430,7 +464,7 @@ mod tests {
         assert!(full_chip_width(screen, theme) > INNER_WIDTH);
         assert!(stub_chip_width(screen) <= INNER_WIDTH);
 
-        let line = footer_line(&colors, screen, theme.name(), INNER_WIDTH);
+        let line = footer_line(&colors, &screen_hints(screen), theme.name(), INNER_WIDTH);
         let t = line_text(&line);
         assert!(t.contains("theme"), "word stub expected: {t:?}");
         assert!(!t.contains("catppuccin"), "name must be dropped: {t:?}");
@@ -441,14 +475,14 @@ mod tests {
         // column less drops it.
         let wide = footer_line(
             &colors,
-            screen,
+            &screen_hints(screen),
             theme.name(),
             full_chip_width(screen, theme),
         );
         assert!(line_text(&wide).contains("theme catppuccin-macchiato"));
         let short = footer_line(
             &colors,
-            screen,
+            &screen_hints(screen),
             theme.name(),
             full_chip_width(screen, theme) - 1,
         );
@@ -468,7 +502,7 @@ mod tests {
         for theme in Theme::ALL {
             let line = footer_line(
                 &ThemeColors::from_theme(theme),
-                longest,
+                &screen_hints(longest),
                 theme.name(),
                 INNER_WIDTH,
             );
@@ -489,7 +523,7 @@ mod tests {
             for theme in Theme::ALL {
                 let line = footer_line(
                     &ThemeColors::from_theme(theme),
-                    screen,
+                    &screen_hints(screen),
                     theme.name(),
                     INNER_WIDTH,
                 );
@@ -506,14 +540,19 @@ mod tests {
     #[test]
     fn test_footer_drops_hints_so_quit_is_still_shown_when_very_narrow() {
         for width in [0, 1, 5, 6, 8, 20, 30] {
-            let line = footer_line(&colors(), "AdoptFileSelect", "default", width);
+            let line = footer_line(
+                &colors(),
+                &screen_hints("AdoptFileSelect"),
+                "default",
+                width,
+            );
             assert!(
                 line_width(&line) <= width.max(6),
                 "width {width}: {:?}",
                 line_text(&line)
             );
         }
-        let line = footer_line(&colors(), "AdoptFileSelect", "default", 30);
+        let line = footer_line(&colors(), &screen_hints("AdoptFileSelect"), "default", 30);
         let t = line_text(&line);
         assert!(t.ends_with("q quit"), "{t:?}");
         assert_eq!(line_width(&line), 30);
@@ -524,7 +563,7 @@ mod tests {
     fn test_narrow_footer_drops_the_lowest_priority_hint_whole() {
         // At 60 columns the row has 52 columns for hints after `q quit`. `navigate` is the
         // lowest priority and is dropped whole; the rest keep their order and wording.
-        let line = footer_line(&colors(), "AdoptFileSelect", "default", 60);
+        let line = footer_line(&colors(), &screen_hints("AdoptFileSelect"), "default", 60);
         let t = line_text(&line);
         assert!(
             t.starts_with("Space toggle  \u{2192} into  Enter confirm"),
@@ -572,6 +611,57 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_profiles_hints_name_the_live_action_and_drop_what_does_not_apply() {
+        assert_eq!(
+            hint_text(&profiles_hints(Some("stow"), true)),
+            "Enter stow  + new  r rename  x delete  Esc back"
+        );
+        assert_eq!(
+            hint_text(&profiles_hints(Some("unstow"), true)),
+            "Enter unstow  + new  r rename  x delete  Esc back"
+        );
+        // A profile that does not resolve: no Enter, but the profile can still be renamed.
+        assert_eq!(
+            hint_text(&profiles_hints(None, true)),
+            "+ new  r rename  x delete  Esc back"
+        );
+        // No profiles: nothing to run, rename or delete.
+        assert_eq!(hint_text(&profiles_hints(None, false)), "+ new  Esc back");
+    }
+
+    #[test]
+    fn test_dialog_hints_say_what_enter_and_y_do() {
+        assert_eq!(
+            hint_text(&name_dialog_hints("create")),
+            "Enter create  Esc cancel"
+        );
+        assert_eq!(
+            hint_text(&name_dialog_hints("rename")),
+            "Enter rename  Esc cancel"
+        );
+        assert_eq!(hint_text(&delete_dialog_hints()), "y delete  n keep");
+    }
+
+    #[test]
+    fn test_profiles_hints_fit_at_80_columns_with_quit() {
+        let profiles = [
+            profiles_hints(Some("restow"), true),
+            profiles_hints(None, false),
+            name_dialog_hints("create"),
+            delete_dialog_hints(),
+        ];
+        for hints in profiles {
+            let line = footer_line(&colors(), &hints, "catppuccin-macchiato", INNER_WIDTH);
+            assert!(
+                line_text(&line).ends_with("q quit"),
+                "{:?}",
+                line_text(&line)
+            );
+            assert_eq!(line_width(&line), INNER_WIDTH);
         }
     }
 }

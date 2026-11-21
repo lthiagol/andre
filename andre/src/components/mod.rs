@@ -8,6 +8,7 @@ use ratatui::{layout::Rect, Frame};
 use andre_core::AppState as CoreState;
 
 use crate::status_cache::StatusCache;
+use crate::ui::footer::{screen_hints, Hint};
 
 /// Default how long a toast stays visible.
 pub const TOAST_TTL: Duration = Duration::from_secs(3);
@@ -47,6 +48,7 @@ pub mod confirm;
 pub mod execute;
 pub mod help;
 pub mod menu;
+pub mod profiles;
 pub mod settings;
 pub mod status;
 pub mod stow;
@@ -216,6 +218,13 @@ pub trait Component {
     /// Components with text input or modal popups should override this.
     fn input_mode(&self) -> InputMode {
         InputMode::Normal
+    }
+
+    /// The key hints the footer shows while this screen is on top. Defaults to the fixed
+    /// hints for `id()`. A screen whose hints depend on its state or its open dialog
+    /// overrides this. It must not touch the disk: paint calls it.
+    fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
+        screen_hints(self.id())
     }
 
     /// Pre-render bookkeeping using the area the component will be painted

@@ -289,6 +289,26 @@ impl ProfileSet {
         self.transact(vec![Op::Remove(name.to_string())])
     }
 
+    /// Deletes a profile file and drops it from the includes of every profile that names
+    /// it. The includers and the deletion are one change. Returns the profiles rewritten.
+    pub fn delete_unlinking(&mut self, name: &str) -> Result<Vec<String>> {
+        if !self.profiles.contains_key(name) {
+            return Err(ProfileError::NotFound(name.to_string()).into());
+        }
+        let mut changed = Vec::new();
+        let mut ops = Vec::new();
+        for profile in self.profiles.values().filter(|p| p.name != name) {
+            if let Some(next) = drop_include(profile, name) {
+                changed.push(next.name.clone());
+                ops.push(Op::Write(next));
+            }
+        }
+        ops.push(Op::Remove(name.to_string()));
+
+        self.transact(ops)?;
+        Ok(changed)
+    }
+
     /// Renames a package ref in every profile. Returns the profiles that changed.
     pub fn rename_package(&mut self, old: &str, new: &str) -> Result<Vec<String>> {
         if split_package_ref(new).is_none() {
@@ -542,6 +562,16 @@ fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut file = fs::File::create(path)?;
     file.write_all(bytes)?;
     file.sync_all()
+}
+
+/// `profile` without its include of `name`, or `None` if it has none.
+fn drop_include(profile: &Profile, name: &str) -> Option<Profile> {
+    if !profile.includes.iter().any(|inc| inc == name) {
+        return None;
+    }
+    let mut next = profile.clone();
+    next.includes.retain(|inc| inc != name);
+    Some(next)
 }
 
 /// `profile` with every include of `old` replaced by `new`, or `None` if it has none.
@@ -1074,6 +1104,34 @@ mod tests {
             "profile 'base' is included by x, y; remove it from those profiles first"
         );
         assert!(dir.join("base.yml").exists());
+    }
+
+    #[test]
+    fn delete_unlinking_removes_the_file_and_its_includes() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("profiles");
+        let mut set = ProfileSet::new(dir.clone());
+        set.create(profile("base", &[], &["a/b"])).unwrap();
+        set.create(profile("x", &["base"], &["c/d"])).unwrap();
+        set.create(profile("y", &["base", "x"], &[])).unwrap();
+        set.create(profile("other", &[], &[])).unwrap();
+
+        let changed = set.delete_unlinking("base").unwrap();
+        assert_eq!(changed, ["x", "y"]);
+        assert!(!dir.join("base.yml").exists());
+        assert!(set.get("base").is_none());
+        assert!(set.get("x").unwrap().includes.is_empty());
+        assert_eq!(set.get("y").unwrap().includes, ["x"]);
+        assert!(set.get("other").unwrap().includes.is_empty());
+
+        let reloaded = load(&dir);
+        assert!(reloaded.get("base").is_none());
+        assert!(reloaded.get("x").unwrap().includes.is_empty());
+        assert_eq!(reloaded.get("y").unwrap().includes, ["x"]);
+        assert!(matches!(
+            set.delete_unlinking("base"),
+            Err(Error::Profile(ProfileError::NotFound(_)))
+        ));
     }
 
     #[test]

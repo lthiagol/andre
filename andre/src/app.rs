@@ -123,7 +123,7 @@ impl App {
         self.handle_global_key(key)
     }
 
-    /// Handle global keys (q, v, d, n, a, o, t). Returns true if handled.
+    /// Handle global keys (q, s, v, d, n, a, o, t). Returns true if handled.
     pub fn handle_global_key(&mut self, key: KeyEvent) -> bool {
         use crossterm::event::KeyCode;
         if let Some(flag) = flag_for_key(key.code) {
@@ -133,6 +133,10 @@ impl App {
         match key.code {
             KeyCode::Char('q') => {
                 self.quitting = true;
+                true
+            }
+            KeyCode::Char('s') => {
+                self.ctx.core.flags.action = self.ctx.core.flags.action.next();
                 true
             }
             KeyCode::Char('t') => {
