@@ -225,10 +225,11 @@ fn test_status_bar_shows_debug_chip_only_in_debug_mode() {
     );
 }
 
-/// Regression guard for the toggle colours: an ON toggle's icon is drawn in the
-/// success colour and an OFF toggle's icon in muted, so the state reads at a glance.
+/// Regression guard for the mark colours: an ON chip's mark is drawn in the
+/// success colour and an OFF chip's mark in the error colour, so the state reads
+/// at a glance.
 #[test]
-fn test_top_bar_toggle_icons_distinguish_on_from_off() {
+fn test_top_bar_marks_are_green_when_on_and_red_when_off() {
     let (mut app, _) = make_test_app();
     let colors = ThemeColors::from_theme(Theme::Default);
     let buf_off = render_app(&mut app, 140, 24);
@@ -237,15 +238,75 @@ fn test_top_bar_toggle_icons_distinguish_on_from_off() {
     let buf_on = render_app(&mut app, 140, 24);
 
     assert_eq!(
-        first_glyph_color(&buf_on, NERD.toggle_on),
+        first_glyph_color(&buf_on, NERD.flag_on),
         Some(colors.success),
-        "an ON toggle icon must use the success colour"
+        "an ON mark must use the success colour"
     );
     assert_eq!(
-        first_glyph_color(&buf_off, NERD.toggle_off),
-        Some(colors.muted),
-        "an OFF toggle icon must use the muted colour"
+        first_glyph_color(&buf_off, NERD.flag_off),
+        Some(colors.error),
+        "an OFF mark must use the error colour"
     );
+}
+
+/// Mixed marks in one row, located by column: each mark sits two columns left
+/// of its label (`<mark> <label>`), and the action pill is filled with `primary`.
+#[test]
+fn test_top_bar_marks_sit_beside_their_labels_by_column() {
+    let (mut app, _) = make_test_app();
+    app.ctx.core.flags.dry_run = true;
+    app.ctx.core.flags.dotfiles = false;
+    let colors = ThemeColors::from_theme(Theme::Default);
+    let buf = render_app(&mut app, 120, 24);
+    let y = top_bar_row(&buf);
+
+    let pill = column_of(&buf, y, " stow ").expect("action pill missing");
+    assert_eq!(buf[(pill, y)].bg, colors.primary, "pill must be filled");
+
+    let cases = [
+        ("verbose", NERD.flag_off, colors.error),
+        ("dry-run", NERD.flag_on, colors.success),
+        ("no-fold", NERD.flag_off, colors.error),
+        ("adopt", NERD.flag_off, colors.error),
+        ("dotfiles", NERD.flag_off, colors.error),
+    ];
+    for (label, glyph, fg) in cases {
+        let x = column_of(&buf, y, label).unwrap_or_else(|| panic!("{label} missing"));
+        let mark = &buf[(x - 2, y)];
+        assert_eq!(mark.symbol(), glyph, "{label}: wrong mark");
+        assert_eq!(mark.fg, fg, "{label}: wrong mark colour");
+        assert!(x - 2 > pill, "{label}: mark must follow the pill");
+    }
+}
+
+/// The action pill, the chips and their padding form one group, centred in the
+/// bar's width (the terminal less the frame border and the one-column margin).
+/// The odd column, if any, goes on the right.
+#[test]
+fn test_top_bar_group_is_centred_at_80_and_120_columns() {
+    let colors = ThemeColors::from_theme(Theme::Default);
+    for width in [80u16, 120] {
+        let (mut app, _) = make_test_app();
+        app.ctx.core.flags.action = StowAction::Unstow;
+        app.ctx.core.flags.verbosity = 1;
+        app.ctx.core.flags.dry_run = true;
+        app.ctx.core.flags.dotfiles = true;
+        let buf = render_app(&mut app, width, 24);
+        let y = top_bar_row(&buf);
+
+        // Columns 0 and the last are the frame border; column 1 is the margin.
+        let bar = 2..width - 2;
+        let drawn = |x: u16| buf[(x, y)].symbol() != " " || buf[(x, y)].bg != colors.background;
+        let first = bar.clone().find(|&x| drawn(x)).expect("top bar is empty");
+        let last = bar.clone().rev().find(|&x| drawn(x)).unwrap();
+        let left = (first - bar.start) as usize;
+        let right = (bar.end - 1 - last) as usize;
+        assert!(
+            right == left || right == left + 1,
+            "{width} columns: left pad {left}, right pad {right}: {:?}",
+            row_text(&buf, y)
+        );
+    }
 }
 
 #[test]
@@ -253,11 +314,8 @@ fn test_top_bar_uses_unicode_icons_when_configured() {
     let (mut app, _) = make_test_app();
     app.ctx.core.icons = IconSet::Unicode;
     let buf = render_app(&mut app, 80, 24);
-    assert!(top_bar_contains(&buf, "○"), "unicode off-icon missing");
-    assert!(
-        !top_bar_contains(&buf, NERD.toggle_off),
-        "nerd glyph leaked"
-    );
+    assert!(top_bar_contains(&buf, "✗"), "unicode off-mark missing");
+    assert!(!top_bar_contains(&buf, NERD.flag_off), "nerd glyph leaked");
 }
 
 #[test]
@@ -761,7 +819,7 @@ fn test_status_toggles_still_live_with_breadcrumb() {
         "verbosity toggle not live"
     );
     assert!(
-        top_bar_contains(&buf, "dry-run") && top_bar_contains(&buf, NERD.toggle_on),
+        top_bar_contains(&buf, "dry-run") && top_bar_contains(&buf, NERD.flag_on),
         "dry-run toggle not live"
     );
 }

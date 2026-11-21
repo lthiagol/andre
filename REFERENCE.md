@@ -71,8 +71,9 @@ andre
 6. **Status** — View results after execution
 
 Global shortcuts (`v`/`d`/`t`/`n`/`a`/`o`/`Ctrl+C`) work from any screen. The
-top bar shows their state; the bottom bar shows the current screen's keys, the
-active theme (`theme <name>`, changed with `t`) and `q quit`.
+top bar shows their state (a green mark when on, a red one when off) and the
+bar is centred; the bottom bar shows the current screen's keys, the active theme
+(`theme <name>`, changed with `t`) and `q quit`.
 
 <a name="features"></a>
 ## ✨ Features
@@ -447,7 +448,7 @@ you save the config.
 | Set | Toggles on / off | When to use |
 |:---|:---|:---|
 | **nerd** | Nerd Font glyphs | Your terminal font is a [Nerd Font](https://www.nerdfonts.com/) |
-| **unicode** | `●` / `○` | Any other font. Common symbols, one column wide each |
+| **unicode** | `✓` / `✗` | Any other font. Common symbols, one column wide each |
 
 The set also draws the checkboxes on the group, package and file lists (`■` / `□`
 in unicode) and the package status glyphs (`✓` stowed, `→` unstowed, `◐` partial,

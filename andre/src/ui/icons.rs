@@ -3,8 +3,8 @@ use andre_core::{IconSet, StowStatus};
 /// Glyphs for one icon set. Every field is a single display column wide, so
 /// icons never shift the layout the way a double-width emoji would.
 pub struct Icons {
-    pub toggle_on: &'static str,
-    pub toggle_off: &'static str,
+    pub flag_on: &'static str,
+    pub flag_off: &'static str,
     pub checkbox_on: &'static str,
     pub checkbox_off: &'static str,
     pub stowed: &'static str,
@@ -24,8 +24,8 @@ pub struct Icons {
 
 /// Nerd Font codepoints (Font Awesome block).
 pub static NERD: Icons = Icons {
-    toggle_on: "\u{f205}",
-    toggle_off: "\u{f204}",
+    flag_on: "\u{f00c}",
+    flag_off: "\u{f00d}",
     checkbox_on: "\u{f14a}",
     checkbox_off: "\u{f096}",
     stowed: "\u{f00c}",
@@ -46,8 +46,8 @@ pub static NERD: Icons = Icons {
 /// Common Unicode symbols from long-established blocks (Latin-1, Arrows,
 /// Geometric Shapes, Dingbats, Mathematical Operators). No Nerd Font needed.
 pub static UNICODE: Icons = Icons {
-    toggle_on: "●",
-    toggle_off: "○",
+    flag_on: "✓",
+    flag_off: "✗",
     checkbox_on: "■",
     checkbox_off: "□",
     stowed: "✓",
@@ -103,8 +103,8 @@ mod tests {
 
     fn all_glyphs(icons: &Icons) -> Vec<&'static str> {
         vec![
-            icons.toggle_on,
-            icons.toggle_off,
+            icons.flag_on,
+            icons.flag_off,
             icons.checkbox_on,
             icons.checkbox_off,
             icons.stowed,
@@ -124,9 +124,9 @@ mod tests {
     }
 
     #[test]
-    fn test_nerd_toggle_glyphs_are_the_fontawesome_codepoints() {
-        assert_eq!(NERD.toggle_on, "\u{f205}");
-        assert_eq!(NERD.toggle_off, "\u{f204}");
+    fn test_nerd_flag_glyphs_are_the_fontawesome_check_and_times() {
+        assert_eq!(NERD.flag_on, "\u{f00c}");
+        assert_eq!(NERD.flag_off, "\u{f00d}");
     }
 
     #[test]
@@ -136,9 +136,9 @@ mod tests {
     }
 
     #[test]
-    fn test_unicode_set_uses_plain_symbols_for_toggles() {
-        assert_eq!(UNICODE.toggle_on, "●");
-        assert_eq!(UNICODE.toggle_off, "○");
+    fn test_unicode_flag_glyphs_are_check_mark_and_ballot_x() {
+        assert_eq!(UNICODE.flag_on, "\u{2713}");
+        assert_eq!(UNICODE.flag_off, "\u{2717}");
     }
 
     #[test]

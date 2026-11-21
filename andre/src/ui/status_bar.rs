@@ -18,9 +18,9 @@ const GAP: usize = 2;
 /// How much of each chip's label the top bar draws.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Labels {
-    /// `● dry-run`: icon plus the whole label, hotkey letter coloured inside it.
+    /// `✓ dry-run`: mark plus the whole label, hotkey letter coloured inside it.
     Full,
-    /// `● d`: icon plus hotkey letter only. Used when the full labels do not fit.
+    /// `✓ d`: mark plus hotkey letter only. Used when the full labels do not fit.
     HotkeyOnly,
 }
 
@@ -82,6 +82,9 @@ pub fn render_status_bar(
 /// The full chips need up to 70 columns (`unstow`, every toggle on, debug), so
 /// they fit the 76-column inner width at 80 columns. The hotkey-only chips need
 /// up to 41 columns. Below that the line is simply clipped by the caller.
+///
+/// The chosen group (pill and chips together) is centred in `width`, with the
+/// odd column, if any, on the right.
 pub fn top_bar_line(
     colors: &ThemeColors,
     flags: &StowFlags,
@@ -90,10 +93,24 @@ pub fn top_bar_line(
     width: usize,
 ) -> Line<'static> {
     let full = left_chips(colors, flags, icons, debug, Labels::Full);
-    if spans_width(&full) <= width {
-        return Line::from(full);
-    }
-    Line::from(left_chips(colors, flags, icons, debug, Labels::HotkeyOnly))
+    let group = if spans_width(&full) <= width {
+        full
+    } else {
+        left_chips(colors, flags, icons, debug, Labels::HotkeyOnly)
+    };
+    centred(group, width)
+}
+
+/// Pads `group` with spaces so it sits in the middle of `width` columns.
+fn centred(group: Vec<Span<'static>>, width: usize) -> Line<'static> {
+    let free = width.saturating_sub(spans_width(&group));
+    let left = free / 2;
+    let right = free - left;
+    let mut spans = Vec::with_capacity(group.len() + 2);
+    spans.push(Span::raw(" ".repeat(left)));
+    spans.extend(group);
+    spans.push(Span::raw(" ".repeat(right)));
+    Line::from(spans)
 }
 
 fn left_chips(
@@ -167,11 +184,13 @@ fn toggle_chip(
     spans
 }
 
+/// A chip's mark: green when on, red when off. The label's own colours are
+/// separate (see `label_spans`).
 fn icon_span(colors: &ThemeColors, icons: &Icons, on: bool) -> Vec<Span<'static>> {
     let (glyph, fg) = if on {
-        (icons.toggle_on, colors.success)
+        (icons.flag_on, colors.success)
     } else {
-        (icons.toggle_off, colors.muted)
+        (icons.flag_off, colors.error)
     };
     vec![Span::styled(format!("{glyph} "), Style::default().fg(fg))]
 }
@@ -293,11 +312,17 @@ mod tests {
     fn test_top_bar_is_lowercase_with_labelled_chips() {
         let line = bar(&all_off(), &NERD, false, 76);
         let t = text(&line);
-        assert!(t.starts_with(" stow "), "action pill first: {t:?}");
+        assert!(
+            t.trim_start().starts_with("stow "),
+            "action pill first: {t:?}"
+        );
         for label in ["verbose 0", "dry-run", "no-fold", "adopt", "dotfiles"] {
             assert!(t.contains(label), "missing {label:?} in {t:?}");
         }
-        assert!(t.ends_with("dotfiles"), "dotfiles chip last: {t:?}");
+        assert!(
+            t.trim_end().ends_with("dotfiles"),
+            "dotfiles chip last: {t:?}"
+        );
         assert!(
             !t.chars().any(char::is_uppercase),
             "top bar must be all lowercase: {t:?}"
@@ -353,17 +378,17 @@ mod tests {
                     let t = text(&line);
                     let context = format!("{} / {} / debug={debug}", theme.name(), action.as_str());
                     assert!(
-                        t.starts_with(&format!(" {} ", action.as_str())),
+                        t.trim_start().starts_with(&format!("{} ", action.as_str())),
                         "{context}: action pill missing: {t:?}"
                     );
                     for label in ["verbose 3", "dry-run", "no-fold", "adopt", "dotfiles"] {
                         assert!(t.contains(label), "{context}: {label:?} missing: {t:?}");
                     }
                     assert_eq!(t.contains("debug"), debug, "{context}: {t:?}");
-                    assert!(
-                        line_width(&line) <= inner_width,
-                        "{context}: {} columns: {t:?}",
-                        line_width(&line)
+                    assert_eq!(
+                        line_width(&line),
+                        inner_width,
+                        "{context}: group must fill the width: {t:?}"
                     );
                 }
             }
@@ -371,14 +396,30 @@ mod tests {
     }
 
     #[test]
-    fn test_toggle_icon_is_success_when_on_and_muted_when_off() {
+    fn test_mark_is_success_when_on_and_error_when_off() {
         let flags = StowFlags {
             dry_run: true,
             ..all_off()
         };
         let line = bar(&flags, &NERD, false, 76);
-        assert_eq!(span(&line, "\u{f205} ").style.fg, Some(colors().success));
-        assert_eq!(span(&line, "\u{f204} ").style.fg, Some(colors().muted));
+        assert_eq!(span(&line, "\u{f00c} ").style.fg, Some(colors().success));
+        assert_eq!(span(&line, "\u{f00d} ").style.fg, Some(colors().error));
+    }
+
+    #[test]
+    fn test_marks_are_error_when_off_in_unicode_set_too() {
+        let line = bar(&all_off(), &UNICODE, false, 76);
+        assert_eq!(span(&line, "\u{2717} ").style.fg, Some(colors().error));
+        let on = bar(
+            &StowFlags {
+                adopt: true,
+                ..all_off()
+            },
+            &UNICODE,
+            false,
+            76,
+        );
+        assert_eq!(span(&on, "\u{2713} ").style.fg, Some(colors().success));
     }
 
     #[test]
@@ -438,11 +479,11 @@ mod tests {
             76,
         );
         assert!(text(&on).contains("verbose 2"), "{:?}", text(&on));
-        assert_eq!(span(&on, "\u{f205} ").style.fg, Some(colors().success));
+        assert_eq!(span(&on, "\u{f00c} ").style.fg, Some(colors().success));
         assert_eq!(span(&on, "2").style.fg, Some(colors().primary));
 
         let off = bar(&all_off(), &NERD, false, 76);
-        assert_eq!(span(&off, "\u{f204} ").style.fg, Some(colors().muted));
+        assert_eq!(span(&off, "\u{f00d} ").style.fg, Some(colors().error));
     }
 
     #[test]
@@ -458,7 +499,7 @@ mod tests {
     fn test_unicode_icon_set_uses_plain_symbols() {
         let line = bar(&all_off(), &UNICODE, false, 76);
         let t = text(&line);
-        assert!(t.contains("○ "), "off toggles use ○: {t:?}");
+        assert!(t.contains("✗ "), "off marks use ✗: {t:?}");
         assert!(!t.chars().any(|c| ('\u{e000}'..='\u{f8ff}').contains(&c)));
 
         let on = bar(
@@ -470,13 +511,40 @@ mod tests {
             false,
             76,
         );
-        assert!(text(&on).contains("● "), "on toggles use ●");
+        assert!(text(&on).contains("✓ "), "on marks use ✓");
     }
 
     #[test]
     fn test_nerd_icon_set_uses_nerd_glyphs() {
         let line = bar(&all_off(), &NERD, false, 76);
-        assert!(text(&line).contains("\u{f204} "));
+        assert!(text(&line).contains("\u{f00d} "));
+    }
+
+    #[test]
+    fn test_top_bar_group_is_centred_with_odd_column_on_the_right() {
+        // Mixed marks: dry-run and dotfiles on, the rest off.
+        for width in [76, 116] {
+            for action in [StowAction::Stow, StowAction::Unstow] {
+                let flags = StowFlags {
+                    action,
+                    verbosity: 1,
+                    dry_run: true,
+                    dotfiles: true,
+                    ..all_off()
+                };
+                let line = bar(&flags, &NERD, false, width);
+                let t = text(&line);
+                // The pill's own leading space is part of the group, not padding.
+                let left = t.len() - t.trim_start().len() - 1;
+                let right = t.len() - t.trim_end().len();
+                let context = format!("{} at {width} columns: {t:?}", action.as_str());
+                assert_eq!(line_width(&line), width, "{context}");
+                assert!(
+                    right == left || right == left + 1,
+                    "left pad {left}, right pad {right}: {context}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -489,9 +557,19 @@ mod tests {
         let t = text(&line);
         assert!(!t.contains("dry-run"), "labels should shrink: {t:?}");
         assert!(!t.contains("verbose"), "labels should shrink: {t:?}");
-        assert!(t.starts_with(" stow "), "action pill kept: {t:?}");
+        assert!(
+            t.trim_start().starts_with("stow "),
+            "action pill kept: {t:?}"
+        );
         assert!(t.contains("v 1"), "hotkey letters kept: {t:?}");
-        assert!(line_width(&line) <= 50);
+        // The fallback is picked on the unpadded width, then centred.
+        assert_eq!(line_width(&line), 50, "{t:?}");
+        let left = t.len() - t.trim_start().len() - 1;
+        let right = t.len() - t.trim_end().len();
+        assert!(
+            right == left || right == left + 1,
+            "left pad {left}, right pad {right}: {t:?}"
+        );
     }
 
     #[test]

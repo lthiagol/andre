@@ -50,14 +50,16 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   (`ui::banner::render_compact_banner`). The top bar's row is no longer fixed;
   the render tests find it from the drawn banner separator.
 - Top bar redesigned as one flat, lowercase row: the current action as a pill
-  on the left (`stow`, `restow`, `unstow`) and a chip per toggle (`● verbose 1`,
-  `○ dry-run`, `○ no-fold`, `○ adopt`, `○ dotfiles`). Each chip's hotkey letter
-  is drawn in the indicator colour inside its label, so the separate key
-  letters are gone. On toggles are bright with a success icon, off toggles are
-  muted. A `debug` chip shows in debug mode. Labels shrink to hotkey letters
-  when the full bar does not fit. The top bar no longer shows the theme. The
-  bar is built by the pure function `ui::status_bar::top_bar_line`, which has
-  unit tests.
+  on the left (`stow`, `restow`, `unstow`) and a chip per toggle (`✓ verbose 1`,
+  `✗ dry-run`, `✗ no-fold`, `✗ adopt`, `✗ dotfiles`; nerd set uses the Font
+  Awesome check and times). Each chip's mark is green (success) when on and red
+  (error) when off. Each chip's hotkey letter is drawn in the indicator colour
+  inside its label, so the separate key letters are gone. On labels are bright,
+  off labels muted. The whole group (pill and chips) is centred in the bar's
+  width, with any odd column on the right. A `debug` chip shows in debug mode.
+  Labels shrink to hotkey letters when the full bar does not fit. The top bar no
+  longer shows the theme. The bar is built by the pure function
+  `ui::status_bar::top_bar_line`, which has unit tests.
 - Bottom bar is one row: the current screen's key hints on the left, then
   `theme <name>` and `q quit` at the right edge (`t` in the indicator colour,
   the name in the highlight colour). The theme chip shrinks to `theme` when the
