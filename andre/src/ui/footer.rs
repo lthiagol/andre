@@ -417,6 +417,14 @@ pub fn leave_dialog_hints() -> Vec<Hint> {
     ]
 }
 
+/// Hints for the wizard's leave dialog, opened by Esc on the name step with answers typed.
+pub fn wizard_leave_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("Enter", "leave", PRIO_PRIMARY),
+        Hint::new("Esc", "stay", PRIO_BACK),
+    ]
+}
+
 /// Hints for the settings list. Every row changes the same way.
 pub fn settings_hints() -> Vec<Hint> {
     vec![
@@ -486,22 +494,14 @@ pub fn ignore_edit_hints() -> Vec<Hint> {
     ]
 }
 
-/// Hints for the new-package wizard's group step.
-pub fn wizard_group_hints() -> Vec<Hint> {
-    vec![
-        Hint::new("\u{2191}\u{2193}", "move", PRIO_NAV),
-        Hint::new("Enter", "next", PRIO_PRIMARY),
-        Hint::new("Esc", "cancel", PRIO_BACK),
-    ]
-}
-
-/// Hints for the wizard's name step. Letters are text here, so the list moves with arrows only.
+/// Hints for the wizard's name step, the first. Letters are text here, so the list moves with
+/// arrows only. Esc leaves the wizard.
 pub fn wizard_name_hints() -> Vec<Hint> {
     vec![
         Hint::new("type", "name", PRIO_NAV),
         Hint::new("\u{2191}\u{2193}", "pick", PRIO_NAV),
         Hint::new("Enter", "next", PRIO_PRIMARY),
-        Hint::new("Esc", "back", PRIO_BACK),
+        Hint::new("Esc", "cancel", PRIO_BACK),
     ]
 }
 
@@ -990,14 +990,14 @@ mod tests {
                 "type name",
                 "\u{2191}\u{2193} pick",
                 "Enter next",
-                "Esc back"
+                "Esc cancel"
             ]
         );
-        assert_eq!(
-            verbs(super::wizard_group_hints()),
-            ["\u{2191}\u{2193} move", "Enter next", "Esc cancel"]
-        );
         assert!(verbs(super::wizard_files_hints()).contains(&"Space mark".to_string()));
+        assert_eq!(
+            verbs(super::wizard_leave_hints()),
+            ["Enter leave", "Esc stay"]
+        );
     }
 
     #[test]

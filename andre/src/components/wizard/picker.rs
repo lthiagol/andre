@@ -1,4 +1,4 @@
-//! The live-file picker of step 3: one folder listing with marks, opened at the group's target.
+//! The live-file picker of step 2: one folder listing with marks, opened at the target folder.
 //! Symlinks and artifacts are listed but cannot be marked, since a move cannot take them.
 //! A marked folder takes its contents with it, so no mark sits inside another.
 
@@ -121,7 +121,7 @@ impl FilePicker {
         self.covering_mark().is_some()
     }
 
-    /// The folder inside the group target, as `.config/nvim`. Empty at the target itself.
+    /// The folder inside the target, as `.config/nvim`. Empty at the target itself.
     pub fn relative_dir(&self) -> String {
         self.browser
             .path
@@ -141,7 +141,7 @@ impl FilePicker {
         self.refresh();
     }
 
-    /// Left: back to the parent folder, never above the group target.
+    /// Left: back to the parent folder, never above the target.
     pub fn go_up(&mut self) {
         if self.browser.path == self.root {
             return;
@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn test_go_up_stops_at_the_group_target() {
+    fn test_go_up_stops_at_the_target() {
         let (mut picker, _dir) = fixture();
         let root = picker.browser.path.clone();
 

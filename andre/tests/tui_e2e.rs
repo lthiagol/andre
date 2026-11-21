@@ -304,21 +304,22 @@ fn test_onboard_creates_config_file() {
 
 // --- New-package wizard, end to end in a temp HOME ---
 
-/// Config folder at the temp root: group `home` from `dotfiles/home` into `home/` (the temp
-/// HOME), one profile `personal` holding `home/git`. Returns the app with the wizard on top.
+/// Config folder at the temp root: the packages folder `dotfiles` holding `git`, HOME is
+/// `home/` (the target), and one profile `personal` holding `git`. Returns the app with the
+/// wizard on top.
 fn wizard_app() -> (App, TempDir) {
     let tmp = TempDir::new().unwrap();
     std::fs::write(
         tmp.path().join("andre.yml"),
-        "global:\n  stow:\n    verbosity: 0\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
+        "packages: dotfiles\nglobal:\n  stow:\n    verbosity: 0\n",
     )
     .unwrap();
-    std::fs::create_dir_all(tmp.path().join("dotfiles/home/git")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("dotfiles/git")).unwrap();
     std::fs::create_dir_all(tmp.path().join("home")).unwrap();
     std::fs::create_dir_all(tmp.path().join("profiles")).unwrap();
     std::fs::write(
         tmp.path().join("profiles/personal.yml"),
-        "packages:\n  - home/git\n",
+        "packages:\n  - git\n",
     )
     .unwrap();
     let mut app = App::with_home(tmp.path().join("andre.yml"), tmp.path().join("home")).unwrap();
@@ -341,15 +342,14 @@ fn typed(text: &str) -> Vec<KeyCode> {
 #[test]
 fn test_new_package_empty_creates_the_package_its_gitignore_and_the_profile_ref() {
     let (mut app, tmp) = wizard_app();
-    // group home, name tmux, create row, empty source, ignore defaults, profile personal.
-    press_all(&mut app, &[KeyCode::Enter]);
-    press_all(&mut app, &typed("tmux"));
+    // name nvim, create row, empty source, ignore defaults, profile personal.
+    press_all(&mut app, &typed("nvim"));
     press_all(&mut app, &[KeyCode::Enter, KeyCode::Enter, KeyCode::Enter]);
     press_all(&mut app, &[KeyCode::Char(' '), KeyCode::Enter]);
     // Review, then create, then leave.
     press_all(&mut app, &[KeyCode::Enter, KeyCode::Enter]);
 
-    let package = tmp.path().join("dotfiles/home/tmux");
+    let package = tmp.path().join("dotfiles/nvim");
     assert!(package.is_dir(), "package folder is created");
     let gitignore = std::fs::read_to_string(package.join(".gitignore")).unwrap();
     assert!(
@@ -362,7 +362,7 @@ fn test_new_package_empty_creates_the_package_its_gitignore_and_the_profile_ref(
         .get("personal")
         .unwrap()
         .packages
-        .contains(&"home/tmux".to_string()));
+        .contains(&"nvim".to_string()));
     assert_eq!(
         app.component_stack.len(),
         1,
@@ -375,8 +375,7 @@ fn test_new_package_from_live_files_moves_the_file_and_links_it_back() {
     let (mut app, tmp) = wizard_app();
     let live = tmp.path().join("home/.bashrc");
     std::fs::write(&live, "alias l='ls -la'\n").unwrap();
-    // group home, name shell, create row, live files, the picker opens at the target.
-    press_all(&mut app, &[KeyCode::Enter]);
+    // name shell, create row, live files, the picker opens at the target.
     press_all(&mut app, &typed("shell"));
     press_all(&mut app, &[KeyCode::Enter, KeyCode::Down, KeyCode::Enter]);
     // The picker reads its listing on each frame, so update once before the keys.
@@ -393,7 +392,7 @@ fn test_new_package_from_live_files_moves_the_file_and_links_it_back() {
     );
     press_all(&mut app, &[KeyCode::Enter]);
 
-    let package = tmp.path().join("dotfiles/home/shell");
+    let package = tmp.path().join("dotfiles/shell");
     let moved = package.join(".bashrc");
     assert_eq!(
         std::fs::read_to_string(&moved).unwrap(),

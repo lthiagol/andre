@@ -1,6 +1,6 @@
 //! The step bar of a multi-step flow: done steps in `ok` with a check, the current step in
 //! `accent` in brackets, the steps still to come in `text_dim`. Steps are numbered from 1,
-//! and the done ones are not, as in `✓ group › [2 name] › 3 source`.
+//! and the done ones are not, as in `✓ name › [2 source] › 3 ignore`.
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_step_click_gives_the_index_of_the_step_under_the_press() {
         let bar = StepBar {
-            steps: &["group", "name", "source"],
+            steps: &["name", "source", "ignore"],
             current: 2,
         };
         let hits = step_rects(Rect::new(0, 0, 60, 1), &bar, &UNICODE);
@@ -204,7 +204,7 @@ mod tests {
             row: 0,
             modifiers: crossterm::event::KeyModifiers::NONE,
         };
-        assert_eq!(step_click(&hits, at(0)), Some(0), "the done group step");
+        assert_eq!(step_click(&hits, at(0)), Some(0), "the done name step");
         assert_eq!(step_click(&hits, at(3)), Some(0), "inside the done step");
         assert_eq!(step_click(&hits, at(60)), None, "past the last step");
     }

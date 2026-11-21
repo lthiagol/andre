@@ -706,11 +706,10 @@ fn test_help_enter_stays_on_help() {
     );
 }
 
-/// The wizard on its name step, which is text input: group `config` is the first row.
+/// The wizard on its name step, which is text input: the menu's new package row opens it.
 fn wizard_on_name_step(app: &mut App) {
     app.component_dispatch(down_key());
     app.component_dispatch(down_key());
-    app.component_dispatch(enter_key());
     app.component_dispatch(enter_key());
     assert_eq!(
         app.component_stack.last().unwrap().input_mode(),
@@ -722,7 +721,7 @@ fn wizard_on_name_step(app: &mut App) {
 
 #[test]
 fn test_q_quit_blocked_during_new_package_name_step() {
-    let (mut app, _) = make_two_group_app();
+    let (mut app, _) = make_flat_packages_app(&["git", "nvim"]);
     wizard_on_name_step(&mut app);
     app.component_dispatch(key_char('q'));
     assert!(!app.quitting, "q should not quit during text input");
@@ -732,7 +731,7 @@ fn test_q_quit_blocked_during_new_package_name_step() {
 
 #[test]
 fn test_global_keys_blocked_during_new_package_name_step() {
-    let (mut app, _) = make_two_group_app();
+    let (mut app, _) = make_flat_packages_app(&["git", "nvim"]);
     wizard_on_name_step(&mut app);
     let initial_theme = app.ctx.core.theme;
     let initial_verbosity = app.ctx.core.flags.verbosity;
@@ -782,17 +781,12 @@ fn test_input_mode_audit_normal_components() {
 #[test]
 fn test_input_mode_audit_text_input() {
     use andre::components::InputMode;
-    let (mut app, _) = make_two_group_app();
+    let (mut app, _) = make_flat_packages_app(&["git", "nvim"]);
     push_component(&mut app, "NewPackage");
     assert_eq!(
         app.component_stack.last().unwrap().input_mode(),
-        InputMode::Normal,
-        "the group step takes no text"
-    );
-    wizard_on_name_step(&mut app);
-    assert_eq!(
-        app.component_stack.last().unwrap().input_mode(),
-        InputMode::TextInput
+        InputMode::TextInput,
+        "the name step, the first, takes text"
     );
 }
 
@@ -963,18 +957,93 @@ fn test_unstow_target_second_row_opens_second_group() {
 }
 
 #[test]
-fn test_new_package_enter_on_a_group_opens_its_name_step() {
-    let (mut app, _) = make_two_group_app();
+fn test_new_package_opens_on_its_name_step_as_text_input() {
+    let (mut app, _) = make_flat_packages_app(&["git", "nvim"]);
     app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
     assert_eq!(component_id(&app), "NewPackage");
-
-    app.component_dispatch(enter_key());
     assert_eq!(
         app.component_stack.last().unwrap().input_mode(),
         andre::components::InputMode::TextInput,
-        "Enter on the first group (config) opens the name step"
+        "the wizard opens on the name step, which takes text"
+    );
+}
+
+#[test]
+fn test_esc_on_the_name_step_with_a_name_typed_asks_before_leaving() {
+    let (mut app, _) = make_flat_packages_app(&["git", "nvim"]);
+    wizard_on_name_step(&mut app);
+    app.component_dispatch(key_char('n'));
+    app.component_dispatch(key_char('v'));
+    app.component_dispatch(esc_key());
+
+    assert_eq!(component_id(&app), "NewPackage", "Esc asks first");
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::Modal,
+        "the leave dialog is open"
+    );
+
+    app.component_dispatch(esc_key());
+    assert_eq!(component_id(&app), "NewPackage", "Esc on the dialog stays");
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::TextInput,
+        "the name is text again"
+    );
+}
+
+#[test]
+fn test_enter_or_y_on_the_wizard_leave_dialog_leaves_the_wizard() {
+    for leave in [enter_key(), key_char('y')] {
+        let (mut app, _) = make_flat_packages_app(&["git", "nvim"]);
+        wizard_on_name_step(&mut app);
+        app.component_dispatch(key_char('n'));
+        app.component_dispatch(esc_key());
+        app.component_dispatch(leave);
+        assert_eq!(app.component_stack.len(), 1, "the wizard is gone");
+    }
+}
+
+#[test]
+fn test_esc_on_the_name_step_with_nothing_typed_leaves_at_once() {
+    let (mut app, _) = make_flat_packages_app(&["git", "nvim"]);
+    wizard_on_name_step(&mut app);
+    app.component_dispatch(esc_key());
+
+    assert_eq!(
+        app.component_stack.len(),
+        1,
+        "no dialog: the wizard is left"
+    );
+}
+
+#[test]
+fn test_esc_back_to_the_name_step_keeps_the_name_and_asks_before_leaving() {
+    let (mut app, _) = make_flat_packages_app(&["git", "nvim"]);
+    wizard_on_name_step(&mut app);
+    for c in "nvim".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    // Name, then empty source, then the profiles step: step 4.
+    app.component_dispatch(enter_key());
+    app.component_dispatch(enter_key());
+    app.component_dispatch(enter_key());
+    for _ in 0..3 {
+        app.component_dispatch(esc_key());
+    }
+    assert_eq!(component_id(&app), "NewPackage", "back on the name step");
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::TextInput
+    );
+
+    app.component_dispatch(esc_key());
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::Modal,
+        "the typed name asks before the wizard is left"
     );
 }
 

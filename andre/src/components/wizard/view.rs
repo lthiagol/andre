@@ -4,7 +4,6 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use andre_core::config::Config;
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -19,6 +18,7 @@ use super::{NameRow, NewPackageWizard, Source, Step, SOURCES, STEPS};
 use crate::components::AppContext;
 use crate::theme::ThemeColors;
 use crate::ui::detail::{render_detail, Detail};
+use crate::ui::dialog::{dialog_rect, render_dialog};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, ScreenRects};
 use crate::ui::list_panel::{self, render_focused_list_panel, render_list_panel, Empty, ListView};
@@ -58,7 +58,6 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &AppContext, wizard: &NewPacka
         frame.render_widget(Paragraph::new(step_line(&steps, icons, &colors)), bar);
     }
     match wizard.step {
-        Step::Group => render_group(frame, rects, ctx, wizard, &colors),
         Step::Name => render_name(frame, rects, ctx, wizard, &colors),
         Step::Source => render_source(frame, rects, ctx, wizard, &colors, icons),
         Step::Files => render_files(frame, rects, ctx, wizard, &colors, icons),
@@ -66,52 +65,10 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &AppContext, wizard: &NewPacka
         Step::Profiles => render_profiles(frame, rects, ctx, wizard, &colors, icons),
         Step::Review => render_review(frame, rects, wizard, &colors, icons),
     }
-}
-
-fn render_group(
-    frame: &mut Frame,
-    rects: ScreenRects,
-    ctx: &AppContext,
-    wizard: &NewPackageWizard,
-    colors: &ThemeColors,
-) {
-    let groups = wizard.groups();
-    let width = list_panel::inner(rects.list).width;
-    let rows = groups
-        .iter()
-        .enumerate()
-        .map(|(i, name)| {
-            let text = Style::default().fg(colors.text);
-            let content = vec![Span::styled(name.to_string(), text)];
-            row(content, i == wizard.group_list.cursor, colors, width)
-        })
-        .collect();
-    let empty = Empty {
-        message: "no groups in andre.yml",
-        hint: None,
-    };
-    render_list_panel(
-        frame,
-        rects.list,
-        colors,
-        "group",
-        rows,
-        &wizard.group_list,
-        Some(empty),
-    );
-
-    let (title, detail) = match groups.get(wizard.group_list.cursor) {
-        Some(name) => {
-            let packages = wizard
-                .listing
-                .get(*name)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            (name.to_string(), group_detail(ctx, colors, name, packages))
-        }
-        None => ("group".to_string(), no_group_detail(colors)),
-    };
-    render_detail(frame, rects.detail, colors, &title, &detail);
+    if wizard.leaving {
+        let dialog = wizard.leave_prompt(&colors);
+        render_dialog(frame, dialog_rect(area, &dialog), &colors, &dialog);
+    }
 }
 
 fn render_name(
@@ -257,7 +214,7 @@ fn render_source(
         .get(wizard.source_list.cursor)
         .copied()
         .unwrap_or(Source::Empty);
-    let detail = source_detail(ctx, colors, wizard, source);
+    let detail = source_detail(ctx, colors, source);
     render_detail(frame, rects.detail, colors, source_label(source), &detail);
 }
 
@@ -346,90 +303,52 @@ fn source_label(source: Source) -> &'static str {
     }
 }
 
-/// A group's facts: where its packages link from and to, and which packages it holds.
-fn group_detail(
-    ctx: &AppContext,
-    colors: &ThemeColors,
-    group: &str,
-    packages: &[String],
-) -> Detail {
-    let config = &ctx.core.config;
-    let source = config.get_group_source(group, &ctx.config_dir, &ctx.home_dir);
-    let target = target_text(ctx, config, group);
-    let listed = if packages.is_empty() {
-        "none yet".to_string()
-    } else {
-        format!("{}: {}", packages.len(), packages.join(", "))
-    };
-    Detail {
-        headline: vec![Line::styled(
-            format!("Packages here link into {target}."),
-            Style::default().fg(colors.text),
-        )],
-        facts: vec![
-            (
-                Cow::Borrowed("source"),
-                source.map_or("not found".to_string(), |path| shown(ctx, &path)),
-            ),
-            (Cow::Borrowed("target"), target),
-            (Cow::Borrowed("packages"), listed),
-        ],
-        sections: Vec::new(),
-    }
-}
-
-fn no_group_detail(colors: &ThemeColors) -> Detail {
-    Detail {
-        headline: vec![Line::styled(
-            "Groups come from andre.yml; none are set up yet.",
-            Style::default().fg(colors.text_dim),
-        )],
-        ..Detail::default()
-    }
-}
-
+/// The step's facts: where a new package would sit and where it links. With no packages
+/// folder set, the headline says so and Enter does nothing.
 fn name_detail(ctx: &AppContext, colors: &ThemeColors, wizard: &NewPackageWizard) -> Detail {
-    let group = wizard.group.clone().unwrap_or_default();
+    let text = Style::default().fg(colors.text);
+    let dim = Style::default().fg(colors.text_dim);
+    let Some(folder) = wizard.packages_dir.as_deref() else {
+        return Detail {
+            headline: vec![Line::styled(
+                "set a packages folder in settings",
+                Style::default().fg(colors.err),
+            )],
+            ..Detail::default()
+        };
+    };
     let name = wizard.name.value.as_str();
     let rows = wizard.name_rows();
     let headline = match rows.get(wizard.name_list.cursor) {
-        Some(NameRow::Existing(package)) => format!("Adds files to {group}/{package}."),
-        Some(NameRow::Create) if wizard.name_exists() => format!("Adds files to {group}/{name}."),
+        Some(NameRow::Existing(package)) => vec![format!("Adds files to {package}.")],
+        Some(NameRow::Create) if wizard.name_exists() => vec![format!("Adds files to {name}.")],
         Some(NameRow::Create) if name.is_empty() => {
-            "Type a name, or pick a package that exists.".to_string()
+            vec!["Type a name, or pick a package that exists.".to_string()]
         }
-        Some(NameRow::Create) => format!("Creates {group}/{name}/, an empty package folder."),
-        None => String::new(),
+        Some(NameRow::Create) => vec![
+            format!("Creates {name}/ in the packages folder,"),
+            "an empty package.".to_string(),
+        ],
+        None => Vec::new(),
     };
-    let package_dir = wizard
-        .group
-        .as_deref()
-        .and_then(|group| {
-            ctx.core
-                .config
-                .get_group_source(group, &ctx.config_dir, &ctx.home_dir)
-        })
-        .map(|source| source.join(name));
-    let mut facts = Vec::new();
-    if let Some(path) = package_dir {
-        facts.push((Cow::Borrowed("path"), shown(ctx, &path)));
-    }
+    let facts = vec![
+        (Cow::Borrowed("path"), shown(ctx, &folder.join(name))),
+        (Cow::Borrowed("links to"), target_text(ctx)),
+    ];
     Detail {
-        headline: vec![Line::styled(headline, Style::default().fg(colors.text))],
+        headline: headline
+            .into_iter()
+            .map(|line| Line::styled(line, text))
+            .collect(),
         facts,
-        sections: vec![Line::styled(
-            "Type to filter the packages here; pick one to add files to it.",
-            Style::default().fg(colors.text_dim),
-        )],
+        sections: vec![
+            Line::styled("Type to filter existing packages;", dim),
+            Line::styled("pick one to add files to it.", dim),
+        ],
     }
 }
 
-fn source_detail(
-    ctx: &AppContext,
-    colors: &ThemeColors,
-    wizard: &NewPackageWizard,
-    source: Source,
-) -> Detail {
+fn source_detail(ctx: &AppContext, colors: &ThemeColors, source: Source) -> Detail {
     let text = Style::default().fg(colors.text);
     let dim = Style::default().fg(colors.text_dim);
     match source {
@@ -441,9 +360,7 @@ fn source_detail(
             ..Detail::default()
         },
         Source::LiveFiles => {
-            let target = wizard.group.as_deref().map_or_else(String::new, |group| {
-                target_text(ctx, &ctx.core.config, group)
-            });
+            let target = target_text(ctx);
             Detail {
                 headline: vec![
                     Line::styled(format!("Pick files that already live in {target}."), text),
@@ -501,21 +418,23 @@ fn files_detail(colors: &ThemeColors, wizard: &NewPackageWizard, picker: &FilePi
     }
 }
 
-/// Where the cursor's entry would land: `group/package/folder/` inside the package.
+/// Where the cursor's entry would land: `package/folder/` inside the package.
 fn moves_to(wizard: &NewPackageWizard, picker: &FilePicker) -> String {
-    let group = wizard.group.as_deref().unwrap_or_default();
-    let package = format!("{group}/{}", wizard.name.value);
+    let package = wizard.name.value.as_str();
     match picker.relative_dir() {
         rel if rel.is_empty() => format!("{package}/"),
         rel => format!("{package}/{rel}/"),
     }
 }
 
-/// The group's target folder as the detail shows it, or `not found`.
-fn target_text(ctx: &AppContext, config: &Config, group: &str) -> String {
-    config
-        .get_group_target(group, &ctx.config_dir, &ctx.home_dir)
-        .map_or("not found".to_string(), |path| shown(ctx, &path))
+/// The target folder as the detail shows it, or `not found`.
+fn target_text(ctx: &AppContext) -> String {
+    let target = ctx.core.config.target_dir(&ctx.config_dir, &ctx.home_dir);
+    if target.is_dir() {
+        shown(ctx, &target)
+    } else {
+        "not found".to_string()
+    }
 }
 
 /// A path with `~` for home, as the details show it.

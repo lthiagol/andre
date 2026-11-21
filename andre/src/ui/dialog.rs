@@ -278,6 +278,27 @@ pub fn leave_dialog(subject: &str, colors: &ThemeColors) -> Dialog {
     }
 }
 
+/// The dialog that asks before the wizard leaves with answers typed. `subject` is what would be
+/// left, e.g. `the new package nv`. Nothing is written until the review, so leaving drops only
+/// the answers. Primary is `Enter leave`, on the right.
+pub fn discard_dialog(subject: &str, colors: &ThemeColors) -> Dialog {
+    Dialog {
+        title: "unsaved changes".to_string(),
+        body: vec![
+            Line::raw(""),
+            Line::styled(
+                format!("Leave {subject}? Nothing is written yet."),
+                Style::default().fg(colors.text),
+            ),
+            Line::raw(""),
+        ],
+        buttons: vec![
+            key_button(KeyCode::Esc, "stay", false),
+            key_button(KeyCode::Enter, "leave", true),
+        ],
+    }
+}
+
 fn leave_button(code: KeyCode, label: &'static str, primary: bool) -> Button {
     Button {
         key: KeyEvent::new(code, KeyModifiers::NONE),

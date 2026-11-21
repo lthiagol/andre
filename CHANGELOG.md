@@ -181,6 +181,11 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   keys on the screen are gone. `profiles` are left alone when the folder changes. `w`
   refuses a `groups:` config that is given a `packages:` folder (the file would not load).
   `--onboard` writes `global: {}` and opens settings on `packages`.
+- **The new-package wizard has no group step.** It opens on the name step and runs
+  `1 name › 2 source › 3 ignore › 4 profiles › 5 review`. Names come from the packages folder,
+  and the live-files picker opens at `target`. With no packages folder the name step says
+  `set a packages folder in settings` and Enter does nothing. Esc on the name step leaves at
+  once, or asks first (`Enter leave`, `Esc stay`) when anything is typed or chosen.
 
 ### Changed
 

@@ -1,4 +1,4 @@
-//! Steps 4–6 of the wizard: the ignore files, the profiles the package joins, and the review
+//! Steps 3–5 of the wizard: the ignore files, the profiles the package joins, and the review
 //! that creates it. The review is planned once when the profiles step is left, so what it
 //! shows is what [`execute_package`] runs. Paint is in `finish_view.rs`.
 
@@ -109,21 +109,14 @@ impl NewPackageWizard {
         self.step = Step::Profiles;
     }
 
-    /// The `group/package` ref the package will have.
+    /// The profile ref the package will have: its name.
     pub(super) fn package_ref(&self) -> String {
-        format!(
-            "{}/{}",
-            self.group.clone().unwrap_or_default(),
-            self.name.value
-        )
+        self.name.value.clone()
     }
 
-    /// Every package the wizard listed, as `group/package`: the form profiles use.
+    /// Every package in the packages folder, as the profiles list them.
     fn listed_packages(&self) -> BTreeSet<String> {
-        self.listing
-            .iter()
-            .flat_map(|(group, packages)| packages.iter().map(move |p| format!("{group}/{p}")))
-            .collect()
+        self.packages.iter().cloned().collect()
     }
 
     pub(super) fn profiles_key(&mut self, key: &KeyEvent, ctx: &mut AppContext) -> Transition {
@@ -173,7 +166,6 @@ impl NewPackageWizard {
     /// The request the answers so far describe. Live files are the marks of the picker.
     fn request(&self, ctx: &AppContext) -> NewPackage {
         let config = &ctx.core.config;
-        let group = self.group.clone().unwrap_or_default();
         let files = match self.source {
             Some(Source::LiveFiles) => self
                 .picker
@@ -190,13 +182,11 @@ impl NewPackageWizard {
             .map(|profile| profile.name.clone())
             .collect();
         NewPackage {
-            package_ref: format!("{group}/{}", self.name.value),
+            package_ref: self.name.value.clone(),
             source_root: config
-                .get_group_source(&group, &ctx.config_dir, &ctx.home_dir)
+                .packages_dir(&ctx.config_dir, &ctx.home_dir)
                 .unwrap_or_default(),
-            target_root: config
-                .get_group_target(&group, &ctx.config_dir, &ctx.home_dir)
-                .unwrap_or_default(),
+            target_root: config.target_dir(&ctx.config_dir, &ctx.home_dir),
             package: self.name.value.clone(),
             allow_existing: self.name_exists(),
             files,
@@ -205,7 +195,7 @@ impl NewPackageWizard {
             profiles,
             engine: config.effective_engine(),
             no_folding: ctx.core.flags.no_folding,
-            ignores: config.effective_ignores(&group),
+            ignores: config.ignores(),
             global_ignore: Some(global_ignore_in(&ctx.home_dir)),
         }
     }
@@ -290,7 +280,7 @@ fn profile_count(
 
 /// The review lines of a plan: moves, links, skipped links, ignore files, profile edits, then
 /// a counts line. Paths are shown as the user knows them: live paths with `~`, package paths
-/// as `group/package/…`.
+/// as `package/…`.
 pub fn review_lines(plan: &PackagePlan, ctx: &AppContext) -> Vec<ReviewLine> {
     let home = ctx.home_dir.as_path();
     let mut lines = Vec::new();
@@ -383,21 +373,21 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    /// One group, `home`, from `dotfiles/home` into the temp dir (the home dir), holding
-    /// `git`. The profile `personal` lists `home/git`.
+    /// The packages folder `dotfiles` (into the temp dir, the home dir), holding `git`. The
+    /// profile `personal` lists `git`.
     fn fixture() -> (AppContext, TempDir) {
         let dir = TempDir::new().unwrap();
         let config_path = dir.path().join("andre.yml");
         std::fs::write(
             &config_path,
-            "global:\n  stow:\n    verbosity: 0\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
+            "packages: dotfiles\nglobal:\n  stow:\n    verbosity: 0\n",
         )
         .unwrap();
-        std::fs::create_dir_all(dir.path().join("dotfiles/home/git")).unwrap();
+        std::fs::create_dir_all(dir.path().join("dotfiles/git")).unwrap();
         std::fs::create_dir_all(dir.path().join("profiles")).unwrap();
         std::fs::write(
             dir.path().join("profiles/personal.yml"),
-            "packages:\n  - home/git\n",
+            "packages:\n  - git\n",
         )
         .unwrap();
         let config = Config::load(&config_path).unwrap();
@@ -409,7 +399,6 @@ mod tests {
     /// Drives the wizard from step 1 to the profiles step for a new empty package `name`.
     fn at_profiles(wizard: &mut NewPackageWizard, ctx: &mut AppContext, name: &str) {
         wizard.update(ctx);
-        wizard.handle_key(key(KeyCode::Enter), ctx);
         for c in name.chars() {
             wizard.handle_key(key(KeyCode::Char(c)), ctx);
         }
@@ -528,12 +517,12 @@ mod tests {
         let template_lines = GITIGNORE_SECRETS_TEXT.lines().count();
         assert!(
             lines.contains(&format!(
-                "create home/tmux/.gitignore  (common secrets, {template_lines} lines)"
+                "create tmux/.gitignore  (common secrets, {template_lines} lines)"
             )),
             "{lines:?}"
         );
         assert!(
-            lines.contains(&"edit profiles/personal.yml  + home/tmux".to_string()),
+            lines.contains(&"edit profiles/personal.yml  + tmux".to_string()),
             "{lines:?}"
         );
         assert_eq!(
@@ -562,8 +551,8 @@ mod tests {
     #[test]
     fn test_a_refused_plan_stays_on_the_profiles_step_with_the_reason() {
         let (mut ctx, dir) = fixture();
-        std::fs::create_dir_all(dir.path().join("dotfiles/home/tmux")).unwrap();
-        std::fs::write(dir.path().join("dotfiles/home/tmux/.gitignore"), "mine\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("dotfiles/tmux")).unwrap();
+        std::fs::write(dir.path().join("dotfiles/tmux/.gitignore"), "mine\n").unwrap();
         let mut wizard = NewPackageWizard::default();
         at_profiles(&mut wizard, &mut ctx, "tmux");
         wizard.handle_key(key(KeyCode::Enter), &mut ctx);
@@ -576,7 +565,7 @@ mod tests {
             toast.message
         );
         assert_eq!(
-            std::fs::read_to_string(dir.path().join("dotfiles/home/tmux/.gitignore")).unwrap(),
+            std::fs::read_to_string(dir.path().join("dotfiles/tmux/.gitignore")).unwrap(),
             "mine\n",
             "the existing file is not overwritten"
         );
@@ -588,7 +577,6 @@ mod tests {
         std::fs::write(dir.path().join(".bashrc"), "alias l='ls'\n").unwrap();
         let mut wizard = NewPackageWizard::default();
         wizard.update(&mut ctx);
-        wizard.handle_key(key(KeyCode::Enter), &mut ctx);
         for c in "shell".chars() {
             wizard.handle_key(key(KeyCode::Char(c)), &mut ctx);
         }
@@ -605,7 +593,7 @@ mod tests {
         assert_eq!(wizard.step, Step::Review);
         let lines = review_texts(&wizard);
         assert!(
-            lines.contains(&"move ~/.bashrc \u{2192} home/shell/.bashrc".to_string()),
+            lines.contains(&"move ~/.bashrc \u{2192} shell/.bashrc".to_string()),
             "{lines:?}"
         );
         assert!(
@@ -627,9 +615,9 @@ mod tests {
         let transition = wizard.handle_key(key(KeyCode::Enter), &mut ctx);
 
         assert_eq!(wizard.done, Some(Done::Created));
-        assert!(dir.path().join("dotfiles/home/tmux").is_dir());
+        assert!(dir.path().join("dotfiles/tmux").is_dir());
         assert!(
-            std::fs::read_to_string(dir.path().join("dotfiles/home/tmux/.gitignore"))
+            std::fs::read_to_string(dir.path().join("dotfiles/tmux/.gitignore"))
                 .unwrap()
                 .contains("*.env")
         );
@@ -638,7 +626,7 @@ mod tests {
             .get("personal")
             .unwrap()
             .packages
-            .contains(&"home/tmux".to_string()));
+            .contains(&"tmux".to_string()));
         assert!(matches!(transition, Transition::Handled));
 
         let leave = wizard.handle_key(key(KeyCode::Enter), &mut ctx);
@@ -655,7 +643,7 @@ mod tests {
         wizard.handle_key(key(KeyCode::Enter), &mut ctx);
 
         assert_eq!(wizard.done, Some(Done::DryRun));
-        assert!(!dir.path().join("dotfiles/home/tmux").exists());
+        assert!(!dir.path().join("dotfiles/tmux").exists());
     }
 
     #[test]
@@ -721,7 +709,7 @@ mod tests {
         let mut wizard = NewPackageWizard::default();
         at_profiles(&mut wizard, &mut ctx, "tmux");
 
-        // `personal` lists home/git. `laptop` reaches it only through the include.
+        // `personal` lists git. `laptop` reaches it only through the include.
         assert_eq!(
             wizard.profile_counts["personal"],
             ProfileCount {
@@ -748,7 +736,7 @@ mod tests {
         .unwrap();
         ctx.core.profiles = ProfileSet::load(&dir.path().join("profiles")).unwrap();
         let mut wizard = NewPackageWizard::default();
-        // `git` exists in the group, so the package adds files to it. `personal` lists it.
+        // `git` exists in the folder, so the package adds files to it. `personal` lists it.
         at_profiles(&mut wizard, &mut ctx, "git");
 
         assert_eq!(

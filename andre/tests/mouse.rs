@@ -502,10 +502,9 @@ fn test_click_on_an_ignore_line_refreshes_the_detail_to_that_line() {
 
 #[test]
 fn test_click_on_a_name_step_row_works_while_the_name_field_has_focus() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["git", "nvim"]);
     push_component(&mut app, "NewPackage");
     app.update_components();
-    app.component_dispatch(enter_key());
     let mode = |app: &App| app.component_stack.last().unwrap().input_mode();
     assert_eq!(mode(&app), InputMode::TextInput, "the name step");
     let buf = draw(&mut app, 80, 24);
@@ -611,12 +610,12 @@ fn test_click_on_a_package_row_focuses_the_packages_then_a_second_click_toggles_
 
 #[test]
 fn test_a_file_checkbox_click_marks_the_file_and_a_link_cannot_be_marked() {
-    let (mut app, tmp) = make_unstow_app();
+    let (mut app, tmp) = make_flat_test_app();
     std::fs::write(tmp.path().join("notes.txt"), "hi").unwrap();
+    std::os::unix::fs::symlink("dotfiles/test/.bashrc", tmp.path().join(".bashrc")).unwrap();
     let icons = Icons::for_set(app.ctx.core.icons);
     push_component(&mut app, "NewPackage");
     app.update_components();
-    app.component_dispatch(enter_key());
     for c in "pkg".chars() {
         app.component_dispatch(key_char(c));
     }
@@ -751,18 +750,41 @@ fn test_click_on_the_discard_button_of_the_ignore_leave_dialog_leaves_the_editor
 }
 
 #[test]
-fn test_click_on_a_done_step_in_the_bar_goes_back_to_it() {
-    let (mut app, _tmp) = make_two_group_app();
+fn test_click_on_the_leave_button_of_the_wizard_dialog_leaves_the_wizard() {
+    let (mut app, _tmp) = make_flat_packages_app(&["git", "nvim"]);
     open(&mut app, "NewPackage");
+    for c in "tmux".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    app.component_dispatch(esc_key());
+    let buf = draw(&mut app, 80, 24);
+    let (x, y) = find_text(&buf, "Enter leave").expect("the leave button");
+    click(&mut app, x + 2, y);
+    assert_ne!(component_id(&app), "NewPackage", "the wizard was left");
+}
+
+#[test]
+fn test_click_on_a_done_step_in_the_bar_goes_back_to_it() {
+    let (mut app, _tmp) = make_flat_packages_app(&["git", "nvim"]);
+    open(&mut app, "NewPackage");
+    for c in "tmux".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    // The name, then the empty source: the wizard is on step 3, ignore.
+    app.component_dispatch(enter_key());
     app.component_dispatch(enter_key());
     let buf = draw(&mut app, 80, 24);
+    assert!(
+        find_text(&buf, "[3 ignore]").is_some(),
+        "on the ignore step"
+    );
     // The done step's check is the icon set's glyph, so the step is found by its label.
-    let (x, y) = find_text(&buf, "group \u{203a}").expect("the done group step");
+    let (x, y) = find_text(&buf, "name \u{203a}").expect("the done name step");
     click(&mut app, x, y);
     let buf = draw(&mut app, 80, 24);
     assert!(
-        find_text(&buf, "[1 group]").is_some(),
-        "back on the group step"
+        find_text(&buf, "[1 name]").is_some(),
+        "back on the name step"
     );
 }
 
@@ -859,9 +881,8 @@ fn test_the_dialogs_and_bars_this_batch_touched_render_at_120x40_and_200x50() {
         app.component_dispatch(enter_key());
         draw(&mut app, width, height);
 
-        let (mut app, _tmp) = make_two_group_app();
+        let (mut app, _tmp) = make_flat_packages_app(&["git", "nvim"]);
         open(&mut app, "NewPackage");
-        app.component_dispatch(enter_key());
         draw(&mut app, width, height);
     }
 }

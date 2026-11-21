@@ -1,4 +1,4 @@
-//! Paint for wizard steps 4–6. Every function reads the wizard's state and draws it; none
+//! Paint for wizard steps 3–5. Every function reads the wizard's state and draws it; none
 //! changes it.
 
 use std::borrow::Cow;

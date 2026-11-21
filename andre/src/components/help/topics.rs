@@ -151,7 +151,7 @@ impl Topic {
                 )],
                 sections: vec![
                     prose(
-                        "Pick a group, then a name: a new package, or an existing one to add files to.",
+                        "Type a name: a new package, or an existing one to add files to. Packages come from the packages folder in settings.",
                         &colors,
                     ),
                     prose(

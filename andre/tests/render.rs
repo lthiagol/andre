@@ -3729,15 +3729,13 @@ fn type_text_render(app: &mut App, text: &str) {
     }
 }
 
-// --- New-package wizard (steps 1-3 and the live-file picker) ---
+// --- New-package wizard (steps 1-2 and the live-file picker) ---
 
-/// The wizard on step 1 over the test app, with unicode icons so the mockup glyphs apply.
+/// The wizard on step 1 over a flat app whose packages folder holds `git` and `nvim`, with
+/// unicode icons so the mockup glyphs apply. HOME is the temp dir, so the target is the temp dir.
 fn wizard_app() -> (App, tempfile::TempDir) {
-    let (mut app, tmp) = make_test_app();
+    let (mut app, tmp) = make_flat_packages_app(&["git", "nvim"]);
     app.ctx.core.icons = IconSet::Unicode;
-    for package in ["nvim", "git"] {
-        std::fs::create_dir_all(app.ctx.home_dir.join("dotfiles/home").join(package)).unwrap();
-    }
     app.component_stack.push(Box::new(
         andre::components::wizard::NewPackageWizard::default(),
     ));
@@ -3751,34 +3749,48 @@ fn press(app: &mut App, keys: &[KeyEvent]) {
     }
 }
 
-/// Step 1 with `home` chosen (the test app has `home` alone, so Enter on it is the first row).
-fn choose_home(app: &mut App) {
-    press(app, &[enter_key()]);
-}
-
 #[test]
-fn test_new_package_group_step_shows_step_bar_and_groups() {
+fn test_new_package_name_step_is_first_and_lists_the_packages_folder() {
     let (mut app, _tmp) = wizard_app();
     let buf = render_updated(&mut app, 80, 24);
 
     assert!(line_contains(
         &buf,
-        "[1 group] \u{203a} 2 name \u{203a} 3 source \u{203a} 4 ignore \u{203a} 5 profiles \u{203a} 6 review"
+        "[1 name] \u{203a} 2 source \u{203a} 3 ignore \u{203a} 4 profiles \u{203a} 5 review"
     ));
-    assert!(line_contains(&buf, "\u{256d} group "));
-    assert!(line_contains(&buf, "home"));
-    assert!(footer_row(&buf).contains("Enter next"));
+    assert!(line_contains(&buf, "\u{256d} name "));
+    assert!(line_contains(&buf, "matches 2"));
+    assert!(line_contains(&buf, "git"));
+    assert!(
+        !buffer_text(&buf).contains("group"),
+        "the step still says group"
+    );
+    assert!(footer_row(&buf).contains("Esc cancel"));
+}
+
+#[test]
+fn test_new_package_without_a_packages_folder_says_so_and_enter_does_nothing() {
+    let (mut app, _tmp) = make_empty_app();
+    app.component_stack.push(Box::new(
+        andre::components::wizard::NewPackageWizard::default(),
+    ));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "set a packages folder in settings"));
+
+    press(&mut app, &[key_char('t'), enter_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "[1 name]"), "the step is kept");
+    assert!(!line_contains(&buf, "[2 source]"), "Enter did not go on");
 }
 
 #[test]
 fn test_new_package_name_step_filters_packages_and_leads_with_the_create_row() {
     let (mut app, _tmp) = wizard_app();
     render_updated(&mut app, 80, 24);
-    choose_home(&mut app);
     press(&mut app, &[key_char('n'), key_char('v')]);
     let buf = render_updated(&mut app, 80, 24);
 
-    assert!(line_contains(&buf, "\u{2713} group \u{203a} [2 name]"));
+    assert!(line_contains(&buf, "[1 name] \u{203a} 2 source"));
     assert!(line_contains(&buf, "name  nv"));
     assert!(line_contains(&buf, "+ create `nv`"));
     assert!(line_contains(&buf, "\u{2192} nvim  add files to it"));
@@ -3790,7 +3802,6 @@ fn test_new_package_name_step_filters_packages_and_leads_with_the_create_row() {
 fn test_new_package_name_step_says_files_go_into_an_existing_package() {
     let (mut app, _tmp) = wizard_app();
     render_updated(&mut app, 80, 24);
-    choose_home(&mut app);
     press(&mut app, &[key_char('g'), key_char('i'), key_char('t')]);
     let buf = render_updated(&mut app, 80, 24);
 
@@ -3801,11 +3812,10 @@ fn test_new_package_name_step_says_files_go_into_an_existing_package() {
 fn test_new_package_source_step_shows_the_radio_on_the_cursor_row() {
     let (mut app, _tmp) = wizard_app();
     render_updated(&mut app, 80, 24);
-    choose_home(&mut app);
     press(&mut app, &[key_char('t'), key_char('m'), enter_key()]);
     let buf = render_updated(&mut app, 80, 24);
 
-    assert!(line_contains(&buf, "\u{2713} name \u{203a} [3 source]"));
+    assert!(line_contains(&buf, "\u{2713} name \u{203a} [2 source]"));
     assert!(line_contains(&buf, "\u{25cf} empty package"));
     assert!(line_contains(&buf, "\u{25cb} move live files in"));
 
@@ -3819,7 +3829,6 @@ fn test_new_package_source_step_shows_the_radio_on_the_cursor_row() {
 fn test_new_package_refused_name_shows_its_rule_in_full_at_80x24() {
     let (mut app, _tmp) = wizard_app();
     render_updated(&mut app, 80, 24);
-    choose_home(&mut app);
     press(
         &mut app,
         &[key_char('a'), space_key(), key_char('b'), enter_key()],
@@ -3840,7 +3849,6 @@ fn test_new_package_file_picker_shows_symlink_targets_sizes_and_the_move_rule() 
     std::fs::write(home.join("sync/spell"), "").unwrap();
     std::os::unix::fs::symlink(home.join("sync/spell"), home.join("spell")).unwrap();
     render_updated(&mut app, 80, 24);
-    choose_home(&mut app);
     press(
         &mut app,
         &[
@@ -3866,7 +3874,6 @@ fn test_new_package_file_picker_shows_symlink_targets_sizes_and_the_move_rule() 
 fn test_new_package_file_step_title_row_adds_files_after_new_package() {
     let (mut app, _tmp) = wizard_app();
     render_updated(&mut app, 80, 24);
-    choose_home(&mut app);
     press(&mut app, &[key_char('t'), key_char('m'), enter_key()]);
     let buf = render_updated(&mut app, 80, 24);
     assert!(
@@ -3889,7 +3896,6 @@ fn test_new_package_file_picker_lists_files_and_marks_them() {
     let (mut app, _tmp) = wizard_app();
     std::fs::write(app.ctx.home_dir.join("notes.txt"), "").unwrap();
     render_updated(&mut app, 80, 24);
-    choose_home(&mut app);
     press(
         &mut app,
         &[
@@ -3902,7 +3908,7 @@ fn test_new_package_file_picker_lists_files_and_marks_them() {
     );
     let buf = render_updated(&mut app, 80, 24);
 
-    assert!(line_contains(&buf, "\u{2713} name \u{203a} [3 source]"));
+    assert!(line_contains(&buf, "\u{2713} name \u{203a} [2 source]"));
     assert!(line_contains(&buf, "\u{25a1} \u{2022} notes.txt"));
     assert!(line_contains(&buf, "\u{2022} notes.txt") && footer_row(&buf).contains("Space mark"));
 
@@ -3919,8 +3925,6 @@ fn test_new_package_steps_render_at_120x40_and_200x50_without_panic() {
         let (mut app, _tmp) = wizard_app();
         std::fs::write(app.ctx.home_dir.join("notes.txt"), "").unwrap();
         render_updated(&mut app, width, height);
-        choose_home(&mut app);
-        render_updated(&mut app, width, height);
         press(&mut app, &[key_char('t'), key_char('m')]);
         render_updated(&mut app, width, height);
         press(&mut app, &[enter_key()]);
@@ -3931,21 +3935,20 @@ fn test_new_package_steps_render_at_120x40_and_200x50_without_panic() {
     }
 }
 
-// --- New-package wizard, steps 4-6 (ignore files, profiles, review) ---
+// --- New-package wizard, steps 3-5 (ignore files, profiles, review) ---
 
-/// The wizard over the test app with one profile, `personal`, holding `home/git`.
+/// The wizard over the flat test app with one profile, `personal`, holding `git`.
 fn wizard_app_with_profile() -> (App, tempfile::TempDir) {
     let (mut app, tmp) = wizard_app();
     let dir = app.ctx.config_dir.join("profiles");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("personal.yml"), "packages:\n  - home/git\n").unwrap();
+    std::fs::write(dir.join("personal.yml"), "packages:\n  - git\n").unwrap();
     app.ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
     (app, tmp)
 }
 
-/// Group `home`, then the name `tmux`, then an empty source: the wizard on step 4.
+/// The name `tmux`, then an empty source: the wizard on step 3.
 fn wizard_on_ignore_step(app: &mut App) {
-    choose_home(app);
     press(app, &typed_keys("tmux"));
     press(app, &[enter_key(), enter_key()]);
 }
@@ -3962,7 +3965,7 @@ fn test_new_package_ignore_step_shows_both_ignore_files_and_the_template() {
 
     assert!(line_contains(
         &buf,
-        "\u{2713} source \u{203a} [4 ignore] \u{203a} 5 profiles"
+        "\u{2713} source \u{203a} [3 ignore] \u{203a} 4 profiles"
     ));
     assert!(line_contains(&buf, "ignore files"));
     assert!(line_contains(&buf, ".gitignore"));
@@ -3983,11 +3986,11 @@ fn test_new_package_profiles_step_lists_profiles_and_what_the_package_joins() {
     press(&mut app, &[enter_key(), key_char(' ')]);
     let buf = render_updated(&mut app, 80, 24);
 
-    assert!(line_contains(&buf, "[5 profiles]"));
+    assert!(line_contains(&buf, "[4 profiles]"));
     assert!(line_contains(&buf, "add to profiles"));
     assert!(line_contains(&buf, "personal"));
     assert!(
-        line_contains(&buf, "2 (+ home/tmux)"),
+        line_contains(&buf, "2 (+ tmux)"),
         "the detail shows the count once the package joins"
     );
     assert!(footer_row(&buf).contains("Enter next"));
@@ -3997,7 +4000,7 @@ fn test_new_package_profiles_step_lists_profiles_and_what_the_package_joins() {
 fn test_new_package_profile_detail_counts_the_packages_a_profile_reaches_through_includes() {
     let (mut app, _tmp) = wizard_app_with_profile();
     let dir = app.ctx.config_dir.join("profiles");
-    // `laptop` lists no package of its own: it reaches `home/git` only through `personal`.
+    // `laptop` lists no package of its own: it reaches `git` only through `personal`.
     std::fs::write(dir.join("laptop.yml"), "includes:\n  - personal\n").unwrap();
     app.ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
     wizard_on_ignore_step(&mut app);
@@ -4006,7 +4009,7 @@ fn test_new_package_profile_detail_counts_the_packages_a_profile_reaches_through
     let buf = render_updated(&mut app, 80, 24);
 
     assert!(
-        line_contains(&buf, "2 (+ home/tmux)"),
+        line_contains(&buf, "2 (+ tmux)"),
         "the include's package counts, and so does the new one"
     );
 }
@@ -4019,7 +4022,7 @@ fn test_new_package_review_lines_are_inset_one_column_from_the_border_at_80x24()
     let buf = render_updated(&mut app, 80, 24);
 
     assert!(
-        line_contains(&buf, "\u{2502} create home/tmux/.gitignore"),
+        line_contains(&buf, "\u{2502} create tmux/.gitignore"),
         "the lines start one column inside the border"
     );
     assert!(line_contains(&buf, "\u{2502} edit   profiles/personal.yml"));
@@ -4033,13 +4036,10 @@ fn test_new_package_review_lists_the_plan_and_its_counts_at_80x24() {
     press(&mut app, &[enter_key(), key_char(' '), enter_key()]);
     let buf = render_updated(&mut app, 80, 24);
 
-    assert!(line_contains(&buf, "[6 review]"));
-    assert!(line_contains(&buf, "review \u{b7} new package home/tmux"));
-    assert!(line_contains(&buf, "create home/tmux/.gitignore"));
-    assert!(line_contains(
-        &buf,
-        "edit   profiles/personal.yml  + home/tmux"
-    ));
+    assert!(line_contains(&buf, "[5 review]"));
+    assert!(line_contains(&buf, "review \u{b7} new package tmux"));
+    assert!(line_contains(&buf, "create tmux/.gitignore"));
+    assert!(line_contains(&buf, "edit   profiles/personal.yml  + tmux"));
     assert!(line_contains(
         &buf,
         "0 moves \u{b7} 0 links \u{b7} 1 file \u{b7} 1 profile"
@@ -4059,8 +4059,8 @@ fn test_new_package_review_ends_with_done_and_enter_leaves() {
     );
     let buf = render_updated(&mut app, 80, 24);
 
-    assert!(tmp.path().join("dotfiles/home/tmux/.gitignore").is_file());
-    assert!(line_contains(&buf, "created home/tmux"));
+    assert!(tmp.path().join("dotfiles/tmux/.gitignore").is_file());
+    assert!(line_contains(&buf, "created tmux"));
     assert!(footer_row(&buf).contains("Enter done"));
 
     press(&mut app, &[enter_key()]);
@@ -4072,7 +4072,7 @@ fn test_new_package_review_ends_with_done_and_enter_leaves() {
 }
 
 #[test]
-fn test_new_package_steps_4_to_6_render_at_120x40_and_200x50_without_panic() {
+fn test_new_package_steps_3_to_5_render_at_120x40_and_200x50_without_panic() {
     for (width, height) in [(120, 40), (200, 50)] {
         let (mut app, _tmp) = wizard_app_with_profile();
         wizard_on_ignore_step(&mut app);
@@ -4091,7 +4091,6 @@ fn test_new_package_review_lists_moves_and_links_for_live_files_at_80x24() {
     let (mut app, _tmp) = wizard_app_with_profile();
     std::fs::write(app.ctx.home_dir.join("notes.txt"), "").unwrap();
     render_updated(&mut app, 80, 24);
-    choose_home(&mut app);
     press(&mut app, &typed_keys("tmux"));
     press(&mut app, &[enter_key(), down_key(), enter_key()]);
     render_updated(&mut app, 80, 24);
@@ -4111,13 +4110,122 @@ fn test_new_package_review_lists_moves_and_links_for_live_files_at_80x24() {
 
     assert!(line_contains(
         &buf,
-        "move   ~/notes.txt \u{2192} home/tmux/notes.txt"
+        "move   ~/notes.txt \u{2192} tmux/notes.txt"
     ));
     assert!(line_contains(&buf, "link   ~/notes.txt \u{21e2} package"));
     assert!(line_contains(
         &buf,
         "1 move \u{b7} 1 link \u{b7} 1 file \u{b7} 0 profiles"
     ));
+}
+
+#[test]
+fn test_new_package_esc_with_a_name_typed_draws_the_leave_dialog_at_80x24() {
+    let (mut app, _tmp) = wizard_app();
+    render_updated(&mut app, 80, 24);
+    press(&mut app, &typed_keys("nv"));
+    press(&mut app, &[esc_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "unsaved changes"));
+    assert!(line_contains(
+        &buf,
+        "Leave the new package `nv`? Nothing is written yet."
+    ));
+    assert!(line_contains(&buf, "[ Esc stay ]"));
+    assert!(line_contains(&buf, "[ Enter leave ]"));
+    assert!(footer_row(&buf).contains("Enter leave"));
+    assert!(
+        line_contains(&buf, "[1 name]"),
+        "the wizard is still on the name step"
+    );
+}
+
+#[test]
+fn test_new_package_name_detail_says_what_is_created_and_where_it_links_at_80x24() {
+    let (mut app, _tmp) = wizard_app();
+    render_updated(&mut app, 80, 24);
+    press(&mut app, &typed_keys("nv"));
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "Creates nv/ in the packages folder,"));
+    assert!(line_contains(&buf, "an empty package."));
+    let path = row_containing(&buf, "path").expect("the path fact");
+    assert!(
+        path.split("path")
+            .nth(1)
+            .unwrap()
+            .trim_start()
+            .starts_with("~/dotfiles/nv"),
+        "path row: {path:?}"
+    );
+    let links = row_containing(&buf, "links to").expect("the links fact");
+    assert!(
+        links
+            .split("links to")
+            .nth(1)
+            .unwrap()
+            .trim_start()
+            .starts_with('~'),
+        "links to row: {links:?}"
+    );
+}
+
+#[test]
+fn test_new_package_nested_file_moves_into_its_folder_in_the_package_at_80x24() {
+    let (mut app, _tmp) = make_flat_packages_app(&["git"]);
+    app.ctx.core.icons = IconSet::Unicode;
+    app.component_stack.push(Box::new(
+        andre::components::wizard::NewPackageWizard::default(),
+    ));
+    let nvim = app.ctx.home_dir.join(".config/nvim");
+    std::fs::create_dir_all(&nvim).unwrap();
+    std::fs::write(nvim.join("init.lua"), "-- config").unwrap();
+    render_updated(&mut app, 80, 24);
+    press(&mut app, &typed_keys("nvim"));
+    // Live files: the picker opens at home, where `.config` is the first entry. Each key is
+    // followed by an update, as the event loop does: the picker lists its folder on update.
+    press(&mut app, &[enter_key(), down_key(), enter_key()]);
+    render_updated(&mut app, 80, 24);
+    let right = KeyEvent::new(KeyCode::Right, KeyModifiers::NONE);
+    press(&mut app, &[right]);
+    render_updated(&mut app, 80, 24);
+    press(&mut app, &[right]);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "moves to  nvim/.config/nvim/"),
+        "the cursor's file lands in the package's folder"
+    );
+
+    press(
+        &mut app,
+        &[space_key(), enter_key(), enter_key(), enter_key()],
+    );
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "review \u{b7} new package nvim"));
+    assert!(line_contains(
+        &buf,
+        "move   ~/.config/nvim/init.lua \u{2192} nvim/.config/nvim/init.lua"
+    ));
+}
+
+#[test]
+fn test_help_new_package_topic_says_name_and_the_packages_folder_not_group() {
+    let (mut app, _tmp) = make_flat_test_app();
+    push_screen(&mut app, "Help");
+    // The eighth topics, in order: keys, mouse, status glyphs, profiles, packages, new package.
+    for _ in 0..5 {
+        app.component_dispatch(down_key());
+    }
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "Type a name"),
+        "the new package topic is not open"
+    );
+    assert!(
+        !buffer_text(&buf).contains("group"),
+        "the new package topic still says group"
+    );
 }
 
 // ---- main menu: the set-up item (F5, D8) ----
