@@ -176,6 +176,11 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   is one line even when the engine's error spans lines. Each package's target folder is
   created when missing. The `group(s) skipped` line is gone. With no `packages:` it exits 1 with
   `no packages folder: set \`packages:\` in <config>`; an empty folder exits 0.
+- **Settings edits one packages folder.** The `config` section lists `packages` (`Enter`
+  picks the folder) and `global ignore`; the group editor, its dialogs and the `+` and `x`
+  keys on the screen are gone. `profiles` are left alone when the folder changes. `w`
+  refuses a `groups:` config that is given a `packages:` folder (the file would not load).
+  `--onboard` writes `global: {}` and opens settings on `packages`.
 
 ### Changed
 

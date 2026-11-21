@@ -329,25 +329,6 @@ impl ProfileSet {
         self.rewrite_packages(|p| (p != pkg).then(|| p.to_string()))
     }
 
-    /// Renames a group inside every package ref. Returns the profiles that changed.
-    pub fn rename_group(&mut self, old: &str, new: &str) -> Result<Vec<String>> {
-        if new.is_empty() {
-            return Err(ProfileError::InvalidPackageRef(format!("{new}/")).into());
-        }
-        self.rewrite_packages(|pkg| match split_package_ref(pkg) {
-            Some((group, package)) if group == old => Some(format!("{new}/{package}")),
-            _ => Some(pkg.to_string()),
-        })
-    }
-
-    /// Removes every ref into `group` from every profile. Returns the profiles that changed.
-    pub fn remove_group(&mut self, group: &str) -> Result<Vec<String>> {
-        self.rewrite_packages(|pkg| match split_package_ref(pkg) {
-            Some((g, _)) if g == group => None,
-            _ => Some(pkg.to_string()),
-        })
-    }
-
     /// Resolves `name` against the packages that exist (`known`, as in [`known_packages`]).
     pub fn resolve(&self, name: &str, known: &BTreeSet<String>) -> Result<ResolvedProfile> {
         if !self.profiles.contains_key(name) {
@@ -1230,38 +1211,6 @@ mod tests {
         assert_eq!(load(&dir).get("a").unwrap().packages, ["home/shell"]);
         // Removing a ref that no profile lists changes nothing.
         assert!(set.remove_package("home/git").unwrap().is_empty());
-    }
-
-    #[test]
-    fn rename_group_rewrites_prefix_only() {
-        let tmp = TempDir::new().unwrap();
-        let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("a", &[], &["home/git", "homey/x", "config/nvim"]))
-            .unwrap();
-
-        assert_eq!(set.rename_group("home", "dots").unwrap(), ["a"]);
-        assert_eq!(
-            set.get("a").unwrap().packages,
-            ["dots/git", "homey/x", "config/nvim"]
-        );
-        assert!(set.rename_group("dots", "").is_err());
-    }
-
-    #[test]
-    fn remove_group_drops_all_its_refs() {
-        let tmp = TempDir::new().unwrap();
-        let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile(
-            "a",
-            &[],
-            &["home/git", "home/shell", "config/nvim"],
-        ))
-        .unwrap();
-        set.create(profile("b", &[], &["config/nvim"])).unwrap();
-
-        assert_eq!(set.remove_group("config").unwrap(), ["a", "b"]);
-        assert_eq!(set.get("a").unwrap().packages, ["home/git", "home/shell"]);
-        assert!(set.get("b").unwrap().packages.is_empty());
     }
 
     #[test]

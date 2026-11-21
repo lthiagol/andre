@@ -24,8 +24,8 @@ use tempfile::TempDir;
 
 use helpers::{
     click, component_id, down_key, draw, enter_key, esc_key, find_text, key_char, make_empty_app,
-    make_flat_packages_app, make_test_app, make_two_group_app, make_unstow_app, push_browse,
-    push_component, row_text, space_key, up_key, wheel,
+    make_flat_packages_app, make_flat_test_app, make_test_app, make_two_group_app, make_unstow_app,
+    push_browse, push_component, row_text, space_key, up_key, wheel,
 };
 
 /// Pushes the named screen and brings it up to date, as the loop does before the first frame.
@@ -424,7 +424,7 @@ fn settings_cursor_after_up() -> usize {
 
 #[test]
 fn test_wheel_over_settings_moves_to_the_next_selectable_row() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     open(&mut app, "Settings");
     let buf = draw(&mut app, 80, 24);
     let header = settings(&app).items()[0].label.clone();
@@ -446,7 +446,7 @@ fn test_wheel_over_settings_moves_to_the_next_selectable_row() {
 
 #[test]
 fn test_wheel_up_over_a_selectable_row_moves_as_up_does() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     open(&mut app, "Settings");
     let buf = draw(&mut app, 80, 24);
     let header = settings(&app).items()[0].label.clone();
@@ -472,7 +472,7 @@ fn test_wheel_up_over_a_selectable_row_moves_as_up_does() {
 
 #[test]
 fn test_click_on_a_settings_header_changes_nothing() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     open(&mut app, "Settings");
     let buf = draw(&mut app, 80, 24);
     let header = settings(&app).items()[0].label.clone();
@@ -948,7 +948,7 @@ fn test_click_behind_the_theme_picker_changes_nothing() {
 
 #[test]
 fn test_click_on_the_discard_button_of_the_settings_leave_dialog_leaves_settings() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     open(&mut app, "Settings");
     app.component_dispatch(key_char('t'));
     app.component_dispatch(esc_key());
@@ -1119,19 +1119,20 @@ fn test_wheel_over_a_long_profile_detail_moves_its_sections() {
 }
 
 #[test]
-fn test_click_on_the_keep_button_of_the_remove_group_dialog_closes_it() {
-    let (mut app, _tmp) = make_test_app();
+fn test_click_on_the_cancel_button_of_the_packages_folder_picker_closes_it() {
+    let (mut app, _tmp) = make_flat_test_app();
     open(&mut app, "Settings");
     let buf = draw(&mut app, 80, 24);
-    let (x, y) = find_text(&buf, "home").expect("the group row");
+    // `packages ` with its padding: the detail of `action` also says "packages."
+    let (x, y) = find_text(&buf, "packages ").expect("the packages row");
     click(&mut app, x, y);
-    app.component_dispatch(key_char('x'));
+    app.component_dispatch(enter_key());
     assert!(
-        matches!(settings(&app).overlays.last(), Some(Overlay::Remove { .. })),
-        "the remove dialog is open"
+        matches!(settings(&app).overlays.last(), Some(Overlay::Browse { .. })),
+        "the folder picker is open"
     );
     let buf = draw(&mut app, 80, 24);
-    let (x, y) = find_text(&buf, "n keep").expect("the keep button");
+    let (x, y) = find_text(&buf, "Esc cancel").expect("the cancel button");
     click(&mut app, x + 2, y);
     assert!(settings(&app).overlays.is_empty(), "the dialog closed");
 }

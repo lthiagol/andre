@@ -38,7 +38,7 @@ See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configurati
 - **Multi-group config** — Define multiple stow targets (e.g., `~`, `~/.config`) each with its own source directory
 - **Interactive package selection** — Browse the packages in one list, select/unselect with Space (`*` for all), smart pre-selection based on action
 - **Live settings toggles** — Toggle dry-run, verbosity, adopt, no-folding on the fly from any screen
-- **Config editor built-in** — Edit `andre.yml` from within the TUI: add/remove/edit groups, change global defaults
+- **Config editor built-in** — Edit `andre.yml` from within the TUI: pick the packages folder, change global defaults and the global ignore list
 - **Headless mode (`--yolo`)** — Auto-stow all packages without interaction, for scripts and automation
 - **Config folder and profiles** — One config folder (`~/.config/andre/` or `--config-folder`) holds `andre.yml` and named package profiles that can include each other
 - **Real stow status display** — See which packages are stowed, unstowed, conflicted, or missing at a glance
@@ -143,7 +143,7 @@ selection colour and marked with a `▌` bar.
 | **new package** | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
 | **unstow** | Remove symlinks interactively |
 | **verify status** | View stow status of every package |
-| **settings** | Edit config, add/remove groups, change options |
+| **settings** | Edit config: the packages folder, options, global ignore |
 | **help** | Keyboard reference |
 | **quit** | Exit andre |
 

@@ -9,6 +9,9 @@ use crate::packages::discover_packages;
 use crate::path::resolve_path;
 use crate::state::{IconSet, StowAction, StowFlags, Theme, MAX_VERBOSITY};
 
+/// Why a config with both `packages:` and `groups:` does not load.
+pub const KEYS_CONFLICT: &str = "set `packages:` or `groups:`, not both";
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -175,12 +178,16 @@ impl Config {
         }
         let content = std::fs::read_to_string(path)?;
         let config: Config = serde_yaml_ng::from_str(&content).map_err(Error::YamlParse)?;
-        if config.packages.is_some() && !config.groups.is_empty() {
-            return Err(Error::InvalidConfig(
-                "set `packages:` or `groups:`, not both".to_string(),
-            ));
+        if config.keys_conflict() {
+            return Err(Error::InvalidConfig(KEYS_CONFLICT.to_string()));
         }
         Ok(config)
+    }
+
+    /// True when both `packages:` and `groups:` are set. The file is not loaded then. The
+    /// interim keeps both keys for one release; `groups:` goes in G10.
+    pub fn keys_conflict(&self) -> bool {
+        self.packages.is_some() && !self.groups.is_empty()
     }
 
     /// The packages folder, resolved. `None` when `packages:` is unset.

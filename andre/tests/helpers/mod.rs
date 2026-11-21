@@ -107,17 +107,12 @@ pub fn ctrl_c() -> KeyEvent {
     KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
 }
 
+/// An app whose config has no packages folder yet, as `--onboard` writes it. HOME is the temp
+/// dir.
 pub fn make_empty_app() -> (App, TempDir) {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("andre.yml");
-    std::fs::write(
-        &path,
-        r#"
-global: {}
-groups: {}
-"#,
-    )
-    .unwrap();
+    std::fs::write(&path, "global: {}\n").unwrap();
     let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
     (app, tmp)
 }

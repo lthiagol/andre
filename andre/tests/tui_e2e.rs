@@ -297,8 +297,8 @@ fn test_onboard_creates_config_file() {
     );
     let content = std::fs::read_to_string(&config_path).unwrap();
     assert!(
-        content.contains("global:") && content.contains("groups:"),
-        "config should contain global and groups"
+        content.contains("global:") && !content.contains("groups:"),
+        "config should contain global and no groups key: {content}"
     );
 }
 

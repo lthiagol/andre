@@ -90,7 +90,7 @@ centred; the bottom bar shows the current screen's keys, the active theme
 - **Multi-group config** — Define multiple stow targets (e.g., `~`, `~/.config`) each with its own source directory
 - **Interactive package selection** — Browse packages per group, select/unselect with Space, smart pre-selection based on action
 - **Live settings toggles** — Toggle dry-run, verbosity, adopt, no-folding on the fly from any screen
-- **Config editor built-in** — Edit `andre.yml` from within the TUI: add/remove/edit groups, change global defaults
+- **Config editor built-in** — Edit `andre.yml` from within the TUI: pick the packages folder, change global defaults and the global ignore list
 - **Headless mode (`--yolo`)** — Auto-stow all packages without interaction, for scripts and automation
 - **Config folder and profiles** — One config folder (`$XDG_CONFIG_HOME/andre/`, or `--config-folder`) holds `andre.yml` and named package profiles
 - **Real stow status display** — See which packages are stowed, unstowed, conflicted, or missing at a glance
@@ -506,15 +506,19 @@ state, the files in the way first.
 | Key | Action |
 |:---|:---|
 | `↑` / `↓` | Move (headers are skipped) |
-| `Space` / `Enter` | Change the row: flip a flag, or open its picker or menu. On a group, `Enter` opens its menu |
-| `+` | Add a group: name, then source and target folders |
-| `x` | Remove the group under the cursor (asks first). On `w`, its refs are dropped from every profile |
+| `Space` / `Enter` | Change the row: flip a flag, or open its picker. On `packages`, `Enter` opens the folder picker |
 | `w` | Save `andre.yml` |
 | `Esc` | Back. With unsaved edits: `y` save, `n` discard, `Esc` stay |
 
-In a group's menu, `Enter` edits the field under the cursor (name, source, target, ignore
-list) and `Esc` cancels every edit made in that menu. In a pattern list, `+` adds,
-`Enter` edits, `x` deletes. Pickers: `↑↓` move, `Enter` keeps, `Esc` reverts.
+The config section has two rows: `packages` (the packages folder; `Enter` picks another
+folder, and the detail says how many packages it holds and where they link) and `global
+ignore`. Changing the folder does not touch profiles: refs to packages the new folder lacks
+show as missing. In a pattern list, `+` adds, `Enter` edits, `x` deletes. Pickers: `↑↓`
+move, `Enter` keeps, `Esc` reverts. The folder picker: `→` opens, `←` goes up, `Enter`
+chooses the highlighted folder, `Esc` cancels.
+
+`w` refuses to write a config that would not load: a `groups:` config (the interim, until
+groups are removed) cannot also take a `packages:` folder.
 
 ### Dialogs
 

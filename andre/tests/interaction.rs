@@ -1677,7 +1677,7 @@ fn test_enter_runs_the_own_and_included_packages_and_skips_the_missing_ones() {
 
 #[test]
 fn test_s_on_settings_waits_for_save_like_the_other_settings() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_component(&mut app, "Settings");
     app.component_dispatch(key_char('s'));
     assert_eq!(
@@ -2132,7 +2132,7 @@ fn select_setting(app: &mut App, label: &str) {
 fn test_settings_picker_is_modal_and_blocks_global_keys() {
     use andre::components::InputMode;
 
-    let (mut app, _) = make_test_app();
+    let (mut app, _) = make_flat_test_app();
     open_settings(&mut app);
     select_setting(&mut app, "action");
     app.component_dispatch(enter_key());
@@ -2151,27 +2151,33 @@ fn test_settings_picker_is_modal_and_blocks_global_keys() {
 }
 
 #[test]
-fn test_settings_name_dialog_is_text_input_and_blocks_globals() {
+fn test_settings_ignore_line_is_text_input_and_blocks_globals() {
     use andre::components::settings::Overlay;
     use andre::components::InputMode;
 
-    let (mut app, _) = make_test_app();
+    let (mut app, _) = make_flat_test_app();
     open_settings(&mut app);
+    select_setting(&mut app, "global ignore");
+    app.component_dispatch(enter_key());
     app.component_dispatch(key_char('+'));
     assert_eq!(
         app.component_stack.last().unwrap().input_mode(),
         InputMode::TextInput,
-        "the new group name is typed text"
+        "the new pattern is typed text"
     );
     let theme = app.ctx.core.theme;
     app.component_dispatch(key_char('t'));
     assert_eq!(
         app.ctx.core.theme, theme,
-        "t types into the name, not the theme"
+        "t types into the pattern, not the theme"
     );
-    let Some(Overlay::Name { field, .. }) = settings(&app).overlays.last() else {
-        panic!("name dialog should still be open");
+    let Some(Overlay::Ignore {
+        edit: Some(line), ..
+    }) = settings(&app).overlays.last()
+    else {
+        panic!("ignore editor should still be open");
     };
+    let field = &line.field;
     assert_eq!(field.value, "t");
 }
 
@@ -2179,7 +2185,7 @@ fn test_settings_name_dialog_is_text_input_and_blocks_globals() {
 fn test_config_save_failure_error_toast_keeps_dirty() {
     use andre::components::ToastKind;
 
-    let (mut app, tmp) = make_test_app();
+    let (mut app, tmp) = make_flat_test_app();
     open_settings(&mut app);
     select_setting(&mut app, "verbose");
     app.component_dispatch(enter_key());
@@ -2203,7 +2209,7 @@ fn test_config_save_failure_error_toast_keeps_dirty() {
 
 #[test]
 fn test_discard_save_y_stays_on_failure() {
-    let (mut app, tmp) = make_test_app();
+    let (mut app, tmp) = make_flat_test_app();
     open_settings(&mut app);
     select_setting(&mut app, "verbose");
     app.component_dispatch(enter_key());

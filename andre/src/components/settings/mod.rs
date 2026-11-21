@@ -1,7 +1,7 @@
-//! The settings screen: a list of stow options, appearance, the global ignore list and the
-//! groups, with the selected row's detail beside it. Edits go to a pending copy. `w` writes
-//! it to `andre.yml`. Esc with unsaved edits asks first. Dialogs for pickers, group edits and
-//! removals sit on top of the list (see `overlays`).
+//! The settings screen: a list of stow options, appearance, the packages folder and the global
+//! ignore list, with the selected row's detail beside it. Edits go to a pending copy. `w`
+//! writes it to `andre.yml`. Esc with unsaved edits asks first. Dialogs for pickers, the
+//! packages folder and the ignore list sit on top of the list (see `overlays`).
 
 use andre_core::{IconSet, StowAction, StowFlag, Theme};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
@@ -16,7 +16,6 @@ use crate::ui::dialog::{dialog_body_rect, dialog_click, dialog_row_click};
 use crate::ui::footer::{self, Hint};
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{click_list, ListView};
-use crate::ui::text_field::TextField;
 
 pub mod build;
 pub mod overlays;
@@ -45,8 +44,8 @@ pub struct SettingsComponent {
     /// The selected row's detail, and its title, built by `refresh`.
     detail: Detail,
     detail_title: String,
-    /// The row the cursor moves to at the next `refresh`: a group that was just renamed or
-    /// added, or the group a cancelled menu was on.
+    /// The row the cursor moves to at the next `refresh`, set when the screen opens on a row
+    /// (see `on_packages`).
     focus: Option<Row>,
     /// The content area, as of the last `prepare`. Dialogs are centred in it.
     content: Rect,
@@ -70,6 +69,14 @@ fn picker_state(overlay: &Overlay) -> Option<(usize, usize)> {
 }
 
 impl SettingsComponent {
+    /// A settings screen whose cursor starts on the packages folder, as `--onboard` opens it.
+    pub fn on_packages() -> Self {
+        Self {
+            focus: Some(Row::Packages),
+            ..Self::default()
+        }
+    }
+
     /// Starts the pending copy from the saved settings the first time the screen needs it.
     fn ensure(&mut self, ctx: &AppContext) {
         if self.pending.is_none() {
@@ -142,7 +149,7 @@ impl SettingsComponent {
     }
 
     /// Enter and Space on the selected row: flip a flag, cycle a value, or open its dialog.
-    fn activate(&mut self) {
+    fn activate(&mut self, ctx: &AppContext) {
         let Some(row) = self.selected().map(|item| item.row.clone()) else {
             return;
         };
@@ -173,20 +180,15 @@ impl SettingsComponent {
                     .unwrap_or(0),
                 original: pending.icons,
             }),
+            Row::Packages => Some(Overlay::Browse {
+                browser: overlays::browser_at(
+                    pending.config.packages_dir(&ctx.config_dir, &ctx.home_dir),
+                    &ctx.home_dir,
+                ),
+            }),
             Row::GlobalIgnore => Some(Overlay::Ignore {
-                scope: IgnoreScope::Global,
                 cursor: 0,
                 edit: None,
-            }),
-            Row::Group(group) => Some(Overlay::Group {
-                group: group.clone(),
-                cursor: 0,
-                snapshot: Snapshot {
-                    group,
-                    config: pending.config.clone(),
-                    changes: pending.group_changes.clone(),
-                    dirty: self.dirty,
-                },
             }),
         };
         if let Some(overlay) = overlay {
@@ -211,20 +213,7 @@ impl SettingsComponent {
             return Transition::Handled;
         }
         match key.code {
-            KeyCode::Enter | KeyCode::Char(' ') => self.activate(),
-            KeyCode::Char('+') => self.overlays.push(Overlay::Name {
-                target: NameTarget::New,
-                field: TextField::default(),
-            }),
-            KeyCode::Char('x') => {
-                if let Some(Row::Group(group)) = self.selected().map(|item| item.row.clone()) {
-                    let refs = self
-                        .pending
-                        .as_ref()
-                        .map_or(0, |pending| build::refs_into(ctx, pending, &group));
-                    self.overlays.push(Overlay::Remove { group, refs });
-                }
-            }
+            KeyCode::Enter | KeyCode::Char(' ') => self.activate(ctx),
             KeyCode::Char('w') => {
                 persist::save_config(self, ctx);
             }
@@ -337,9 +326,7 @@ impl Component for SettingsComponent {
     fn input_mode(&self) -> InputMode {
         match self.overlays.last() {
             None => InputMode::Normal,
-            Some(Overlay::Name { .. } | Overlay::Ignore { edit: Some(_), .. }) => {
-                InputMode::TextInput
-            }
+            Some(Overlay::Ignore { edit: Some(_), .. }) => InputMode::TextInput,
             Some(_) => InputMode::Modal,
         }
     }
@@ -359,20 +346,18 @@ impl Component for SettingsComponent {
         transition
     }
 
+    /// Rebuilds the rows each tick, as `build` documents, so a change made outside a key (the
+    /// cursor, a value in the core) shows at the next paint.
     fn update(&mut self, ctx: &mut AppContext) -> Transition {
         self.ensure(ctx);
+        self.refresh(ctx);
         Transition::None
     }
 
     fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
         match self.overlays.last() {
             Some(overlay) => overlays::hints(overlay),
-            None => {
-                let on_group = self
-                    .selected()
-                    .is_some_and(|item| matches!(item.row, Row::Group(_)));
-                footer::settings_hints(on_group)
-            }
+            None => footer::settings_hints(),
         }
     }
 

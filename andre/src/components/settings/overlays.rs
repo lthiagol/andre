@@ -1,12 +1,12 @@
-//! Keys for the dialogs on the settings list. Only the top overlay takes keys. Each handler
-//! says what the stack becomes, so a sub-dialog returns to the one that opened it.
+//! Keys for the dialogs on the settings list. Only the top overlay takes keys. A key either
+//! keeps the overlay (possibly edited in place) or closes it.
 
 use std::path::{Path, PathBuf};
 
 use andre_core::{IconSet, StowAction, Theme};
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::pending::{GroupChange, PendingSettings};
+use super::pending::PendingSettings;
 use super::types::*;
 use super::SettingsComponent;
 use crate::components::browser::{dir_entries, Browser};
@@ -21,19 +21,12 @@ enum Next {
     Keep,
     /// Close it; the overlay below, if any, takes keys again.
     Close,
-    /// Close it and show this one instead.
-    Replace(Overlay),
-    /// Show this one on top of it.
-    Open(Overlay),
-    /// Close the rename dialog. The group menu below now edits `name`.
-    Renamed(String),
 }
 
 /// The settings a dialog may change, borrowed from the component.
 struct Env<'a> {
     pending: &'a mut PendingSettings,
     dirty: &'a mut bool,
-    focus: &'a mut Option<Row>,
     ctx: &'a AppContext,
 }
 
@@ -44,7 +37,6 @@ pub fn handle_key(component: &mut SettingsComponent, key: KeyEvent, ctx: &AppCon
         overlays,
         pending,
         dirty,
-        focus,
         ..
     } = component;
     let Some(pending) = pending.as_mut() else {
@@ -56,41 +48,18 @@ pub fn handle_key(component: &mut SettingsComponent, key: KeyEvent, ctx: &AppCon
     let mut env = Env {
         pending,
         dirty,
-        focus,
         ctx,
     };
     let next = match &mut top {
         Overlay::Action { cursor } => action_key(cursor, &key, &mut env),
         Overlay::Theme { cursor, original } => theme_key(cursor, *original, &key, &mut env),
         Overlay::Icons { cursor, original } => icons_key(cursor, *original, &key, &mut env),
-        Overlay::Group {
-            group,
-            cursor,
-            snapshot,
-        } => group_key(group, cursor, snapshot, &key, &mut env),
-        Overlay::Name { target, field } => name_key(target, field, &key, &mut env),
-        Overlay::Browse { pick, browser } => browse_key(pick, browser, &key, &mut env),
-        Overlay::Remove { group, .. } => remove_key(group, &key, &mut env),
-        Overlay::Ignore {
-            scope,
-            cursor,
-            edit,
-        } => ignore_key(scope, cursor, edit, &key, &mut env),
+        Overlay::Browse { browser } => browse_key(browser, &key, &mut env),
+        Overlay::Ignore { cursor, edit } => ignore_key(cursor, edit, &key, &mut env),
         Overlay::Leave => Next::Keep,
     };
-    match next {
-        Next::Keep => overlays.push(top),
-        Next::Close => {}
-        Next::Replace(overlay) => overlays.push(overlay),
-        Next::Open(overlay) => {
-            overlays.push(top);
-            overlays.push(overlay);
-        }
-        Next::Renamed(name) => {
-            if let Some(Overlay::Group { group, .. }) = overlays.last_mut() {
-                *group = name;
-            }
-        }
+    if let Next::Keep = next {
+        overlays.push(top);
     }
 }
 
@@ -107,30 +76,11 @@ pub fn hints(overlay: &Overlay) -> Vec<Hint> {
             Hint::new("Enter", "keep", PRIO_PRIMARY),
             Hint::new("Esc", "revert", PRIO_BACK),
         ],
-        Overlay::Group { .. } => vec![
-            Hint::new("\u{2191}\u{2193}", "field", PRIO_NAV),
-            Hint::new("Enter", "change", PRIO_PRIMARY),
-            Hint::new("Esc", "cancel", PRIO_BACK),
-        ],
-        Overlay::Name { target, .. } => {
-            let verb = match target {
-                NameTarget::New => "create",
-                NameTarget::Rename { .. } => "rename",
-            };
-            vec![
-                Hint::new("Enter", verb, PRIO_PRIMARY),
-                Hint::new("Esc", "cancel", PRIO_BACK),
-            ]
-        }
         Overlay::Browse { .. } => vec![
             Hint::new("\u{2192}", "open", PRIO_NAV),
             Hint::new("\u{2190}", "up", PRIO_NAV),
             Hint::new("Enter", "choose", PRIO_PRIMARY),
             Hint::new("Esc", "cancel", PRIO_BACK),
-        ],
-        Overlay::Remove { .. } => vec![
-            Hint::new("y", "remove", PRIO_PRIMARY),
-            Hint::new("n", "keep", PRIO_BACK),
         ],
         Overlay::Ignore { edit: Some(_), .. } => vec![
             Hint::new("Enter", "done", PRIO_PRIMARY),
@@ -267,225 +217,48 @@ fn icons_key(cursor: &mut usize, original: IconSet, key: &KeyEvent, env: &mut En
     }
 }
 
-fn group_key(
-    group: &str,
-    cursor: &mut usize,
-    snapshot: &Snapshot,
-    key: &KeyEvent,
-    env: &mut Env,
-) -> Next {
-    if move_cursor(cursor, GROUP_ROWS, key) {
-        return Next::Keep;
-    }
-    match key.code {
-        KeyCode::Esc => {
-            env.pending.config = snapshot.config.clone();
-            env.pending.group_changes = snapshot.changes.clone();
-            *env.dirty = snapshot.dirty;
-            *env.focus = Some(Row::Group(snapshot.group.clone()));
-            Next::Close
-        }
-        KeyCode::Enter => {
-            let config = &env.pending.config;
-            let (ctx, name) = (env.ctx, group.to_string());
-            match *cursor {
-                GROUP_NAME => Next::Open(Overlay::Name {
-                    target: NameTarget::Rename {
-                        original: name.clone(),
-                    },
-                    field: text_field(&name),
-                }),
-                GROUP_SOURCE => {
-                    let current =
-                        config.resolve_group_source(&name, &ctx.config_dir, &ctx.home_dir);
-                    Next::Open(Overlay::Browse {
-                        pick: Pick::Source { group: name },
-                        browser: browser_at(current, &ctx.home_dir),
-                    })
-                }
-                GROUP_TARGET => {
-                    let current =
-                        config.resolve_group_target(&name, &ctx.config_dir, &ctx.home_dir);
-                    Next::Open(Overlay::Browse {
-                        pick: Pick::Target { group: name },
-                        browser: browser_at(current, &ctx.home_dir),
-                    })
-                }
-                GROUP_IGNORE => Next::Open(Overlay::Ignore {
-                    scope: IgnoreScope::Group(name),
-                    cursor: 0,
-                    edit: None,
-                }),
-                // Done keeps the edits.
-                _ => Next::Close,
-            }
-        }
-        _ => Next::Keep,
-    }
-}
-
-/// The group name dialog. A new name must be unused and free of `/`, which separates the
-/// group from its packages in profile refs.
-fn name_key(target: &NameTarget, field: &mut TextField, key: &KeyEvent, env: &mut Env) -> Next {
-    match key.code {
-        KeyCode::Esc => Next::Close,
-        KeyCode::Enter => {
-            let name = field.value.trim().to_string();
-            let taken = match target {
-                NameTarget::New => env.pending.config.groups.contains_key(&name),
-                NameTarget::Rename { original } => {
-                    name != *original && env.pending.config.groups.contains_key(&name)
-                }
-            };
-            if name.is_empty() {
-                field.error = Some("type a name".to_string());
-                return Next::Keep;
-            }
-            if name.contains('/') {
-                field.error = Some("no `/` in a group name".to_string());
-                return Next::Keep;
-            }
-            if taken {
-                field.error = Some(format!("`{name}` is already a group"));
-                return Next::Keep;
-            }
-            match target {
-                NameTarget::New => Next::Replace(Overlay::Browse {
-                    pick: Pick::NewSource { name },
-                    browser: browser_at(None, &env.ctx.home_dir),
-                }),
-                NameTarget::Rename { original } => {
-                    if name == *original {
-                        return Next::Close;
-                    }
-                    env.pending.config.rename_group(original, &name);
-                    env.pending.group_changes.push(GroupChange::Rename {
-                        from: original.clone(),
-                        to: name.clone(),
-                    });
-                    *env.dirty = true;
-                    *env.focus = Some(Row::Group(name.clone()));
-                    Next::Renamed(name)
-                }
-            }
-        }
-        _ => {
-            field.handle_key(key);
-            field.error = None;
-            Next::Keep
-        }
-    }
-}
-
-fn browse_key(pick: &mut Pick, browser: &mut Browser, key: &KeyEvent, env: &mut Env) -> Next {
+/// The packages folder picker. Enter chooses the highlighted folder, as the path the picker
+/// shows it at (absolute), and closes; Esc closes with nothing changed.
+fn browse_key(browser: &mut Browser, key: &KeyEvent, env: &mut Env) -> Next {
     if navigate_dirs(browser, key) {
         return Next::Keep;
     }
     match key.code {
-        KeyCode::Esc => match pick {
-            Pick::NewSource { name } => Next::Replace(Overlay::Name {
-                target: NameTarget::New,
-                field: text_field(name),
-            }),
-            Pick::NewTarget { name, .. } => Next::Replace(Overlay::Browse {
-                pick: Pick::NewSource { name: name.clone() },
-                browser: browser_at(None, &env.ctx.home_dir),
-            }),
-            Pick::Source { .. } | Pick::Target { .. } => Next::Close,
-        },
+        KeyCode::Esc => Next::Close,
         KeyCode::Enter => {
             let Some(entry) = browser.current() else {
                 return Next::Keep;
             };
-            let chosen = browser.path.join(&entry.name).to_string_lossy().to_string();
-            match pick {
-                Pick::NewSource { name } => Next::Replace(Overlay::Browse {
-                    pick: Pick::NewTarget {
-                        name: name.clone(),
-                        source: chosen,
-                    },
-                    browser: browser_at(None, &env.ctx.home_dir),
-                }),
-                Pick::NewTarget { name, source } => {
-                    env.pending
-                        .config
-                        .add_group(name.clone(), source.clone(), chosen);
-                    // A group removed and added back in one session keeps its refs.
-                    let removed = GroupChange::Remove(name.clone());
-                    env.pending
-                        .group_changes
-                        .retain(|change| *change != removed);
-                    *env.dirty = true;
-                    *env.focus = Some(Row::Group(name.clone()));
-                    Next::Close
-                }
-                Pick::Source { group } => {
-                    if env.pending.config.update_group_source(group, chosen) {
-                        *env.dirty = true;
-                    }
-                    Next::Close
-                }
-                Pick::Target { group } => {
-                    if env.pending.config.update_group_target(group, chosen) {
-                        *env.dirty = true;
-                    }
-                    Next::Close
-                }
+            let chosen = browser.path.join(&entry.name);
+            // Choosing the folder that is already set keeps the text in andre.yml as it is.
+            let current = env
+                .pending
+                .config
+                .packages_dir(&env.ctx.config_dir, &env.ctx.home_dir);
+            if current.as_ref() != Some(&chosen) {
+                env.pending
+                    .config
+                    .set_packages(Some(chosen.to_string_lossy().to_string()));
+                *env.dirty = true;
             }
-        }
-        _ => Next::Keep,
-    }
-}
-
-fn remove_key(group: &str, key: &KeyEvent, env: &mut Env) -> Next {
-    match key.code {
-        KeyCode::Char('y') | KeyCode::Char('Y') => {
-            env.pending.config.remove_group(group);
-            env.pending
-                .group_changes
-                .push(GroupChange::Remove(group.to_string()));
-            *env.dirty = true;
             Next::Close
         }
-        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => Next::Close,
         _ => Next::Keep,
-    }
-}
-
-/// The patterns an ignore editor lists: the global list, or one group's own list.
-fn patterns(pending: &PendingSettings, scope: &IgnoreScope) -> Vec<String> {
-    match scope {
-        IgnoreScope::Global => pending.config.global_ignore(),
-        IgnoreScope::Group(group) => pending
-            .config
-            .get_group_ignore(group)
-            .map(<[String]>::to_vec)
-            .unwrap_or_default(),
-    }
-}
-
-fn set_patterns(pending: &mut PendingSettings, scope: &IgnoreScope, list: Vec<String>) {
-    match scope {
-        IgnoreScope::Global => pending.config.global.ignore = Some(list),
-        IgnoreScope::Group(group) => {
-            pending.config.set_group_ignore(group, list);
-        }
     }
 }
 
 /// The pattern list. The row after the last pattern adds one. While a line is being
 /// typed, the keys go to it.
 fn ignore_key(
-    scope: &IgnoreScope,
     cursor: &mut usize,
     edit: &mut Option<LineEdit>,
     key: &KeyEvent,
     env: &mut Env,
 ) -> Next {
     if edit.is_some() {
-        return edit_line_key(scope, cursor, edit, key, env);
+        return edit_line_key(cursor, edit, key, env);
     }
-    let len = patterns(env.pending, scope).len();
+    let len = env.pending.config.global_ignore().len();
     if move_cursor(cursor, len + 1, key) {
         return Next::Keep;
     }
@@ -496,7 +269,7 @@ fn ignore_key(
             Next::Keep
         }
         KeyCode::Enter if *cursor < len => {
-            let list = patterns(env.pending, scope);
+            let list = env.pending.config.global_ignore();
             *edit = Some(LineEdit {
                 index: Some(*cursor),
                 field: text_field(&list[*cursor]),
@@ -508,15 +281,19 @@ fn ignore_key(
             Next::Keep
         }
         KeyCode::Char('x') if *cursor < len => {
-            let mut list = patterns(env.pending, scope);
+            let mut list = env.pending.config.global_ignore();
             list.remove(*cursor);
-            set_patterns(env.pending, scope, list);
+            set_patterns(env.pending, list);
             *env.dirty = true;
             *cursor = (*cursor).min(len - 1);
             Next::Keep
         }
         _ => Next::Keep,
     }
+}
+
+fn set_patterns(pending: &mut PendingSettings, list: Vec<String>) {
+    pending.config.global.ignore = Some(list);
 }
 
 fn new_line() -> LineEdit {
@@ -527,7 +304,6 @@ fn new_line() -> LineEdit {
 }
 
 fn edit_line_key(
-    scope: &IgnoreScope,
     cursor: &mut usize,
     edit: &mut Option<LineEdit>,
     key: &KeyEvent,
@@ -537,7 +313,7 @@ fn edit_line_key(
         KeyCode::Esc => *edit = None,
         KeyCode::Enter => {
             if let Some(line) = edit.take() {
-                commit_line(scope, cursor, line, env);
+                commit_line(cursor, line, env);
             }
         }
         _ => {
@@ -551,9 +327,9 @@ fn edit_line_key(
 }
 
 /// Writes a typed line. A blank line removes an existing pattern and adds nothing.
-fn commit_line(scope: &IgnoreScope, cursor: &mut usize, line: LineEdit, env: &mut Env) {
+fn commit_line(cursor: &mut usize, line: LineEdit, env: &mut Env) {
     let text = line.field.value.trim().to_string();
-    let mut list = patterns(env.pending, scope);
+    let mut list = env.pending.config.global_ignore();
     match line.index {
         None if text.is_empty() => return,
         None => {
@@ -566,6 +342,6 @@ fn commit_line(scope: &IgnoreScope, cursor: &mut usize, line: LineEdit, env: &mu
         Some(index) => list[index] = text,
     }
     *cursor = (*cursor).min(list.len());
-    set_patterns(env.pending, scope, list);
+    set_patterns(env.pending, list);
     *env.dirty = true;
 }

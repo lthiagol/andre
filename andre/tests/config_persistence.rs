@@ -47,15 +47,6 @@ fn read_config(app: &App) -> Config {
     Config::load(&app.ctx.config_path).expect("andre.yml should load")
 }
 
-fn make_app_with_yaml(yaml: &str) -> (App, tempfile::TempDir) {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let config_path = tmp.path().join("andre.yml");
-    std::fs::write(&config_path, yaml).unwrap();
-    create_test_package(&tmp);
-    let app = App::with_home(config_path, tmp.path().to_path_buf()).unwrap();
-    (app, tmp)
-}
-
 #[test]
 fn test_enter_cycles_verbosity_and_save_persists() {
     let (mut app, _tmp) = make_empty_app();
@@ -143,24 +134,23 @@ fn test_s_cycles_action_and_save_persists() {
 }
 
 #[test]
-fn test_add_group_then_save_persists() {
+fn test_packages_folder_chosen_then_save_writes_packages_and_no_groups() {
     let (mut app, tmp) = make_empty_app();
     let pick = tmp.path().join("pick");
     std::fs::create_dir_all(&pick).unwrap();
     open_settings(&mut app);
 
-    app.component_dispatch(key_char('+'));
-    type_text(&mut app, "work");
-    app.component_dispatch(enter_key());
-    choose_in_browser(&mut app, "pick");
+    select(&mut app, "packages");
     app.component_dispatch(enter_key());
     choose_in_browser(&mut app, "pick");
     app.component_dispatch(enter_key());
     save(&mut app);
 
     let config = read_config(&app);
-    let group = config.groups.get("work").expect("group written");
-    assert_eq!(group.source, pick.display().to_string());
+    assert_eq!(config.packages.as_deref(), Some(pick.to_str().unwrap()));
+    assert!(config.groups.is_empty());
+    let on_disk = std::fs::read_to_string(&app.ctx.config_path).unwrap();
+    assert!(!on_disk.contains("groups"), "no groups key: {on_disk}");
 }
 
 /// Puts the top folder picker's cursor on the folder called `name`.
@@ -173,45 +163,6 @@ fn choose_in_browser(app: &mut App, name: &str) {
         .iter()
         .position(|entry| entry.name == name)
         .unwrap();
-}
-
-#[test]
-fn test_remove_group_via_dialog_then_save_persists() {
-    let (mut app, _tmp) = make_app_with_yaml(
-        "global:\n  stow:\n    verbosity: 0\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
-    );
-    open_settings(&mut app);
-    select(&mut app, "home");
-    app.component_dispatch(key_char('x'));
-    app.component_dispatch(key_char('y'));
-    save(&mut app);
-
-    assert!(!read_config(&app).groups.contains_key("home"));
-}
-
-#[test]
-fn test_rename_group_then_save_persists() {
-    let (mut app, _tmp) = make_app_with_yaml(
-        "global:\n  stow:\n    verbosity: 0\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
-    );
-    open_settings(&mut app);
-    select(&mut app, "home");
-    app.component_dispatch(enter_key()); // group menu
-    app.component_dispatch(enter_key()); // name row: rename
-    for _ in 0..4 {
-        app.component_dispatch(backspace_key());
-    }
-    type_text(&mut app, "dots");
-    app.component_dispatch(enter_key()); // rename
-    for _ in 0..4 {
-        app.component_dispatch(down_key());
-    }
-    app.component_dispatch(enter_key()); // done: keep the rename
-    save(&mut app);
-
-    let config = read_config(&app);
-    assert!(config.groups.contains_key("dots"));
-    assert!(!config.groups.contains_key("home"));
 }
 
 #[test]
@@ -339,148 +290,8 @@ fn test_global_ignore_pattern_saved_to_andre_yml() {
     assert_eq!(app.ctx.core.config.global_ignore(), ["*.bak"]);
 }
 
-fn backspace_key() -> crossterm::event::KeyEvent {
-    crossterm::event::KeyEvent::new(
-        crossterm::event::KeyCode::Backspace,
-        crossterm::event::KeyModifiers::NONE,
-    )
-}
-
 fn type_text(app: &mut App, text: &str) {
     for c in text.chars() {
         app.component_dispatch(key_char(c));
     }
-}
-
-const HOME_GROUP_YAML: &str =
-    "global:\n  stow:\n    verbosity: 0\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n";
-
-/// Writes `profiles/<name>.yml` beside the config and loads it into the app.
-fn load_profile(app: &mut App, tmp: &tempfile::TempDir, name: &str, yaml: &str) {
-    let dir = tmp.path().join("profiles");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join(format!("{name}.yml")), yaml).unwrap();
-    app.ctx.core.profiles = andre_core::ProfileSet::load(&dir).unwrap();
-}
-
-fn profile_packages(app: &App, name: &str) -> Vec<String> {
-    app.ctx
-        .core
-        .profiles
-        .get(name)
-        .expect("profile loaded")
-        .packages
-        .clone()
-}
-
-fn toast_message(app: &App) -> String {
-    app.ctx
-        .toast
-        .as_ref()
-        .map(|toast| toast.message.clone())
-        .unwrap_or_default()
-}
-
-/// Renames the group under the cursor from `from` to `to` through its menu, then takes
-/// `done`, which keeps the edit.
-fn rename_selected_group(app: &mut App, from: &str, to: &str) {
-    app.component_dispatch(enter_key()); // group menu
-    app.component_dispatch(enter_key()); // name row: rename
-    for _ in 0..from.len() {
-        app.component_dispatch(backspace_key());
-    }
-    type_text(app, to);
-    app.component_dispatch(enter_key()); // rename
-    for _ in 0..4 {
-        app.component_dispatch(down_key());
-    }
-    app.component_dispatch(enter_key()); // done
-}
-
-#[test]
-fn test_rename_group_then_save_rewrites_profile_refs() {
-    let (mut app, tmp) = make_app_with_yaml(HOME_GROUP_YAML);
-    load_profile(&mut app, &tmp, "work", "packages: [home/git, other/vim]\n");
-    open_settings(&mut app);
-    select(&mut app, "home");
-    rename_selected_group(&mut app, "home", "dots");
-    save(&mut app);
-
-    assert_eq!(profile_packages(&app, "work"), ["dots/git", "other/vim"]);
-    let on_disk = std::fs::read_to_string(tmp.path().join("profiles/work.yml")).unwrap();
-    assert!(on_disk.contains("dots/git"));
-    assert!(!on_disk.contains("home/git"));
-    assert_eq!(toast_message(&app), "Config saved \u{b7} 1 profile updated");
-}
-
-#[test]
-fn test_remove_group_then_save_drops_its_profile_refs() {
-    let (mut app, tmp) = make_app_with_yaml(HOME_GROUP_YAML);
-    load_profile(&mut app, &tmp, "work", "packages: [home/git, other/vim]\n");
-    open_settings(&mut app);
-    select(&mut app, "home");
-    app.component_dispatch(key_char('x'));
-    app.component_dispatch(key_char('y'));
-    save(&mut app);
-
-    assert_eq!(profile_packages(&app, "work"), ["other/vim"]);
-    assert!(!read_config(&app).groups.contains_key("home"));
-}
-
-#[test]
-fn test_rename_then_remove_then_save_drops_the_renamed_refs() {
-    let (mut app, tmp) = make_app_with_yaml(HOME_GROUP_YAML);
-    load_profile(&mut app, &tmp, "work", "packages: [home/git, other/vim]\n");
-    open_settings(&mut app);
-    select(&mut app, "home");
-    rename_selected_group(&mut app, "home", "dots");
-    select(&mut app, "dots");
-    app.component_dispatch(key_char('x'));
-
-    assert!(matches!(
-        settings(&app).overlays.last(),
-        Some(Overlay::Remove { refs: 1, .. })
-    ));
-    app.component_dispatch(key_char('y'));
-    save(&mut app);
-
-    assert_eq!(profile_packages(&app, "work"), ["other/vim"]);
-}
-
-#[test]
-fn test_rename_then_leave_without_saving_leaves_profiles_alone() {
-    let (mut app, tmp) = make_app_with_yaml(HOME_GROUP_YAML);
-    load_profile(&mut app, &tmp, "work", "packages: [home/git]\n");
-    open_settings(&mut app);
-    select(&mut app, "home");
-    rename_selected_group(&mut app, "home", "dots");
-    app.component_dispatch(esc_key());
-    app.component_dispatch(key_char('n'));
-
-    assert_eq!(profile_packages(&app, "work"), ["home/git"]);
-    let on_disk = std::fs::read_to_string(tmp.path().join("profiles/work.yml")).unwrap();
-    assert!(on_disk.contains("home/git"));
-}
-
-#[test]
-fn test_group_removed_then_added_back_keeps_its_profile_refs() {
-    let (mut app, tmp) = make_app_with_yaml(HOME_GROUP_YAML);
-    load_profile(&mut app, &tmp, "work", "packages: [home/git]\n");
-    std::fs::create_dir_all(tmp.path().join("pick")).unwrap();
-    open_settings(&mut app);
-    select(&mut app, "home");
-    app.component_dispatch(key_char('x'));
-    app.component_dispatch(key_char('y'));
-
-    app.component_dispatch(key_char('+'));
-    type_text(&mut app, "home");
-    app.component_dispatch(enter_key());
-    choose_in_browser(&mut app, "pick");
-    app.component_dispatch(enter_key());
-    choose_in_browser(&mut app, "pick");
-    app.component_dispatch(enter_key());
-    save(&mut app);
-
-    assert!(read_config(&app).groups.contains_key("home"));
-    assert_eq!(profile_packages(&app, "work"), ["home/git"]);
 }

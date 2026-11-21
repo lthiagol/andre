@@ -350,7 +350,7 @@ fn test_empty_app_renders() {
 
 #[test]
 fn test_config_screen_renders() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_updated(&mut app, 80, 24);
     assert!(
@@ -429,7 +429,7 @@ fn test_help_screen_has_key_info() {
 
 #[test]
 fn test_config_screen_shows_verbosity() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_app(&mut app, 80, 24);
     assert!(line_contains(&buf, "verbose"), "verbose row not visible");
@@ -1213,7 +1213,7 @@ fn test_chrome_degrades_on_minimum_supported_width() {
 fn test_settings_icons_row_shows_pending_set_after_enter() {
     use helpers::enter_key;
 
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
     select_setting(&mut app, "icons");
 
@@ -1622,40 +1622,78 @@ fn select_setting(app: &mut App, label: &str) {
         .unwrap_or_else(|| panic!("no settings row labelled {label}"));
 }
 
-/// Renames group `home` to `dots` through its menu, with `work.yml` holding `home/git` saved.
-/// Returns the app with the settings screen open on the renamed group.
-fn renamed_group_with_a_saved_ref() -> (App, tempfile::TempDir) {
-    let (mut app, tmp) = make_two_group_app();
-    let dir = tmp.path().join("profiles");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("work.yml"), "packages: [home/git]\n").unwrap();
-    app.ctx.core.profiles = andre_core::ProfileSet::load(&dir).unwrap();
+/// The settings screen on a flat config (`dotfiles` holds the package `test`), its cursor on
+/// `packages`.
+fn flat_settings_on_packages() -> (App, tempfile::TempDir) {
+    let (mut app, tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
-    select_setting(&mut app, "home");
-    app.component_dispatch(enter_key()); // group menu
-    app.component_dispatch(enter_key()); // name row: rename
-    for _ in 0..4 {
-        app.component_dispatch(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
-    }
-    for c in "dots".chars() {
-        app.component_dispatch(key_char(c));
-    }
-    app.component_dispatch(enter_key()); // rename
-    for _ in 0..4 {
-        app.component_dispatch(down_key());
-    }
-    app.component_dispatch(enter_key()); // done
-    select_setting(&mut app, "dots");
+    select_setting(&mut app, "packages");
     (app, tmp)
 }
 
 #[test]
-fn test_remove_dialog_after_a_rename_counts_the_saved_profile_refs() {
-    let (mut app, _tmp) = renamed_group_with_a_saved_ref();
-    app.component_dispatch(key_char('x'));
-
+fn test_settings_at_80x24_lists_the_packages_folder_and_no_groups() {
+    let (mut app, _tmp) = make_flat_test_app();
+    push_screen(&mut app, "Settings");
     let buf = render_updated(&mut app, 80, 24);
-    assert!(line_contains(&buf, "1 profile ref to dots/* is removed."));
+
+    assert!(line_contains(&buf, "config"), "config header missing");
+    assert!(line_contains(&buf, "packages "), "packages row missing");
+    assert!(
+        line_contains(&buf, "~/dotfiles"),
+        "folder not shown as ~/dotfiles"
+    );
+    assert!(
+        line_contains(&buf, "global ignore"),
+        "global ignore row missing"
+    );
+    assert!(
+        !buffer_text(&buf).contains("groups"),
+        "a groups section is drawn"
+    );
+}
+
+#[test]
+fn test_settings_packages_detail_names_the_folder_and_where_links_go() {
+    let (mut app, _tmp) = flat_settings_on_packages();
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "Every folder here is a package."));
+    assert!(line_contains(&buf, "links to"), "links to fact missing");
+    assert!(line_contains(&buf, "Enter picks another folder."));
+    assert!(
+        line_contains(&buf, "Enter change"),
+        "footer says Enter change"
+    );
+}
+
+#[test]
+fn test_settings_packages_folder_picker_at_80x24_has_its_title_and_buttons() {
+    let (mut app, _tmp) = flat_settings_on_packages();
+    app.component_dispatch(enter_key());
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(
+        line_contains(&buf, "packages folder"),
+        "picker title missing"
+    );
+    assert!(line_contains(&buf, "Esc cancel"), "cancel button missing");
+    assert!(line_contains(&buf, "Enter choose"), "choose button missing");
+}
+
+#[test]
+fn test_settings_packages_screens_render_at_120x40_and_200x50() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = flat_settings_on_packages();
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            line_contains(&buf, "~/dotfiles"),
+            "{width}x{height}: no folder"
+        );
+
+        app.component_dispatch(enter_key());
+        render_updated(&mut app, width, height);
+    }
 }
 
 /// Puts the settings cursor on the first setting.
@@ -2015,41 +2053,6 @@ fn write_package(source: &std::path::Path, package: &str, file: &str) {
     let dir = source.join(package);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join(file), "x").unwrap();
-}
-
-/// Two groups. `home` holds the status fixtures and the 60-column package. `workstation`
-/// holds `deploy` and the CJK package.
-fn make_two_group_app() -> (App, tempfile::TempDir) {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let path = tmp.path().join("andre.yml");
-    std::fs::write(
-        &path,
-        r#"
-global:
-  stow:
-    verbosity: 0
-groups:
-  home:
-    source: dotfiles/home
-    target: "~"
-  workstation:
-    source: dotfiles/workstation
-    target: "~/work"
-"#,
-    )
-    .unwrap();
-    add_status_fixtures(tmp.path());
-    write_package(
-        &tmp.path().join("dotfiles/home"),
-        &long_package(),
-        ".long_rc",
-    );
-    let work = tmp.path().join("dotfiles/workstation");
-    write_package(&work, "deploy", ".deploy_rc");
-    write_package(&work, CJK_PACKAGE, ".kanji_rc");
-    std::fs::create_dir_all(tmp.path().join("work")).unwrap();
-    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
-    (app, tmp)
 }
 
 /// The text of row `y` left of column `border`: the list pane, without the detail beside it.
@@ -4681,24 +4684,30 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
 
 #[test]
 fn test_settings_list_shows_its_sections_and_no_save_status_text() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_updated(&mut app, 80, 24);
-    for header in ["stow options", "appearance", "config", "groups"] {
+    for header in ["stow options", "appearance", "config"] {
         assert!(line_contains(&buf, header), "section {header} not drawn");
     }
-    for text in ["[Update", "[All saved]", "Saved.", "Unsaved changes"] {
+    for text in [
+        "[Update",
+        "[All saved]",
+        "Saved.",
+        "Unsaved changes",
+        "groups",
+    ] {
         assert!(
             !line_contains(&buf, text),
             "save status {text:?} still drawn"
         );
     }
-    assert!(line_contains(&buf, "home"), "group rows not drawn");
+    assert!(line_contains(&buf, "packages "), "packages row not drawn");
 }
 
 #[test]
 fn test_settings_title_marks_unsaved_edits() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_updated(&mut app, 80, 24);
     assert!(!line_contains(&buf, "unsaved"));
@@ -4713,15 +4722,16 @@ fn test_settings_title_marks_unsaved_edits() {
 
 #[test]
 fn test_settings_skips_headers_when_the_cursor_moves() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
-    select_setting(&mut app, "global ignore");
+    select_setting(&mut app, "icons");
     app.component_dispatch(down_key());
     let buf = render_app(&mut app, 80, 24);
-    // The cursor row is the first group: its detail title is the group's name.
+    // Down from `icons` skips the config header: the cursor is on `packages`, whose detail
+    // headline is drawn.
     assert!(
-        line_contains(&buf, "Group `home`"),
-        "cursor did not skip the groups header"
+        line_contains(&buf, "Every folder here is a package."),
+        "cursor did not skip the config header"
     );
 }
 
@@ -4763,27 +4773,12 @@ fn test_settings_dialogs_render_at_80x24_120x40_and_200x50() {
             "global ignore",
         ),
         (
-            "group menu",
+            "packages folder",
             |app| {
-                select_setting(app, "home");
+                select_setting(app, "packages");
                 app.component_dispatch(enter_key());
             },
-            "edit group home",
-        ),
-        (
-            "remove group",
-            |app| {
-                select_setting(app, "home");
-                app.component_dispatch(key_char('x'));
-            },
-            "remove group",
-        ),
-        (
-            "new group name",
-            |app| {
-                app.component_dispatch(key_char('+'));
-            },
-            "new group",
+            "packages folder",
         ),
         (
             "leave",
@@ -4796,7 +4791,7 @@ fn test_settings_dialogs_render_at_80x24_120x40_and_200x50() {
     ];
     for (name, open, title) in scenarios {
         for (width, height) in [(80, 24), (120, 40), (200, 50)] {
-            let (mut app, _tmp) = make_two_group_app();
+            let (mut app, _tmp) = make_flat_test_app();
             push_screen(&mut app, "Settings");
             app.update_components();
             open(&mut app);
@@ -4812,7 +4807,7 @@ fn test_settings_dialogs_render_at_80x24_120x40_and_200x50() {
 #[test]
 fn test_settings_list_renders_at_120x40_and_200x50() {
     for (width, height) in [(120, 40), (200, 50)] {
-        let (mut app, _tmp) = make_two_group_app();
+        let (mut app, _tmp) = make_flat_test_app();
         push_screen(&mut app, "Settings");
         let buf = render_updated(&mut app, width, height);
         assert!(
@@ -4827,15 +4822,15 @@ fn test_settings_list_renders_at_120x40_and_200x50() {
 }
 
 #[test]
-fn test_settings_group_row_footer_says_edit_and_keeps_the_theme_chip_at_80x24() {
-    let (mut app, _tmp) = make_two_group_app();
+fn test_settings_packages_footer_says_change_and_keeps_the_theme_chip_at_80x24() {
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
-    select_setting(&mut app, "home");
+    select_setting(&mut app, "packages");
     let buf = render_app(&mut app, 80, 24);
     let footer = footer_row(&buf);
     assert!(
-        footer.contains("Enter edit  + add  x remove  w save  Esc back"),
-        "group row footer: {footer:?}"
+        footer.contains("Enter change  w save  Esc back"),
+        "packages row footer: {footer:?}"
     );
     assert!(
         footer.contains("theme default"),
@@ -4845,7 +4840,7 @@ fn test_settings_group_row_footer_says_edit_and_keeps_the_theme_chip_at_80x24() 
 
 #[test]
 fn test_settings_unsaved_dot_is_drawn_in_the_warn_colour() {
-    let (mut app, _tmp) = make_test_app();
+    let (mut app, _tmp) = make_flat_test_app();
     push_screen(&mut app, "Settings");
     render_updated(&mut app, 80, 24);
     app.component_dispatch(key_char('v'));

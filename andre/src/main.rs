@@ -324,6 +324,10 @@ fn main() {
     }
 }
 
+/// What `--onboard` writes when no config exists: no packages folder yet, so the settings
+/// screen opens on `packages`.
+const ONBOARD_CONFIG: &str = "global: {}\n";
+
 fn try_main() -> Result<()> {
     let args = parse_args();
 
@@ -345,7 +349,7 @@ fn try_main() -> Result<()> {
         None if args.onboard => {
             // Create empty config file at the specified path
             let path = onboard_target.expect("checked above: --onboard has a target");
-            let content = "global: {}\ngroups: {}\n";
+            let content = ONBOARD_CONFIG;
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -435,7 +439,7 @@ fn try_main() -> Result<()> {
         if args.onboard {
             use andre::components::settings::SettingsComponent;
             app.component_stack
-                .push(Box::new(SettingsComponent::default()));
+                .push(Box::new(SettingsComponent::on_packages()));
             app.onboard_mode = true;
         }
 
@@ -514,6 +518,19 @@ mod cli_tests {
 
     fn s(args: &[&str]) -> Vec<String> {
         args.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn onboard_config_loads_and_warns_only_about_the_packages_folder() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("andre.yml");
+        std::fs::write(&path, ONBOARD_CONFIG).unwrap();
+        let config = andre_core::Config::load(&path).unwrap();
+        assert!(config.groups.is_empty());
+        assert_eq!(
+            config.validate(),
+            [andre_core::config::ConfigWarning::NoPackagesFolder]
+        );
     }
 
     #[test]

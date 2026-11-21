@@ -288,7 +288,7 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
             Hint::new("PgUp/PgDn", "scroll", PRIO_VERB),
             esc("back"),
         ],
-        "Settings" => settings_hints(false),
+        "Settings" => settings_hints(),
         "UnstowTargetSelect" => vec![arrows("move"), enter("browse"), esc("back")],
         "UnstowBrowse" => unstow_browse_hints(0),
         _ => Vec::new(),
@@ -417,21 +417,10 @@ pub fn leave_dialog_hints() -> Vec<Hint> {
     ]
 }
 
-/// Hints for the settings list. A group row says `edit` (its menu) and adds the remove key;
-/// any other row says `change`.
-pub fn settings_hints(on_group: bool) -> Vec<Hint> {
-    if on_group {
-        return vec![
-            Hint::new("Enter", "edit", PRIO_PRIMARY),
-            Hint::new("+", "add", PRIO_VERB),
-            Hint::new("x", "remove", PRIO_VERB),
-            Hint::new("w", "save", PRIO_VERB),
-            Hint::new("Esc", "back", PRIO_BACK),
-        ];
-    }
+/// Hints for the settings list. Every row changes the same way.
+pub fn settings_hints() -> Vec<Hint> {
     vec![
-        Hint::new("Space/Enter", "change", PRIO_PRIMARY),
-        Hint::new("+", "group", PRIO_VERB),
+        Hint::new("Enter", "change", PRIO_PRIMARY),
         Hint::new("w", "save", PRIO_VERB),
         Hint::new("Esc", "back", PRIO_BACK),
     ]
@@ -679,7 +668,7 @@ mod tests {
     #[test]
     fn test_key_names_use_key_colour() {
         let spans = hint_spans(&screen_hints("Settings"), &colors());
-        let enter = spans.iter().find(|s| s.content == "Space/Enter").unwrap();
+        let enter = spans.iter().find(|s| s.content == "Enter").unwrap();
         assert_eq!(enter.style.fg, Some(colors().key));
     }
 

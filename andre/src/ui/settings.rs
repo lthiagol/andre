@@ -11,15 +11,15 @@ use ratatui::{
     Frame,
 };
 
-use crate::components::settings::build::pattern_count;
+use crate::components::browser::Browser;
 use crate::components::settings::pending::PendingSettings;
-use crate::components::settings::{IgnoreScope, Item, NameTarget, Overlay, Pick, Row, GROUP_DONE};
+use crate::components::settings::{Item, LineEdit, Overlay, Row};
 use crate::components::AppContext;
 use crate::theme::ThemeColors;
 use crate::ui::dialog::{dialog_rect, key_button, leave_dialog, render_dialog, Dialog};
 use crate::ui::list_panel::{self, render_titled_list_panel, ListView};
 use crate::ui::selection;
-use crate::ui::text_field::{field_line, TextField};
+use crate::ui::text_field::field_line;
 use crate::ui::{display_path, elide};
 
 /// Width of every dialog row. Dialogs size to their widest line, so this sets their width.
@@ -68,8 +68,8 @@ fn list_title(dirty: bool, colors: &ThemeColors) -> Line<'static> {
     Line::from(spans)
 }
 
-/// One row: a header is a dim label with its meta in `accent`; a setting or a group is a
-/// label column and its value.
+/// One row: a header is a dim label with its meta in `accent`; a setting is a label column
+/// and its value, which is elided to the width the row has left.
 pub fn list_line(item: &Item, selected: bool, colors: &ThemeColors, width: u16) -> Line<'static> {
     if item.row == Row::Header {
         let mut content = vec![Span::styled(
@@ -87,10 +87,11 @@ pub fn list_line(item: &Item, selected: bool, colors: &ThemeColors, width: u16) 
     }
     let label_style = Style::default().fg(colors.text);
     let value_style = Style::default().fg(colors.value);
+    let room = usize::from(width).saturating_sub(2 + LABEL + 1);
     let content = vec![
         Span::raw("  "),
         Span::styled(format!("{:<LABEL$}", item.label), label_style),
-        Span::styled(item.value.clone(), value_style),
+        Span::styled(elide(&item.value, room), value_style),
     ];
     selection::row(content, selected, colors, width)
 }
@@ -132,15 +133,8 @@ pub fn overlay_dialog(
             let options = IconSet::ALL.iter().map(|i| i.name().to_string()).collect();
             picker("icons", options, *cursor, "revert", colors)
         }
-        Overlay::Group { group, cursor, .. } => group_menu(group, *cursor, pending, ctx, colors),
-        Overlay::Name { target, field } => name_dialog(target, field, colors),
-        Overlay::Browse { pick, browser } => browse_dialog(pick, browser, ctx, colors),
-        Overlay::Remove { group, refs } => remove_dialog(group, *refs, colors),
-        Overlay::Ignore {
-            scope,
-            cursor,
-            edit,
-        } => ignore_dialog(scope, *cursor, edit.as_ref(), pending, colors),
+        Overlay::Browse { browser } => packages_dialog(browser, ctx, colors),
+        Overlay::Ignore { cursor, edit } => ignore_dialog(*cursor, edit.as_ref(), pending, colors),
         Overlay::Leave => leave_dialog("andre.yml", colors),
     }
 }
@@ -171,90 +165,9 @@ fn picker(
     }
 }
 
-/// A group's fields. Enter on a field opens its dialog; the last row is done.
-fn group_menu(
-    group: &str,
-    cursor: usize,
-    pending: &PendingSettings,
-    ctx: &AppContext,
-    colors: &ThemeColors,
-) -> Dialog {
-    let (source, target) =
-        crate::components::settings::build::group_paths(pending, group, ctx).unwrap_or_default();
-    let own_ignore = pending
-        .config
-        .get_group_ignore(group)
-        .map_or(0, <[String]>::len);
-    let fields = [
-        ("name", group.to_string(), "rename \u{25b8}"),
-        ("source", elide(&source, 24), "browse \u{25b8}"),
-        ("target", elide(&target, 24), "browse \u{25b8}"),
-        ("ignore", pattern_count(own_ignore), "edit \u{25b8}"),
-    ];
-    let mut body: Vec<Line<'static>> = fields
-        .into_iter()
-        .enumerate()
-        .map(|(i, (label, value, action))| {
-            let content = vec![
-                Span::styled(
-                    format!("{label:<LABEL$}"),
-                    Style::default().fg(colors.text_dim),
-                ),
-                Span::styled(format!("{value:<24}"), Style::default().fg(colors.value)),
-                Span::styled(action, Style::default().fg(colors.text_dim)),
-            ];
-            selection::row(content, i == cursor, colors, DIALOG_ROW)
-        })
-        .collect();
-    body.push(selection::row(
-        vec![Span::styled(
-            "done \u{25b8}",
-            Style::default().fg(colors.text),
-        )],
-        cursor == GROUP_DONE,
-        colors,
-        DIALOG_ROW,
-    ));
-    Dialog {
-        title: format!("edit group {group}"),
-        body,
-        buttons: vec![key_button(KeyCode::Esc, "cancel", false)],
-    }
-}
-
-fn name_dialog(target: &NameTarget, field: &TextField, colors: &ThemeColors) -> Dialog {
-    let (title, verb) = match target {
-        NameTarget::New => ("new group", "create"),
-        NameTarget::Rename { .. } => ("rename group", "rename"),
-    };
-    let mut body = vec![field_line("name", field, true, colors)];
-    if let Some(error) = &field.error {
-        body.push(Line::styled(error.clone(), Style::default().fg(colors.err)));
-    }
-    Dialog {
-        title: title.to_string(),
-        body,
-        buttons: vec![
-            key_button(KeyCode::Esc, "cancel", false),
-            key_button(KeyCode::Enter, verb, true),
-        ],
-    }
-}
-
 /// The folder being picked, then the folders in it, a window of them with the cursor
 /// shown. Enter chooses the highlighted folder.
-fn browse_dialog(
-    pick: &Pick,
-    browser: &crate::components::browser::Browser,
-    ctx: &AppContext,
-    colors: &ThemeColors,
-) -> Dialog {
-    let title = match pick {
-        Pick::NewSource { .. } => "source for new group".to_string(),
-        Pick::NewTarget { name, .. } => format!("target for {name}"),
-        Pick::Source { group } => format!("source for {group}"),
-        Pick::Target { group } => format!("target for {group}"),
-    };
+fn packages_dialog(browser: &Browser, ctx: &AppContext, colors: &ThemeColors) -> Dialog {
     let width = DIALOG_ROW as usize;
     let mut body = vec![Line::styled(
         elide(&display_path(&browser.path, &ctx.home_dir), width),
@@ -286,7 +199,7 @@ fn browse_dialog(
         None => "choose".to_string(),
     };
     Dialog {
-        title,
+        title: "packages folder".to_string(),
         body,
         buttons: vec![
             key_button(KeyCode::Esc, "cancel", false),
@@ -295,54 +208,15 @@ fn browse_dialog(
     }
 }
 
-fn remove_dialog(group: &str, refs: usize, colors: &ThemeColors) -> Dialog {
-    let text = Style::default().fg(colors.text);
-    let mut body = vec![Line::styled(
-        format!("Remove group `{group}` from andre.yml?"),
-        text,
-    )];
-    if refs > 0 {
-        let (noun, verb) = if refs == 1 {
-            ("profile ref", "is")
-        } else {
-            ("profile refs", "are")
-        };
-        body.push(Line::styled(
-            format!("{refs} {noun} to {group}/* {verb} removed."),
-            text,
-        ));
-    }
-    body.push(Line::styled("No files are touched.", text));
-    Dialog {
-        title: "remove group".to_string(),
-        body,
-        buttons: vec![
-            key_button(KeyCode::Char('n'), "keep", false),
-            key_button(KeyCode::Char('y'), "remove", true),
-        ],
-    }
-}
-
 /// A pattern list: one row per pattern, then the add row. An open edit shows its field in
 /// place of its row.
 fn ignore_dialog(
-    scope: &IgnoreScope,
     cursor: usize,
-    edit: Option<&crate::components::settings::LineEdit>,
+    edit: Option<&LineEdit>,
     pending: &PendingSettings,
     colors: &ThemeColors,
 ) -> Dialog {
-    let (title, patterns) = match scope {
-        IgnoreScope::Global => ("global ignore".to_string(), pending.config.global_ignore()),
-        IgnoreScope::Group(group) => (
-            format!("ignore \u{b7} {group}"),
-            pending
-                .config
-                .get_group_ignore(group)
-                .map(<[String]>::to_vec)
-                .unwrap_or_default(),
-        ),
-    };
+    let patterns = pending.config.global_ignore();
     let rows = patterns.len() + 1;
     let start = cursor.saturating_sub(VISIBLE - 1);
     let body = (start..rows)
@@ -375,43 +249,8 @@ fn ignore_dialog(
         vec![key_button(KeyCode::Esc, "back", false)]
     };
     Dialog {
-        title,
+        title: "global ignore".to_string(),
         body,
         buttons,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn body_text(dialog: &Dialog) -> Vec<String> {
-        dialog
-            .body
-            .iter()
-            .map(|line| {
-                line.spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect()
-            })
-            .collect()
-    }
-
-    #[test]
-    fn test_remove_dialog_says_the_profile_refs_are_removed() {
-        let colors = ThemeColors::from_theme(Theme::Default);
-        let text = body_text(&remove_dialog("work", 2, &colors));
-        assert!(text.contains(&"2 profile refs to work/* are removed.".to_string()));
-
-        let text = body_text(&remove_dialog("work", 1, &colors));
-        assert!(text.contains(&"1 profile ref to work/* is removed.".to_string()));
-    }
-
-    #[test]
-    fn test_remove_dialog_without_refs_says_nothing_about_profiles() {
-        let colors = ThemeColors::from_theme(Theme::Default);
-        let text = body_text(&remove_dialog("work", 0, &colors));
-        assert!(text.iter().all(|line| !line.contains("profile")));
     }
 }
