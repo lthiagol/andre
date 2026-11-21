@@ -19,7 +19,7 @@ use unicode_width::UnicodeWidthStr;
 use super::Membership;
 use crate::components::AppContext;
 use crate::theme::ThemeColors;
-use crate::ui::detail::Detail;
+use crate::ui::detail::{Detail, VALUE_WIDTH};
 use crate::ui::dialog::{dialog_rect, render_dialog, Button, Dialog};
 use crate::ui::icons::Icons;
 use crate::ui::selection;
@@ -28,9 +28,7 @@ use crate::ui::{display_path, elide, plural};
 
 /// Most file names the package detail lists. The rest are counted.
 const FILES_SHOWN: usize = 8;
-/// Widest a fact's value may be, and a file name, so they stay on one line in the detail
-/// pane at 80 columns. Wider panes do not use the spare room; the detail wraps prose only.
-const VALUE_WIDTH: usize = 27;
+/// Widest a file name may be, so it stays on one line in the detail pane at 80 columns.
 const NAME_WIDTH: usize = 34;
 
 /// The statuses in the order a group summary lists them.

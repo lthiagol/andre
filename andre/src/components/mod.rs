@@ -64,6 +64,9 @@ pub struct AppContext {
     pub config_dir: PathBuf,
     pub config_path: PathBuf,
     pub home_dir: PathBuf,
+    /// The folder plain `andre` reads its config from: `$XDG_CONFIG_HOME/andre`, or
+    /// `$HOME/.config/andre`. `None` when no base resolves.
+    pub search_dir: Option<PathBuf>,
     pub status_cache: RefCell<StatusCache>,
     pub terminal_size: (u16, u16),
     pub debug: bool,
@@ -103,6 +106,7 @@ impl AppContext {
             config_dir: dir.to_path_buf(),
             config_path: dir.join("andre.yml"),
             home_dir: dir.to_path_buf(),
+            search_dir: Some(dir.join(".config").join("andre")),
             status_cache: RefCell::new(StatusCache::new()),
             terminal_size: (80, 24),
             debug: false,

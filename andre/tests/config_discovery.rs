@@ -339,3 +339,132 @@ fn demo_fixture_profiles_resolve_through_their_include() {
     assert_eq!(packages, ["home/nvim", "home/shell", "home/git"]);
     assert_eq!(editor.missing().count(), 0);
 }
+
+// ---- headless --profile (F5) ----
+
+/// A config folder with two packages in group `home` and one profile, `work`, that lists
+/// only `git`.
+fn profile_repo(sb: &Sandbox) -> PathBuf {
+    let repo = sb.cwd.join("repo");
+    write(
+        &repo.join("andre.yml"),
+        &format!(
+            "global: {{}}\ngroups:\n  home:\n    source: packages\n    target: \"{}\"\n",
+            sb.home.display()
+        ),
+    );
+    write(&repo.join("packages/git/.gitconfig"), "[user]\n");
+    write(&repo.join("packages/shell/.bashrc"), "alias l=ls\n");
+    write(&repo.join("profiles/work.yml"), "packages: [home/git]\n");
+    repo
+}
+
+#[test]
+fn process_profile_with_yolo_stows_only_that_profile() {
+    let sb = Sandbox::new();
+    let repo = profile_repo(&sb);
+
+    let out = sb.run(&[
+        "--yolo",
+        "--config-folder",
+        repo.to_str().unwrap(),
+        "--profile",
+        "work",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        sb.home.join(".gitconfig").is_symlink(),
+        "the profile's package is linked"
+    );
+    assert!(
+        !sb.home.join(".bashrc").exists(),
+        "packages outside the profile are not"
+    );
+    assert!(
+        stdout(&out).contains("1 succeeded, 0 failed (total: 1)"),
+        "stdout: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn process_profile_accepts_the_equals_form() {
+    let sb = Sandbox::new();
+    let repo = profile_repo(&sb);
+
+    let out = sb.run(&[
+        "--yolo",
+        "--config-folder",
+        repo.to_str().unwrap(),
+        "--profile=work",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(sb.home.join(".gitconfig").is_symlink());
+}
+
+#[test]
+fn process_unknown_profile_exits_2_and_lists_the_profiles() {
+    let sb = Sandbox::new();
+    let repo = profile_repo(&sb);
+
+    for extra in [&["--yolo"][..], &[][..]] {
+        let mut args = extra.to_vec();
+        args.extend([
+            "--config-folder",
+            repo.to_str().unwrap(),
+            "--profile",
+            "nope",
+        ]);
+        let out = sb.run(&args);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "args {args:?}: stderr: {}",
+            stderr(&out)
+        );
+        assert!(
+            stderr(&out).contains("no profile named 'nope'"),
+            "stderr: {}",
+            stderr(&out)
+        );
+        assert!(
+            stderr(&out).contains("profiles: work"),
+            "stderr: {}",
+            stderr(&out)
+        );
+    }
+    assert!(!sb.home.join(".gitconfig").exists(), "nothing is stowed");
+}
+
+#[test]
+fn process_profile_without_a_value_is_a_usage_error() {
+    let sb = Sandbox::new();
+    let out = sb.run(&["--yolo", "--profile"]);
+    assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("a value is required for '--profile'"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn process_unknown_profile_in_a_folder_without_profiles_says_so() {
+    let sb = Sandbox::new();
+    let repo = sb.cwd.join("bare");
+    write(&repo.join("andre.yml"), MINIMAL_CONFIG);
+
+    let out = sb.run(&[
+        "--yolo",
+        "--config-folder",
+        repo.to_str().unwrap(),
+        "--profile",
+        "x",
+    ]);
+    assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("no profiles exist yet"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}

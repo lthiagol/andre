@@ -128,6 +128,7 @@ mod tests {
             config_dir: std::path::PathBuf::from("."),
             config_path: std::path::PathBuf::from("."),
             home_dir: std::path::PathBuf::from("."),
+            search_dir: None,
             status_cache: std::cell::RefCell::new(crate::status_cache::StatusCache::new()),
             terminal_size: (80, 24),
             debug: false,

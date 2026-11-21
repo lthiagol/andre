@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 
+use andre_core::bootstrap::{self, Bootstrap};
 use andre_core::{discover_packages, EngineKind, StowStatus};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -13,6 +14,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use crate::components::confirm::ConfirmComponent;
 use crate::components::help::HelpComponent;
 use crate::components::packages::PackagesComponent;
 use crate::components::profiles::ProfilesComponent;
@@ -23,16 +25,20 @@ use crate::components::wizard::NewPackageWizard;
 use crate::components::{AppContext, Component, Transition};
 use crate::input;
 use crate::theme::ThemeColors;
-use crate::ui::detail::{render_detail, Detail};
+use crate::ui::detail::{render_detail, Detail, VALUE_WIDTH};
+use crate::ui::footer::{screen_hints, Hint};
 use crate::ui::icons::Icons;
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::{self, render_list_panel, ListView};
 use crate::ui::selection;
-use crate::ui::{display_path, plural};
+use crate::ui::{display_path, elide, plural};
 
-/// The eight rows of the main menu, in jump-digit order (`1`..`8`).
+/// The main menu's rows. The eight in [`MenuItem::ALL`] are always there, in jump-digit
+/// order (`1`..`8`). `Setup` is the fresh-machine item, shown only while
+/// [`bootstrap::find`] names a package, and jumped to with `0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuItem {
+    Setup,
     Profiles,
     Stow,
     NewPackage,
@@ -55,8 +61,17 @@ impl MenuItem {
         MenuItem::Quit,
     ];
 
+    /// The digit that jumps to the item: `0` for `Setup`, `1`..`8` for the rest.
+    pub fn digit(self) -> usize {
+        match Self::ALL.iter().position(|item| *item == self) {
+            Some(index) => index + 1,
+            None => 0,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
+            MenuItem::Setup => "set up this machine",
             MenuItem::Profiles => "profiles",
             MenuItem::Stow => "packages",
             MenuItem::NewPackage => "new package",
@@ -70,6 +85,7 @@ impl MenuItem {
 
     fn icon(self, icons: &Icons) -> &'static str {
         match self {
+            MenuItem::Setup => icons.menu_setup,
             MenuItem::Profiles => icons.menu_profiles,
             MenuItem::Stow => icons.link,
             MenuItem::NewPackage => icons.menu_new_package,
@@ -83,6 +99,9 @@ impl MenuItem {
 
     fn description(self) -> &'static str {
         match self {
+            MenuItem::Setup => {
+                "Link this config folder to ~/.config/andre, so plain andre finds it."
+            }
             MenuItem::Profiles => {
                 "Named sets of packages. Pick one and run the current action on all of it."
             }
@@ -99,12 +118,15 @@ impl MenuItem {
 
 #[derive(Default)]
 pub struct MainMenuComponent {
-    /// The cursor and the window over the seven items.
+    /// The cursor and the window over the items.
     pub list: ListView,
     /// Built by `update`, read while painting.
     detail: Detail,
-    /// Fingerprint of everything `detail` was built from. `None` until the first update.
+    /// Fingerprint of everything `detail` and `bootstrap` were built from. `None` until the
+    /// first update.
     detail_key: Option<u64>,
+    /// The fresh-machine item, if there is one. Set by `update`.
+    bootstrap: Option<Bootstrap>,
 }
 
 impl Component for MainMenuComponent {
@@ -120,29 +142,28 @@ impl Component for MainMenuComponent {
         self
     }
 
-    fn handle_key(&mut self, key: KeyEvent, _ctx: &mut AppContext) -> Transition {
-        let items_len = MenuItem::ALL.len();
+    fn handle_key(&mut self, key: KeyEvent, ctx: &mut AppContext) -> Transition {
+        let items = self.items();
 
         if input::Input::is_up(&key) {
-            self.list.step(false, items_len);
+            self.list.step(false, items.len());
         } else if input::Input::is_down(&key) {
-            self.list.step(true, items_len);
+            self.list.step(true, items.len());
         } else if input::Input::is_quit_key(&key) {
             // q and Ctrl+C: checked before the Char arm so the digit
             // dispatcher never swallows Ctrl+C / Ctrl+1 / etc.
             return Transition::Quit;
         } else if key.code == KeyCode::Enter {
-            return Self::activate(MenuItem::ALL[self.list.cursor]);
+            return self.activate(self.selected(), ctx);
         } else if let KeyCode::Char(c) = key.code {
-            // Unmodified digit keys 1..=8 jump to and activate the Nth menu
-            // item, matching the labels rendered in `render`. '0' and '9' are
-            // out of range and ignored so they cannot crash input.
+            // Unmodified digit keys jump to and activate the item they are drawn
+            // beside: `0` for set up, `1`..`8` for the rest. A digit with no item
+            // (`0` without the set-up item, `9`) is ignored.
             if key.modifiers.is_empty() {
                 if let Some(d) = c.to_digit(10) {
-                    if (1..=items_len as u32).contains(&d) {
-                        let idx = (d - 1) as usize;
-                        self.list.cursor = idx;
-                        return Self::activate(MenuItem::ALL[idx]);
+                    if let Some(index) = items.iter().position(|item| item.digit() == d as usize) {
+                        self.list.cursor = index;
+                        return self.activate(items[index], ctx);
                     }
                 }
             }
@@ -154,28 +175,47 @@ impl Component for MainMenuComponent {
     fn update(&mut self, ctx: &mut AppContext) -> Transition {
         let key = self.fingerprint(ctx);
         if self.detail_key != Some(key) {
-            self.detail = build_detail(MenuItem::ALL[self.list.cursor], ctx);
+            self.bootstrap = bootstrap::find(
+                &ctx.core.config,
+                &ctx.config_dir,
+                &ctx.home_dir,
+                ctx.search_dir.as_deref(),
+            );
+            let items = self.items().len();
+            self.list.cursor = self.list.cursor.min(items - 1);
+            self.detail = build_detail(self.selected(), ctx, self.bootstrap.as_ref());
             self.detail_key = Some(key);
         }
         Transition::None
     }
 
+    fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
+        let mut hints = screen_hints(self.id());
+        for hint in &mut hints {
+            if hint.label == "jump" {
+                hint.key = jump_keys(self.bootstrap.is_some()).into();
+            }
+        }
+        hints
+    }
+
     fn prepare(&mut self, area: Rect) {
         let rects = screen_rects(area, Shape::TwoPane);
-        self.list.prepare(rects.list, MenuItem::ALL.len());
+        self.list.prepare(rects.list, self.items().len());
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
         let colors = ThemeColors::from_theme(ctx.core.theme);
         let icons = Icons::for_set(ctx.core.icons);
-        let selected = MenuItem::ALL[self.list.cursor];
+        let items = self.items();
+        let selected = items[self.list.cursor];
         let rects = screen_rects(area, Shape::TwoPane);
 
         let width = list_panel::inner(rects.list).width;
-        let rows: Vec<Line> = MenuItem::ALL
+        let rows: Vec<Line> = items
             .iter()
             .enumerate()
-            .map(|(i, item)| list_row(*item, i, i == self.list.cursor, icons, &colors, width))
+            .map(|(i, item)| list_row(*item, i == self.list.cursor, icons, &colors, width))
             .collect();
         render_list_panel(
             frame, rects.list, &colors, "actions", rows, &self.list, None,
@@ -190,11 +230,32 @@ impl MainMenuComponent {
         &self.detail
     }
 
+    /// The rows on screen, in order: the set-up item first while it is offered.
+    pub fn items(&self) -> Vec<MenuItem> {
+        let mut items = Vec::with_capacity(MenuItem::ALL.len() + 1);
+        if self.bootstrap.is_some() {
+            items.push(MenuItem::Setup);
+        }
+        items.extend(MenuItem::ALL);
+        items
+    }
+
+    /// How many rows the menu draws. The top-level UI reads it to decide whether the
+    /// big banner still fits.
+    pub fn item_count(&self) -> usize {
+        self.items().len()
+    }
+
+    fn selected(&self) -> MenuItem {
+        self.items()[self.list.cursor]
+    }
+
     /// Hash of everything the detail depends on. A change in any of these
     /// means the facts are rebuilt on the next update.
     fn fingerprint(&self, ctx: &AppContext) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.list.cursor.hash(&mut hasher);
+        bootstrap::default_folder_taken(&ctx.home_dir).hash(&mut hasher);
         ctx.status_cache.borrow().generation().hash(&mut hasher);
         ctx.core.theme.name().hash(&mut hasher);
         engine_label(ctx.core.config.effective_engine()).hash(&mut hasher);
@@ -214,8 +275,16 @@ impl MainMenuComponent {
 
     /// Activate the item. Extracted so digit-key dispatch and Enter share the
     /// same transition table.
-    fn activate(item: MenuItem) -> Transition {
+    fn activate(&self, item: MenuItem, ctx: &AppContext) -> Transition {
         match item {
+            MenuItem::Setup => match &self.bootstrap {
+                Some(found) => {
+                    let selected =
+                        HashMap::from([(found.group.clone(), vec![found.package.clone()])]);
+                    Transition::Push(Box::new(ConfirmComponent::stow_only(selected, ctx)))
+                }
+                None => Transition::Handled,
+            },
             MenuItem::Profiles => Transition::Push(Box::new(ProfilesComponent::default())),
             MenuItem::Stow => Transition::Push(Box::new(PackagesComponent::default())),
             MenuItem::NewPackage => Transition::Push(Box::new(NewPackageWizard::default())),
@@ -232,7 +301,6 @@ impl MainMenuComponent {
 /// style draws the accent bar and the fill.
 fn list_row(
     item: MenuItem,
-    index: usize,
     selected: bool,
     icons: &Icons,
     colors: &ThemeColors,
@@ -266,7 +334,7 @@ fn list_row(
             Span::raw("  "),
             Span::styled(label, label_style),
             Span::raw(" ".repeat(gap)),
-            Span::styled((index + 1).to_string(), digit_style),
+            Span::styled(item.digit().to_string(), digit_style),
             Span::raw(" "),
         ],
         selected,
@@ -346,9 +414,50 @@ fn targets(ctx: &AppContext) -> String {
     }
 }
 
-fn build_detail(item: MenuItem, ctx: &AppContext) -> Detail {
+/// The facts for the set-up item: what would be linked, from where, and that Enter
+/// reviews it first.
+fn setup_detail(found: &Bootstrap, ctx: &AppContext, colors: &ThemeColors) -> Detail {
+    let source = ctx
+        .core
+        .config
+        .resolve_group_source(&found.group, &ctx.config_dir, &ctx.home_dir)
+        .map(|path| display_path(&path, &ctx.home_dir))
+        .unwrap_or_else(|| "unresolved".to_string());
+    let link = display_path(&found.link, &ctx.home_dir);
+    let fact = |value: String| elide(&value, VALUE_WIDTH);
+    Detail {
+        headline: vec![Line::styled(
+            format!(
+                "This config folder lives in a repo. Link it to {link} so plain `andre` finds it next time."
+            ),
+            Style::default().fg(colors.text),
+        )],
+        facts: vec![
+            (
+                Cow::Borrowed("package"),
+                fact(format!("{}/{}", found.group, found.package)),
+            ),
+            (Cow::Borrowed("links"), fact(link.clone())),
+            (Cow::Borrowed("from"), fact(source)),
+            (Cow::Borrowed("action"), "stow (always)".to_string()),
+        ],
+        sections: vec![
+            Line::styled("Enter reviews the link first.", Style::default().fg(colors.text)),
+            Line::styled(
+                format!("Shown until {link} exists."),
+                Style::default().fg(colors.text_dim),
+            ),
+        ],
+    }
+}
+
+fn build_detail(item: MenuItem, ctx: &AppContext, bootstrap: Option<&Bootstrap>) -> Detail {
     let colors = ThemeColors::from_theme(ctx.core.theme);
+    if let (MenuItem::Setup, Some(found)) = (item, bootstrap) {
+        return setup_detail(found, ctx, &colors);
+    }
     let facts: Vec<(&'static str, String)> = match item {
+        MenuItem::Setup => Vec::new(),
         MenuItem::Profiles => {
             let t = tally(ctx);
             vec![
@@ -390,7 +499,10 @@ fn build_detail(item: MenuItem, ctx: &AppContext) -> Detail {
         ],
         MenuItem::Help => vec![(
             "keys",
-            "\u{2191}\u{2193} move, 1\u{2013}8 jump, Enter open, q quit".to_string(),
+            format!(
+                "\u{2191}\u{2193} move, {} jump, Enter open, q quit",
+                jump_keys(bootstrap.is_some())
+            ),
         )],
         MenuItem::Quit => Vec::new(),
     };
@@ -404,6 +516,15 @@ fn build_detail(item: MenuItem, ctx: &AppContext) -> Detail {
             .map(|(label, value)| (Cow::Borrowed(label), value))
             .collect(),
         sections: Vec::new(),
+    }
+}
+
+/// The jump keys the footer and the help fact name: `0–8` while the set-up item is offered.
+fn jump_keys(set_up_offered: bool) -> &'static str {
+    if set_up_offered {
+        "0\u{2013}8"
+    } else {
+        "1\u{2013}8"
     }
 }
 
@@ -485,6 +606,13 @@ mod tests {
                 "quit",
             ]
         );
+    }
+
+    #[test]
+    fn test_digits_are_zero_for_set_up_and_one_to_eight_for_the_rest() {
+        assert_eq!(MenuItem::Setup.digit(), 0);
+        let digits: Vec<usize> = MenuItem::ALL.iter().map(|item| item.digit()).collect();
+        assert_eq!(digits, (1..=8).collect::<Vec<_>>());
     }
 
     #[test]
@@ -585,6 +713,18 @@ mod tests {
         let quit = detail_of(MenuItem::Quit, &mut ctx);
         assert!(quit.facts.is_empty());
         assert!(!headline(&quit).is_empty());
+    }
+
+    #[test]
+    fn test_help_names_zero_to_eight_while_set_up_is_offered() {
+        let (_dir, ctx) = fixture(&[]);
+        let found = Bootstrap {
+            group: "config".into(),
+            package: "andre".into(),
+            link: ctx.home_dir.join(".config").join("andre"),
+        };
+        let help = build_detail(MenuItem::Help, &ctx, Some(&found));
+        assert!(fact(&help, "keys").contains("0\u{2013}8 jump"));
     }
 
     #[test]

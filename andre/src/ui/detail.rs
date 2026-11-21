@@ -16,6 +16,9 @@ use crate::ui::block::themed_panel;
 
 /// Width of the label column in the facts.
 const LABEL_WIDTH: usize = 10;
+/// Widest a fact's value may be, so it stays on one line in the detail pane at 80
+/// columns. Wider panes do not use the spare room; the detail wraps prose only.
+pub const VALUE_WIDTH: usize = 27;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Detail {

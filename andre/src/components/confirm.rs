@@ -9,10 +9,12 @@ use crate::execute::{build_execution_results, spawn_execution};
 use crate::input::Input;
 use crate::theme::ThemeColors;
 use crate::ui::{elide, ConfirmRow};
-use andre_core::{build_stow_args, engine_for, EngineKind, StowFlags};
+use andre_core::{build_stow_args, engine_for, EngineKind, StowAction, StowFlags};
 
 pub struct ConfirmComponent {
     pub selected_packages: HashMap<String, Vec<String>>,
+    /// The action this review runs. `None` follows the global action.
+    action: Option<StowAction>,
     /// Review list, built by `new` and rebuilt by `update` when the global flags
     /// change, so that paint only draws it.
     rows: Vec<ConfirmRow>,
@@ -29,9 +31,9 @@ pub struct ConfirmComponent {
 fn build_rows(
     selected_packages: &HashMap<String, Vec<String>>,
     ctx: &AppContext,
+    flags: &StowFlags,
 ) -> Vec<ConfirmRow> {
     let config = &ctx.core.config;
-    let flags = &ctx.core.flags;
     let mut rows = vec![
         ConfirmRow::Action(format!("Action: {}", flags.action.as_str().to_uppercase())),
         ConfirmRow::Blank,
@@ -73,18 +75,45 @@ fn build_rows(
     rows
 }
 
+/// The global flags, with the action replaced when the review has its own.
+fn flags_for(ctx: &AppContext, action: Option<StowAction>) -> StowFlags {
+    StowFlags {
+        action: action.unwrap_or(ctx.core.flags.action),
+        ..ctx.core.flags
+    }
+}
+
 impl ConfirmComponent {
     pub fn new(selected_packages: HashMap<String, Vec<String>>, ctx: &AppContext) -> Self {
+        Self::build(selected_packages, ctx, None)
+    }
+
+    /// A review that always stows, whatever the global action is: the bootstrap item.
+    pub fn stow_only(selected_packages: HashMap<String, Vec<String>>, ctx: &AppContext) -> Self {
+        Self::build(selected_packages, ctx, Some(StowAction::Stow))
+    }
+
+    fn build(
+        selected_packages: HashMap<String, Vec<String>>,
+        ctx: &AppContext,
+        action: Option<StowAction>,
+    ) -> Self {
         let content_len: usize = selected_packages.values().map(Vec::len).sum();
-        let rows = build_rows(&selected_packages, ctx);
+        let flags = flags_for(ctx, action);
+        let rows = build_rows(&selected_packages, ctx, &flags);
         Self {
             selected_packages,
+            action,
             rows,
-            rows_flags: ctx.core.flags,
+            rows_flags: flags,
             scroll_index: 0,
             viewport_height: 10,
             content_len,
         }
+    }
+
+    fn flags(&self, ctx: &AppContext) -> StowFlags {
+        flags_for(ctx, self.action)
     }
 
     fn total_lines(&self) -> usize {
@@ -116,7 +145,7 @@ impl Component for ConfirmComponent {
                 &ctx.core.config,
                 &ctx.config_dir,
                 &ctx.home_dir,
-                &ctx.core.flags,
+                &self.flags(ctx),
             );
             // Select the link engine from config (native default, stow opt-in).
             let engine = engine_for(ctx.core.config.effective_engine());
@@ -138,9 +167,10 @@ impl Component for ConfirmComponent {
     fn update(&mut self, ctx: &mut AppContext) -> Transition {
         // The global flag keys stay live on this screen, so rebuild the preview
         // before the next paint when they change.
-        if ctx.core.flags != self.rows_flags {
-            self.rows = build_rows(&self.selected_packages, ctx);
-            self.rows_flags = ctx.core.flags;
+        let flags = self.flags(ctx);
+        if flags != self.rows_flags {
+            self.rows = build_rows(&self.selected_packages, ctx, &flags);
+            self.rows_flags = flags;
         }
         Transition::None
     }

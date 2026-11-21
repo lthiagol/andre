@@ -194,8 +194,14 @@ andre
 | `--conf`, `--config <path>` | Path to YAML config file (default: auto-discovery) |
 | `--config-folder <dir>` | Config folder holding `andre.yml` and `profiles/` (default: auto-discovery). Cannot be combined with `--config` |
 | `--onboard` | Create an empty config at `--config` or `--config-folder` if none exists, then open the setup screen |
-| `--yolo` | Headless mode: auto-stow all packages without interaction |
+| `--profile <name>` | Work on one profile. With `--yolo`, stow only its packages; alone, open the TUI on its screen. An unknown name exits 2 and lists the profiles |
+| `--yolo` | Headless mode: auto-stow all packages without interaction (only the `--profile` packages when one is given) |
 | `--help` | Show usage information |
+
+```bash
+andre --yolo --profile work     # stow exactly the packages of profiles/work.yml
+andre --profile work            # open the TUI on the work profile
+```
 
 <a name="main-menu"></a>
 ## 🗺️ Main Menu
@@ -204,7 +210,10 @@ The main menu is a list on the left and a detail panel on the right. The detail
 panel describes the selected action and shows its facts: group and package
 counts, the stowed count (`–` until every package's status has been checked),
 and the target directories. Keys: `↑`/`↓` (or `j`/`k`) move, `1`–`8` jump to and
-open an item, `Enter` opens the selected item, `q` quits. The full banner shows
+open an item, `Enter` opens the selected item, `q` quits. On a machine where the
+config folder is not yet linked to `~/.config/andre`, the first row is the set-up item
+(see [Fresh machine](#fresh-machine)) and `0` jumps to it; the big banner gives way to the
+one-row title when the items do not fit under it (80x24 shows the title with nine items). The full banner shows
 on the main menu only; every other screen has a one-row `andre` title with the
 breadcrumb. The cursor row on every list is filled with the theme's selection
 colour and marked with a `▌` bar. Panel titles are lowercase and do not repeat
@@ -212,6 +221,7 @@ the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 
 | Option | Icon (nerd / unicode) | What it does |
 |--------|------|-------------|
+| **set up this machine** | set up / `⌂` | Only while the set-up offer applies: links this config folder into `~/.config/andre` (`0`) |
 | **profiles** | profiles / `◈` | Named sets of packages; run the current action on one (see Profiles) |
 | **packages** | link / `⇢` | Select groups and packages, then run the current action (stow, restow or unstow) |
 | **new package** | new package / `+` | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
@@ -241,6 +251,25 @@ andre loads one config file (`andre.yaml` or `andre.yml`), chosen in this order:
   (see CHANGELOG, *Changed*). If one of them holds a config, the not-found error names
   it and suggests `--config-folder <that dir>`.
 - Profiles are read from `profiles/` next to the `andre.yml` that was loaded.
+
+<a name="fresh-machine"></a>
+### Fresh Machine
+
+A config folder can live inside one of its own packages. The usual case is a dotfiles
+repo whose `config/andre` package holds `.config/andre/andre.yml`: stowing that package
+links `~/.config/andre` to the repo, and plain `andre` finds the config from then on.
+
+andre offers this when the loaded config folder is not `~/.config/andre`, that path does
+not exist (a broken link counts as existing), and some group's package holds the config
+folder at the path that would link to it. It is offered only when plain `andre` would
+read `~/.config/andre`, i.e. `$XDG_CONFIG_HOME` is unset or points at `~/.config`. The offer is the first main-menu item,
+`set up this machine` (`0`). Enter opens the review for exactly that package with the
+action `stow`, whatever the global action is; the global action is not changed. Once
+`~/.config/andre` exists the item is gone.
+
+```bash
+andre --config-folder ~/src/dotfiles/config/andre/.config/andre   # then pick set up this machine
+```
 
 ### Profiles
 

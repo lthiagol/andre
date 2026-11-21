@@ -89,6 +89,8 @@ pub struct ProfilesComponent {
     /// Whether Enter can run the selected profile: it resolves. Built by `rebuild`.
     runnable: bool,
     popup: Option<Popup>,
+    /// The profile to put the cursor on at the next rebuild (`--profile`).
+    select: Option<String>,
 }
 
 impl Component for ProfilesComponent {
@@ -230,6 +232,15 @@ impl Component for ProfilesComponent {
 }
 
 impl ProfilesComponent {
+    /// The screen with the cursor on `name`, opened by `--profile`. An unknown name
+    /// leaves the cursor on the first profile.
+    pub fn opened_at(name: &str) -> Self {
+        Self {
+            select: Some(name.to_string()),
+            ..Self::default()
+        }
+    }
+
     /// The dialog open over the list, if any.
     pub fn popup(&self) -> Option<&Popup> {
         self.popup.as_ref()
@@ -266,6 +277,11 @@ impl ProfilesComponent {
     fn rebuild(&mut self, ctx: &AppContext) {
         let known = known_packages(&ctx.core.config, &ctx.config_dir, &ctx.home_dir);
         self.rows = view::rows(&ctx.core.profiles, &known);
+        if let Some(name) = self.select.take() {
+            if let Some(index) = self.rows.iter().position(|row| row.name == name) {
+                self.list.cursor = index;
+            }
+        }
         self.list.cursor = self.list.cursor.min(self.rows.len().saturating_sub(1));
 
         self.detail = match self.selected_name() {

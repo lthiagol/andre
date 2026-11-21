@@ -12,7 +12,8 @@ use andre_core::{IconSet, StowAction, StowStatus, Theme};
 
 mod helpers;
 use helpers::{
-    down_key, enter_key, esc_key, key_char, make_empty_app, make_test_app, space_key, up_key,
+    down_key, enter_key, esc_key, key_char, make_bootstrap_app, make_empty_app, make_test_app,
+    space_key, up_key,
 };
 
 fn render_app(app: &mut App, width: u16, height: u16) -> Buffer {
@@ -3526,4 +3527,171 @@ fn test_new_package_review_lists_moves_and_links_for_live_files_at_80x24() {
         &buf,
         "1 move \u{b7} 1 link \u{b7} 1 file \u{b7} 0 profiles"
     ));
+}
+
+// ---- main menu: the set-up item (F5, D8) ----
+
+/// The first row, from the top of the screen, that contains `fragment`.
+fn row_index(buf: &Buffer, fragment: &str) -> Option<u16> {
+    (0..buf.area().height).find(|&y| row_text(buf, y).contains(fragment))
+}
+
+#[test]
+fn test_setup_item_leads_the_menu_and_the_title_shrinks_to_one_row_at_80x24() {
+    let (mut app, _tmp) = make_bootstrap_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(
+        !line_contains(&buf, "\u{2551} A. \u{2551}"),
+        "nine rows do not fit under the big banner at 80x24"
+    );
+    assert_eq!(
+        top_bar_row(&buf),
+        3,
+        "the one-row title sits above the top bar"
+    );
+    assert!(
+        row_text(&buf, 1).contains("andre"),
+        "compact title: {:?}",
+        row_text(&buf, 1)
+    );
+
+    // The list row carries the icon; the detail pane's title does not.
+    let setup = row_index(&buf, "\u{2302}  set up this machine").expect("set-up row");
+    let profiles = row_index(&buf, "\u{25c8}  profiles").expect("profiles row");
+    assert!(setup < profiles, "the set-up item is the first row");
+    let row = row_text(&buf, setup);
+    assert!(
+        row.contains("set up this machine       0 \u{2502}"),
+        "jump digit 0 missing: {row:?}"
+    );
+    assert!(
+        footer_row(&buf).contains("0\u{2013}8 jump"),
+        "footer: {:?}",
+        footer_row(&buf)
+    );
+}
+
+#[test]
+fn test_setup_detail_names_the_package_the_link_and_the_source() {
+    let (mut app, _tmp) = make_bootstrap_app();
+    let buf = render_updated(&mut app, 120, 40);
+    assert!(line_contains(&buf, "set up this machine"), "detail title");
+    assert!(
+        line_contains(&buf, "package   config/andre"),
+        "package fact"
+    );
+    assert!(row_containing(&buf, "links")
+        .unwrap()
+        .contains("~/.config/andre"));
+    // The source is under the temp dir, so it is elided to the value column on one row.
+    let from = row_containing(&buf, "from ").unwrap();
+    assert!(
+        from.contains("from      /"),
+        "from label and value: {from:?}"
+    );
+    assert!(from.contains('\u{2026}'), "from value elided: {from:?}");
+    assert!(
+        line_contains(&buf, "action    stow (always)"),
+        "action fact"
+    );
+    assert!(line_contains(&buf, "Enter reviews the link first."));
+}
+
+#[test]
+fn test_set_up_facts_elide_long_paths_to_one_row_each_at_80x24() {
+    let (mut app, _tmp) = make_bootstrap_app();
+    let buf = render_updated(&mut app, 80, 24);
+
+    // The source sits under the temp dir, so it is longer than the value column.
+    let from = row_containing(&buf, "from ").expect("from row");
+    assert!(from.contains('\u{2026}'), "from value elided: {from:?}");
+    assert!(
+        row_containing(&buf, "dotfiles/config").is_none(),
+        "the path does not wrap onto a row of its own"
+    );
+    let links = row_containing(&buf, "links").expect("links row");
+    assert!(links.contains("~/.config/andre"), "links: {links:?}");
+}
+
+#[test]
+fn test_help_fact_and_footer_name_zero_to_eight_while_set_up_is_offered() {
+    let (mut app, _tmp) = make_bootstrap_app();
+    render_updated(&mut app, 120, 40);
+    // Set-up is row 0, so help, the seventh of the eight, is row 7.
+    menu_mut(&mut app).list.cursor = 7;
+
+    let buf = render_updated(&mut app, 120, 40);
+    let keys = row_containing(&buf, "keys").expect("help keys fact");
+    assert!(keys.contains("0\u{2013}8 jump"), "help fact: {keys:?}");
+    assert!(footer_row(&buf).contains("0\u{2013}8 jump"));
+}
+
+#[test]
+fn test_big_banner_returns_once_the_default_folder_exists() {
+    let (mut app, _tmp) = make_bootstrap_app();
+    render_updated(&mut app, 80, 24);
+    std::fs::create_dir_all(app.ctx.home_dir.join(".config").join("andre")).unwrap();
+
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "\u{2551} A. \u{2551}"),
+        "big banner back"
+    );
+    assert_eq!(top_bar_row(&buf), 9);
+    assert!(
+        row_index(&buf, "set up this machine").is_none(),
+        "the offer is gone"
+    );
+}
+
+#[test]
+fn test_setup_item_keeps_the_big_banner_where_the_rows_fit() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_bootstrap_app();
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            line_contains(&buf, "\u{2551} A. \u{2551}"),
+            "{width}x{height}: the nine rows fit under the big banner"
+        );
+        assert!(
+            row_index(&buf, "set up this machine").is_some(),
+            "{width}x{height}: set-up row missing"
+        );
+    }
+}
+
+#[test]
+fn test_zero_reviews_a_stow_of_the_package_whatever_the_global_action() {
+    let (mut app, _tmp) = make_bootstrap_app();
+    app.ctx.core.flags.action = StowAction::Restow;
+    render_updated(&mut app, 80, 24);
+
+    app.component_dispatch(key_char('0'));
+    let buf = render_app(&mut app, 80, 24);
+    assert!(line_contains(&buf, "Action: STOW"), "the review stows");
+    assert!(
+        line_contains(&buf, "native: andre"),
+        "the review names the package"
+    );
+    assert_eq!(
+        app.ctx.core.flags.action,
+        StowAction::Restow,
+        "the global action is not changed"
+    );
+}
+
+#[test]
+fn test_set_up_flow_renders_at_120x40_and_200x50() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_bootstrap_app();
+        render_updated(&mut app, width, height);
+        app.component_dispatch(key_char('0'));
+        render_updated(&mut app, width, height);
+        app.component_dispatch(esc_key());
+        app.component_dispatch(key_char('2'));
+        render_updated(&mut app, width, height);
+        assert_eq!(app.component_stack.last().unwrap().id(), "Packages");
+    }
 }

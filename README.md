@@ -113,6 +113,7 @@ andre reads the config from `~/.config/andre/` (or `$XDG_CONFIG_HOME/andre/`). T
 ```bash
 andre --config ~/dotfiles/andre.yml
 andre --config-folder ~/src/dots   # a folder holding andre.yml and profiles/
+andre --yolo --profile work        # headless: stow only the packages of profiles/work.yml
 ```
 
 See [REFERENCE.md](REFERENCE.md#full-configuration-reference) for the discovery order and profile files.
@@ -132,7 +133,8 @@ The main menu lists the actions on the left. The panel on the right describes
 the selected one and shows what it touches: group and package counts, how many
 packages are stowed once their status has been checked (`–` until then), and
 the target directories. Move with `↑`/`↓`, or press `1`–`8` to jump to an
-action. Every other screen shows a one-row title with its breadcrumb instead of
+action. On a fresh machine whose config folder is not yet linked to `~/.config/andre`,
+the first item, `set up this machine`, links it (`0`). Every other screen shows a one-row title with its breadcrumb instead of
 the full banner. On the list screens the cursor row is filled with the theme's
 selection colour and marked with a `▌` bar.
 

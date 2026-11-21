@@ -2245,3 +2245,64 @@ fn test_saving_the_ignore_files_invalidates_the_status_cache() {
         "a save makes the packages screen read statuses again"
     );
 }
+
+// ---- main menu digits and the set-up item (F5) ----
+
+#[test]
+fn test_zero_does_nothing_without_the_set_up_item() {
+    let (mut app, _tmp) = make_test_app();
+    app.update_components();
+    assert_eq!(menu(&app).items().len(), 8);
+    app.component_dispatch(key_char('0'));
+    assert_eq!(app.component_stack.len(), 1, "no screen opens on 0");
+}
+
+#[test]
+fn test_zero_opens_the_set_up_review_and_digits_keep_their_items() {
+    let (mut app, _tmp) = make_bootstrap_app();
+    app.update_components();
+    assert_eq!(menu(&app).items().len(), 9);
+    app.component_dispatch(key_char('1'));
+    assert_eq!(
+        app.component_stack.last().unwrap().id(),
+        "Profiles",
+        "1 still opens profiles, the first of the eight"
+    );
+    app.component_dispatch(esc_key());
+
+    app.component_dispatch(key_char('0'));
+    let confirm = app
+        .component_stack
+        .last()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ConfirmComponent>()
+        .expect("0 opens the review");
+    assert_eq!(
+        confirm.selected_packages,
+        HashMap::from([("config".to_string(), vec!["andre".to_string()])])
+    );
+}
+
+#[test]
+fn test_profiles_opened_at_puts_the_cursor_on_the_named_profile() {
+    let (mut app, tmp) = make_test_app();
+    let dir = tmp.path().join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    for name in ["alpha", "beta", "gamma"] {
+        std::fs::write(dir.join(format!("{name}.yml")), "packages: [home/test]\n").unwrap();
+    }
+    app.ctx.core.profiles = ProfileSet::load(&dir).unwrap();
+    app.component_stack
+        .push(Box::new(ProfilesComponent::opened_at("beta")));
+    app.update_components();
+
+    let profiles = app
+        .component_stack
+        .last()
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ProfilesComponent>()
+        .unwrap();
+    assert_eq!(profiles.list.cursor, 1);
+}

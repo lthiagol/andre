@@ -35,6 +35,7 @@ pub use toast::render_toast;
 pub use unstow_confirm::{render_unstow_confirm, UnstowLink};
 
 use crate::app::App;
+use crate::components::MainMenuComponent;
 use crate::theme::ThemeColors;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
@@ -47,6 +48,9 @@ use ratatui::{
 /// Rows of the full banner on the main menu. Every other screen gets a one-row title.
 const BIG_BANNER_ROWS: u16 = 7;
 const COMPACT_BANNER_ROWS: u16 = 1;
+/// Rows that are neither banner nor content: the three separators inside the frame, the
+/// separator above the footer and the footer itself.
+const CHROME_ROWS: u16 = 5;
 /// Widest a screen's content grows. Wider frames centre the content.
 const MAX_CONTENT_WIDTH: u16 = 120;
 
@@ -80,7 +84,8 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         .last()
         .map(|c| c.hints(&app.ctx))
         .unwrap_or_default();
-    let banner_rows = if screen_id == "MainMenu" {
+    let big_banner = screen_id == "MainMenu" && main_menu_fits_big_banner(app, inner.height);
+    let banner_rows = if big_banner {
         BIG_BANNER_ROWS
     } else {
         COMPACT_BANNER_ROWS
@@ -114,7 +119,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         app.ctx.breadcrumb_cache.clear();
         app.ctx.breadcrumb_cache.extend(stack_ids.iter().copied());
     }
-    if screen_id == "MainMenu" {
+    if big_banner {
         render_banner(frame, v[0], &colors);
     } else {
         render_compact_banner(
@@ -153,6 +158,19 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         // Overlay above chrome; Clear inside render_toast avoids ghosting.
         render_toast(frame, inner, &colors, toast);
     }
+}
+
+/// The main menu keeps the big banner only while every item fits under it, with its two
+/// border rows. Otherwise it gets the one-row title (D8). Reads the menu's item count;
+/// the menu is not asked to paint.
+fn main_menu_fits_big_banner(app: &App, inner_rows: u16) -> bool {
+    let items = app
+        .component_stack
+        .last()
+        .and_then(|c| c.as_any().downcast_ref::<MainMenuComponent>())
+        .map_or(0, MainMenuComponent::item_count);
+    let content_rows = inner_rows.saturating_sub(BIG_BANNER_ROWS + CHROME_ROWS);
+    items + 2 <= usize::from(content_rows)
 }
 
 /// `area` narrowed to `max_width` columns, centred horizontally.

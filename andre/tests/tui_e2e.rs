@@ -5,11 +5,15 @@ use std::time::Duration;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tempfile::TempDir;
 
+mod helpers;
+
 use andre::app::App;
 use andre::components::execute::ExecuteComponent;
 use andre::components::wizard::NewPackageWizard;
 use andre::execute::ExecutionState;
 use andre_core::profile::ProfileSet;
+use andre_core::StowAction;
+use helpers::make_bootstrap_app;
 
 fn binary_path() -> PathBuf {
     // Try llvm-cov target dir first, then default debug dir
@@ -401,4 +405,45 @@ fn test_new_package_from_live_files_moves_the_file_and_links_it_back() {
         std::fs::canonicalize(&moved).unwrap()
     );
     assert!(package.join(".gitignore").is_file());
+}
+
+#[test]
+fn test_set_up_review_stows_its_package_when_the_global_action_is_unstow() {
+    let (mut app, tmp) = make_bootstrap_app();
+    app.ctx.core.flags.action = StowAction::Unstow;
+    // Make `~/.config` exist, so the package's `andre` folder is linked inside it.
+    std::fs::create_dir_all(tmp.path().join("home/.config")).unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let _guard = rt.enter();
+
+    // The menu learns of the set-up item on update, as it does each frame. Then `0` opens
+    // the set-up review and `y` runs it.
+    app.update_components();
+    app.component_dispatch(key(KeyCode::Char('0')));
+    app.component_dispatch(key(KeyCode::Char('y')));
+    pump_until_complete(&mut app, 10);
+    rt.shutdown_timeout(Duration::from_secs(5));
+
+    // The native engine links files, so the config file is the symlink, into the package.
+    let linked = tmp.path().join("home/.config/andre/andre.yml");
+    assert!(
+        std::fs::symlink_metadata(&linked)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the set-up review linked the config file"
+    );
+    assert_eq!(
+        std::fs::canonicalize(&linked).unwrap(),
+        std::fs::canonicalize(
+            tmp.path()
+                .join("dotfiles/config/andre/.config/andre/andre.yml")
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        app.ctx.core.flags.action,
+        StowAction::Unstow,
+        "the global action is not changed"
+    );
 }

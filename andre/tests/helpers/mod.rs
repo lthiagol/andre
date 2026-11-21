@@ -135,3 +135,27 @@ groups:
     let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
     (app, tmp)
 }
+
+/// An app whose loaded config folder sits inside package `andre` of group `config`, so the
+/// set-up item is offered: `dotfiles/config/andre/.config/andre/andre.yml` links to
+/// `<home>/.config/andre`, which does not exist yet.
+pub fn make_bootstrap_app() -> (App, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path().join("home");
+    let source = tmp.path().join("dotfiles").join("config");
+    let folder = source.join("andre").join(".config").join("andre");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let config_path = folder.join("andre.yml");
+    std::fs::write(
+        &config_path,
+        format!(
+            "global: {{}}\ngroups:\n  config:\n    source: \"{}\"\n    target: \"{}\"\n",
+            source.display(),
+            home.display()
+        ),
+    )
+    .unwrap();
+    let app = App::with_home(config_path, home).unwrap();
+    (app, tmp)
+}

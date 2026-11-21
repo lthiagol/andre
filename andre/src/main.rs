@@ -10,8 +10,10 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use andre::app::App;
+use andre::components::profiles::ProfilesComponent;
 use andre::discovery::ConfigSearch;
 use andre::ui;
+use andre_core::yolo::{self, StowJob};
 use andre_core::Result;
 
 /// Parsed CLI flags. Hand-rolled from `std::env::args` (M06 DIY-5) replacing clap;
@@ -20,6 +22,7 @@ use andre_core::Result;
 struct Args {
     config: Option<PathBuf>,
     config_folder: Option<PathBuf>,
+    profile: Option<String>,
     yolo: bool,
     onboard: bool,
     debug: bool,
@@ -35,6 +38,8 @@ OPTIONS:
     -c, --config <PATH>        Path to YAML config file
         --config-folder <DIR>  Config folder holding andre.yml and profiles/
                                (cannot be combined with --config)
+        --profile <NAME>       Work on one profile. With --yolo: stow only its packages.
+                               Alone: open the TUI on its screen
         --yolo                 Headless mode: auto-stow all packages without interaction
         --onboard              Setup wizard: open config screen to create a new config file
                                (requires --config or --config-folder)
@@ -82,6 +87,16 @@ fn take_value(
     path_value(flag, &iter.next().unwrap_or_default())
 }
 
+fn name_value(flag: &str, raw: &str) -> std::result::Result<String, ParseError> {
+    if raw.is_empty() {
+        Err(ParseError::Usage(format!(
+            "a value is required for '{flag}' but none was supplied"
+        )))
+    } else {
+        Ok(raw.to_string())
+    }
+}
+
 fn path_value(flag: &str, raw: &str) -> std::result::Result<PathBuf, ParseError> {
     if raw.is_empty() {
         Err(ParseError::Usage(format!(
@@ -100,6 +115,7 @@ fn parse(argv: Vec<String>) -> std::result::Result<Args, ParseError> {
     let mut args = Args {
         config: None,
         config_folder: None,
+        profile: None,
         yolo: false,
         onboard: false,
         debug: false,
@@ -118,6 +134,10 @@ fn parse(argv: Vec<String>) -> std::result::Result<Args, ParseError> {
                 args.config_folder = Some(take_value(&mut iter, "--config-folder")?);
             }
             "--log-file" => args.log_file = Some(take_value(&mut iter, "--log-file")?),
+            "--profile" => {
+                let raw = iter.next().unwrap_or_default();
+                args.profile = Some(name_value("--profile", &raw)?);
+            }
             s if s.starts_with("--config=") => {
                 args.config = Some(path_value("--config", &s["--config=".len()..])?);
             }
@@ -129,6 +149,9 @@ fn parse(argv: Vec<String>) -> std::result::Result<Args, ParseError> {
             }
             s if s.starts_with("--log-file=") => {
                 args.log_file = Some(path_value("--log-file", &s["--log-file=".len()..])?);
+            }
+            s if s.starts_with("--profile=") => {
+                args.profile = Some(name_value("--profile", &s["--profile=".len()..])?);
             }
             s if s.starts_with("-c") && s.len() > 2 => {
                 // Short-attached form: `-cVALUE` or `-c=VALUE` (strip one leading '=').
@@ -163,25 +186,21 @@ fn parse_args() -> Args {
     }
 }
 
-fn run_yolo(app: &App) -> Result<()> {
-    use andre_core::{engine_for, yolo};
-
-    let jobs = yolo::build_plan(&app.ctx.core.config, &app.ctx.config_dir, &app.ctx.home_dir);
+/// Stows `jobs` without asking. `skipped_groups` is reported first, when non-zero.
+fn run_yolo(app: &App, jobs: &[StowJob], skipped_groups: usize) -> Result<()> {
+    use andre_core::engine_for;
 
     // Ensure target dirs exist
-    for job in &jobs {
+    for job in jobs {
         if !job.target.exists() {
             fs::create_dir_all(&job.target)?;
         }
     }
 
-    // Report skipped groups
-    let config_group_count = app.ctx.core.config.groups.len();
-    let planned_count = jobs.len();
-    if planned_count < config_group_count {
+    if skipped_groups > 0 {
         eprintln!(
             "[yolo] {} group(s) skipped (missing source or no packages)",
-            config_group_count - planned_count
+            skipped_groups
         );
     }
 
@@ -192,7 +211,7 @@ fn run_yolo(app: &App) -> Result<()> {
     let mut succeeded = 0usize;
     let mut failed = 0usize;
 
-    for job in &jobs {
+    for job in jobs {
         let count = job.packages.len();
         total += count;
         let (ok, fail) = yolo::run_job(job, engine.as_ref(), &flags);
@@ -217,6 +236,52 @@ fn run_yolo(app: &App) -> Result<()> {
         succeeded, failed, total
     );
     Ok(())
+}
+
+/// What `--yolo` stows: every group's packages, or only those of `--profile`. The second
+/// value counts the groups left out for having no packages on disk. Exits 2 for an
+/// unknown profile and 1 for one that does not resolve (a cycle, an unknown include).
+fn headless_plan(app: &App, profile: Option<&str>) -> (Vec<StowJob>, usize) {
+    let config = &app.ctx.core.config;
+    let Some(name) = profile else {
+        let jobs = yolo::build_plan(config, &app.ctx.config_dir, &app.ctx.home_dir);
+        let skipped = config.groups.len().saturating_sub(jobs.len());
+        return (jobs, skipped);
+    };
+    let known = andre_core::profile::known_packages(config, &app.ctx.config_dir, &app.ctx.home_dir);
+    let resolved = match app.ctx.core.profiles.resolve(name, &known) {
+        Ok(resolved) => resolved,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            std::process::exit(1);
+        }
+    };
+    let jobs = yolo::profile_plan(config, &app.ctx.config_dir, &app.ctx.home_dir, &resolved);
+    (jobs, 0)
+}
+
+/// Exits 2 when `--profile` names no profile, listing the ones there are.
+fn check_profile_exists(app: &App, name: &str) {
+    if app.ctx.core.profiles.get(name).is_some() {
+        return;
+    }
+    eprintln!(
+        "error: no profile named '{name}' in {}",
+        app.ctx.core.profiles.dir().display()
+    );
+    let names: Vec<&str> = app
+        .ctx
+        .core
+        .profiles
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    if names.is_empty() {
+        eprintln!("no profiles exist yet");
+    } else {
+        eprintln!("profiles: {}", names.join(", "));
+    }
+    std::process::exit(2);
 }
 
 fn search_for(args: &Args) -> ConfigSearch {
@@ -324,8 +389,13 @@ fn try_main() -> Result<()> {
         eprintln!("profile warning: {}", warning);
     }
 
+    if let Some(name) = &args.profile {
+        check_profile_exists(&app, name);
+    }
+
     if args.yolo {
-        return run_yolo(&app);
+        let (jobs, skipped) = headless_plan(&app, args.profile.as_deref());
+        return run_yolo(&app, &jobs, skipped);
     }
 
     let rt = tokio::runtime::Runtime::new()?;
@@ -350,6 +420,11 @@ fn try_main() -> Result<()> {
             app.component_stack
                 .push(Box::new(SettingsComponent::default()));
             app.onboard_mode = true;
+        }
+
+        if let Some(name) = &args.profile {
+            app.component_stack
+                .push(Box::new(ProfilesComponent::opened_at(name)));
         }
 
         let backend = CrosstermBackend::new(std::io::stderr());
@@ -495,8 +570,33 @@ mod cli_tests {
     }
 
     #[test]
+    fn parse_profile_space_and_equals() {
+        let a = parse(s(&["--profile", "work"])).unwrap();
+        assert_eq!(a.profile.as_deref(), Some("work"));
+        let a = parse(s(&["--profile=work"])).unwrap();
+        assert_eq!(a.profile.as_deref(), Some("work"));
+        assert!(parse(s(&[])).unwrap().profile.is_none());
+    }
+
+    #[test]
+    fn parse_profile_missing_value_is_usage_error() {
+        for argv in [
+            &["--profile"][..],
+            &["--profile="][..],
+            &["--profile", ""][..],
+        ] {
+            match parse(s(argv)) {
+                Err(ParseError::Usage(m)) => {
+                    assert!(m.contains("'--profile'"), "argv={argv:?} msg: {m}")
+                }
+                other => panic!("expected Usage for {argv:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn parse_empty_equals_value_is_usage_error() {
-        for flag in ["--config=", "--log-file=", "-c="] {
+        for flag in ["--config=", "--log-file=", "-c=", "--profile="] {
             match parse(s(&[flag])) {
                 Err(ParseError::Usage(m)) => {
                     assert!(m.contains("value is required"), "flag={flag} msg: {m}")

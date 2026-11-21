@@ -32,6 +32,12 @@ impl App {
     ) -> Result<Self> {
         let config = Config::load(&config_path)?;
 
+        // An injected home (tests) ignores `$XDG_CONFIG_HOME`, so the result does not depend
+        // on the host environment.
+        let search_dir = match &home_dir {
+            Some(home) => Some(home.join(".config").join("andre")),
+            None => crate::paths::config_dir().map(|dir| dir.join("andre")),
+        };
         let home_dir = home_dir.unwrap_or_else(|| {
             crate::paths::home_dir().unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
         });
@@ -53,6 +59,7 @@ impl App {
                 config_dir,
                 config_path: canonical_config,
                 home_dir,
+                search_dir,
                 status_cache: std::cell::RefCell::new(crate::status_cache::StatusCache::new()),
                 terminal_size: (80, 24),
                 debug,

@@ -1,6 +1,8 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::ignore::global_ignore_in;
+use crate::profile::{split_package_ref, ResolvedProfile};
 use crate::{discover_packages, engine::LinkEngine, path::resolve_path, Config, LinkOp, StowFlags};
 
 /// A single group-level stow job: run stow for all packages in one group.
@@ -41,6 +43,31 @@ pub fn build_plan(config: &Config, config_dir: &Path, home_dir: &Path) -> Vec<St
             global_ignore: Some(global_ignore_in(home_dir)),
         });
     }
+    jobs
+}
+
+/// The jobs for one resolved profile: only the packages it names, each in its own group.
+/// Refs that name no package on disk are left out; the caller reports them.
+pub fn profile_plan(
+    config: &Config,
+    config_dir: &Path,
+    home_dir: &Path,
+    profile: &ResolvedProfile,
+) -> Vec<StowJob> {
+    let wanted: BTreeSet<(&str, &str)> = profile
+        .entries
+        .iter()
+        .filter(|e| !e.missing)
+        .filter_map(|e| split_package_ref(&e.package))
+        .collect();
+
+    let mut jobs = build_plan(config, config_dir, home_dir);
+    for job in &mut jobs {
+        let group = job.group.clone();
+        job.packages
+            .retain(|pkg| wanted.contains(&(group.as_str(), pkg.as_str())));
+    }
+    jobs.retain(|job| !job.packages.is_empty());
     jobs
 }
 
@@ -176,5 +203,70 @@ mod tests {
             tmp.path().join("target/.bashrc").is_symlink(),
             "native run_job must create the symlink"
         );
+    }
+
+    #[test]
+    fn test_profile_plan_keeps_only_the_profile_packages() {
+        use crate::profile::{Origin, ResolvedEntry, ResolvedProfile};
+        let tmp = tempfile::TempDir::new().unwrap();
+        let src = tmp.path().join("dotfiles");
+        for pkg in ["bash", "git", "nvim"] {
+            fs::create_dir_all(src.join("home").join(pkg)).unwrap();
+            fs::write(src.join("home").join(pkg).join(".rc"), "").unwrap();
+        }
+        fs::create_dir_all(src.join("tools").join("jq")).unwrap();
+        let mut config = Config::default_empty();
+        config.add_group(
+            "home".into(),
+            src.join("home").to_string_lossy().into(),
+            tmp.path().join("target").to_string_lossy().into(),
+        );
+        config.add_group(
+            "tools".into(),
+            src.join("tools").to_string_lossy().into(),
+            tmp.path().join("target").to_string_lossy().into(),
+        );
+
+        let entry = |package: &str, missing: bool| ResolvedEntry {
+            package: package.to_string(),
+            origin: Origin::Own,
+            missing,
+        };
+        let profile = ResolvedProfile {
+            name: "work".into(),
+            entries: vec![
+                entry("home/git", false),
+                entry("tools/jq", false),
+                entry("home/ghost", true),
+            ],
+        };
+
+        let plan = profile_plan(&config, tmp.path(), tmp.path(), &profile);
+        let planned: Vec<(&str, Vec<&str>)> = plan
+            .iter()
+            .map(|job| {
+                (
+                    job.group.as_str(),
+                    job.packages.iter().map(String::as_str).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(planned, vec![("home", vec!["git"]), ("tools", vec!["jq"])]);
+    }
+
+    #[test]
+    fn test_profile_plan_is_empty_when_no_ref_exists() {
+        use crate::profile::{Origin, ResolvedEntry, ResolvedProfile};
+        let config = Config::default_empty();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let profile = ResolvedProfile {
+            name: "empty".into(),
+            entries: vec![ResolvedEntry {
+                package: "home/git".into(),
+                origin: Origin::Own,
+                missing: true,
+            }],
+        };
+        assert!(profile_plan(&config, tmp.path(), tmp.path(), &profile).is_empty());
     }
 }

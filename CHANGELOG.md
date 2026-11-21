@@ -11,6 +11,22 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- **Headless `--profile <name>`.** `andre --yolo --profile work` stows only the packages
+  the profile resolves to (its own and its includes'); refs that name no package are
+  skipped with the usual profile warning. `andre --profile work` alone opens the TUI on
+  that profile's screen. An unknown name exits 2 and lists the profiles; a profile that
+  does not resolve (a cycle, an unknown include) exits 1.
+- **Set up this machine (`0`).** When the loaded config folder sits inside a package and
+  `~/.config/andre` does not exist (and `$XDG_CONFIG_HOME` is unset or `~/.config`), the
+  main menu's first item offers to link it. Enter
+  reviews a `stow` of exactly that package whatever the global action is, and the item
+  disappears once `~/.config/andre` exists (a broken link there counts as existing).
+- **Main menu title at nine items.** The big banner stays only while every item fits
+  under it with its border; at 80x24 the set-up item turns the banner into the one-row
+  title. The footer then reads `0–8 jump`.
+- `andre_core::bootstrap` (`find`, `default_folder`, `default_folder_taken`) and
+  `andre_core::yolo::profile_plan`, which plan only one resolved profile's packages.
+
 - **New-package wizard, steps 1–3.** `NewPackageWizard` picks a group,
   names the package (typing filters the group's packages; the create row is always first,
   and an existing name adds files to that package), then picks the source: an empty package,
