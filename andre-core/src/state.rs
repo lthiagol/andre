@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::profile::ProfileSet;
 
 /// Highest verbosity level; `v` and the Settings verbosity row wrap back to 0 after it.
 pub const MAX_VERBOSITY: u8 = 5;
@@ -167,6 +168,9 @@ pub struct AppState {
     pub flags: StowFlags,
     pub theme: Theme,
     pub icons: IconSet,
+    /// Profiles in `<config folder>/profiles/`. Empty until the config is loaded from
+    /// disk (see `App::with_debug`); `from_config` alone does not read the folder.
+    pub profiles: ProfileSet,
 }
 
 impl AppState {
@@ -192,6 +196,7 @@ impl AppState {
             flags,
             theme: theme_name,
             icons,
+            profiles: ProfileSet::default(),
         }
     }
 }

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crossterm::event::KeyEvent;
 
+use andre_core::profile::{ProfileSet, PROFILES_DIR};
 use andre_core::{config::Config, AppState as CoreState, Result};
 
 use crate::components::{AppContext, Component, InputMode, LogLevel, Transition};
@@ -43,7 +44,8 @@ impl App {
             .unwrap_or_else(|| PathBuf::from("."));
 
         config.validate_sources(&config_dir, &home_dir)?;
-        let core = CoreState::from_config(config);
+        let mut core = CoreState::from_config(config);
+        core.profiles = ProfileSet::load(&config_dir.join(PROFILES_DIR))?;
 
         Ok(Self {
             ctx: AppContext {
@@ -197,6 +199,26 @@ mod tests {
         if let Some(home) = crate::paths::home_dir() {
             assert_eq!(app.ctx.home_dir, home);
         }
+    }
+
+    #[test]
+    fn app_loads_profiles_from_profiles_dir_next_to_config() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let profiles = tmp.path().join("profiles");
+        std::fs::create_dir_all(&profiles).unwrap();
+        std::fs::write(profiles.join("work.yml"), "packages: [home/git]\n").unwrap();
+
+        let app = App::with_home(empty_config(tmp.path()), tmp.path().to_path_buf()).unwrap();
+        let work = app.ctx.core.profiles.get("work").expect("profile loaded");
+        assert_eq!(work.packages, ["home/git"]);
+        assert!(app.ctx.core.profiles.issues().is_empty());
+    }
+
+    #[test]
+    fn app_with_no_profiles_folder_has_empty_profile_set() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let app = App::with_home(empty_config(tmp.path()), tmp.path().to_path_buf()).unwrap();
+        assert_eq!(app.ctx.core.profiles.iter().count(), 0);
     }
 
     #[test]

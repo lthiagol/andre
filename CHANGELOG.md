@@ -17,9 +17,32 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   saved with the rest of the config). Documented in `REFERENCE.md` (new
   Icons section) and `andre.yml.example`. The glyph tables live in
   `andre/src/ui/icons.rs`.
+- Profiles model (`andre-core/src/profile.rs`): named package sets, one file each
+  in `profiles/` beside `andre.yml` (`<name>.yml`, `deny_unknown_fields`). Profiles
+  include other profiles; includes resolve recursively, de-duplicated, with each
+  entry's origin. Unknown includes and cycles are errors (the message names the
+  profile or the cycle path). Refs to missing packages are kept and flagged
+  `missing`, with a startup warning. Create, save, rename and delete a profile file;
+  rename or remove package and group refs across all profiles. Loaded into
+  `AppState::profiles`; no TUI screens yet. Format in `REFERENCE.md` (Profiles).
+  Demo fixture: `demo/profiles/` (`terminal`, `editor` includes `terminal`).
+- `--config-folder <DIR>` (and `--config-folder=DIR`): load `andre.yml` (or
+  `andre.yaml`) and `profiles/` from a folder, e.g. inside a freshly cloned dotfiles
+  repo. `--onboard` accepts it as the place to create a new config. Help text
+  gains a *Config discovery* section.
 
 ### Changed
 
+- **Breaking (pre-1.0): config discovery.** The config is found in this order:
+  `--config <FILE>`, then `--config-folder <DIR>`, then `$XDG_CONFIG_HOME/andre/`
+  (`~/.config/andre/`; macOS also `~/Library/Application Support/andre/`). A flag
+  that is given is the only place searched; it never falls back to the next step.
+  The current directory, `~/dotfiles/` and `~/.dotfiles/` are no longer searched.
+  If a config is left in one of them, the not-found error names it and suggests
+  `--config-folder <that dir>`. Move such a config into `~/.config/andre/` (or point
+  `--config-folder` at its folder). `--config` with a missing file is now an error;
+  it used to fall through to the other locations. `--config` and `--config-folder`
+  together exit 2. Documented in `REFERENCE.md` (Config Discovery) and `README.md`.
 - Theme colour roles are renamed by purpose: `background`→`bg`,
   `secondary`→`text`, `muted`→`text_dim`, `primary`→`accent`, `highlight`→`value`,
   `indicator`→`key`, `success`→`ok`, `warning`→`warn`, `error`→`err`. `ThemeColors`

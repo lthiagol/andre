@@ -61,7 +61,14 @@ fn andre_help_lists_known_flags() {
     assert!(output.status.success(), "andre --help must exit 0");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for needle in ["--config", "--yolo", "--onboard", "--debug", "--help"] {
+    for needle in [
+        "--config",
+        "--config-folder",
+        "--yolo",
+        "--onboard",
+        "--debug",
+        "--help",
+    ] {
         assert!(
             stdout.contains(needle),
             "andre --help should mention {needle}; got:\n{stdout}"

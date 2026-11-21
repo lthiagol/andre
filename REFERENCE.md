@@ -84,7 +84,7 @@ centred; the bottom bar shows the current screen's keys, the active theme
 - **Live settings toggles** — Toggle dry-run, verbosity, adopt, no-folding on the fly from any screen
 - **Config editor built-in** — Edit `andre.yml` from within the TUI: add/remove/edit groups, change global defaults
 - **Headless mode (`--yolo`)** — Auto-stow all packages without interaction, for scripts and automation
-- **Config file discovery** — Auto-finds `andre.yml` in standard locations (`$PWD`, `~/dotfiles/`, `~/.dotfiles/`, `$XDG_CONFIG_HOME`)
+- **Config folder and profiles** — One config folder (`$XDG_CONFIG_HOME/andre/`, or `--config-folder`) holds `andre.yml` and named package profiles
 - **Real stow status display** — See which packages are stowed, unstowed, conflicted, or missing at a glance
 
 <a name="installation--build-dependencies"></a>
@@ -167,10 +167,11 @@ groups:
     target: ~
 ```
 
-andre auto-discovers the config in several locations (current directory, `~/dotfiles/`, `~/.dotfiles/`, `$XDG_CONFIG_HOME/andre/`). To use a specific path:
+andre finds the config in `$XDG_CONFIG_HOME/andre/` (default `~/.config/andre/`). To use another file or folder:
 
 ```bash
 andre --config ~/dotfiles/andre.yml
+andre --config-folder ~/src/dots
 ```
 
 Launch without arguments:
@@ -183,7 +184,9 @@ andre
 
 | Flag | Description |
 |:---|:---|
-| `--conf`, `--config <path>` | Path to YAML config (default: auto-discovery) |
+| `--conf`, `--config <path>` | Path to YAML config file (default: auto-discovery) |
+| `--config-folder <dir>` | Config folder holding `andre.yml` and `profiles/` (default: auto-discovery). Cannot be combined with `--config` |
+| `--onboard` | Create an empty config at `--config` or `--config-folder` if none exists, then open the setup screen |
 | `--yolo` | Headless mode: auto-stow all packages without interaction |
 | `--help` | Show usage information |
 
@@ -215,15 +218,62 @@ the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 
 ### Config Discovery
 
-The config file (`andre.yaml` or `andre.yml`) is searched in this order:
+andre loads one config file (`andre.yaml` or `andre.yml`), chosen in this order:
 
-| Priority | Location |
-|----------|----------|
-| 1 | `--config` / `-c` flag (exact path) |
-| 2 | Current working directory |
-| 3 | `~/dotfiles/` |
-| 4 | `~/.dotfiles/` |
-| 5 | `$XDG_CONFIG_HOME/andre/` |
+| Priority | Source | Searched |
+|----------|--------|----------|
+| 1 | `--config` / `-c <file>` | that file only |
+| 2 | `--config-folder <dir>` | `<dir>/andre.yaml`, then `<dir>/andre.yml` |
+| 3 | default | `$XDG_CONFIG_HOME/andre/` (`~/.config/andre/`); on macOS also `~/Library/Application Support/andre/` |
+
+- A flag that is given is the only place searched. If it has no config, andre
+  exits with an error and does not fall back to the next step.
+- `--config` and `--config-folder` together are a usage error (exit 2).
+- The current directory, `~/dotfiles/` and `~/.dotfiles/` are **not** searched
+  (see CHANGELOG, *Changed*). If one of them holds a config, the not-found error names
+  it and suggests `--config-folder <that dir>`.
+- Profiles are read from `profiles/` next to the `andre.yml` that was loaded.
+
+### Profiles
+
+A profile is a named set of packages. Each one is a file in the `profiles/`
+folder beside `andre.yml`:
+
+```
+<config-folder>/
+├── andre.yml
+└── profiles/
+    ├── personal.yml
+    └── agent-work.yml
+```
+
+```yaml
+# profiles/agent-work.yml
+description: Work servers that run agents   # optional
+includes: [agent-base]                      # optional: other profile names
+packages:                                   # optional: "group/package" refs
+  - home/git
+  - home/shell
+  - config/nvim
+```
+
+- **Name**: the file name without `.yml`. Lowercase letters, digits, `-` and `_`; must start
+  with a lowercase letter or digit. A `.yaml` file or a bad name is skipped with a
+  `profile warning` at startup; other files in the folder are ignored.
+- **Unknown keys** fail the whole file (it is skipped with a warning), as in `andre.yml`.
+- **Includes** are resolved recursively. The result is the profile's own packages,
+  then each include's packages in the order listed, with duplicates removed. Each
+  entry records where it came from (own, or via which include).
+- **Cycles** (`a` includes `b`, `b` includes `a`) and **unknown includes** are errors
+  for that profile. The message names the cycle path or the missing profile.
+- **Missing packages**: a ref to a group or package that does not exist is kept and
+  shown as `missing`, with a warning at startup. It is not fatal.
+- Renaming a package or group through andre rewrites the refs in every profile;
+  deleting a package removes its refs. A profile cannot be deleted while another
+  profile includes it.
+- Each profile file is written whole, through a temp file in the same folder. If a
+  write fails, the files already changed by that operation are restored, and the
+  profiles in memory are left as they were.
 
 ### Path Resolution
 

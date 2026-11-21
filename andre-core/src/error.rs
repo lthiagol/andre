@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::profile::ProfileError;
+
 /// Core error type for andre.
 ///
 /// Hand-written `Display`/`Error`/`From` impls replace `thiserror` (M06 DIY-3).
@@ -17,6 +19,8 @@ pub enum Error {
     /// Native engine v1 does not implement a flag (adopt/dotfiles/regex-ignore);
     /// message recommends `global.engine: stow`.
     NativeUnsupported(String),
+    /// Profile name, file, include or package-ref problem (see `profile::ProfileError`).
+    Profile(ProfileError),
 }
 
 impl fmt::Display for Error {
@@ -34,6 +38,7 @@ impl fmt::Display for Error {
                 "native engine does not support '{}' in v1; set global.engine: stow",
                 flag
             ),
+            Error::Profile(e) => write!(f, "{}", e),
         }
     }
 }
@@ -43,6 +48,7 @@ impl std::error::Error for Error {
         match self {
             Error::YamlParse(e) => Some(e),
             Error::Io(e) => Some(e),
+            Error::Profile(e) => Some(e),
             _ => None,
         }
     }
@@ -51,6 +57,12 @@ impl std::error::Error for Error {
 impl From<serde_yaml_ng::Error> for Error {
     fn from(e: serde_yaml_ng::Error) -> Self {
         Error::YamlParse(e)
+    }
+}
+
+impl From<ProfileError> for Error {
+    fn from(e: ProfileError) -> Self {
+        Error::Profile(e)
     }
 }
 

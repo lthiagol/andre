@@ -40,7 +40,7 @@ See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configurati
 - **Live settings toggles** — Toggle dry-run, verbosity, adopt, no-folding on the fly from any screen
 - **Config editor built-in** — Edit `andre.yml` from within the TUI: add/remove/edit groups, change global defaults
 - **Headless mode (`--yolo`)** — Auto-stow all packages without interaction, for scripts and automation
-- **Config file discovery** — Auto-finds `andre.yml` in standard locations (`$PWD`, `~/dotfiles/`, `~/.dotfiles/`, `$XDG_CONFIG_HOME`)
+- **Config folder and profiles** — One config folder (`~/.config/andre/` or `--config-folder`) holds `andre.yml` and named package profiles that can include each other
 - **Real stow status display** — See which packages are stowed, unstowed, conflicted, or missing at a glance
 
 <a name="screenshots"></a>
@@ -110,11 +110,14 @@ groups:
     target: ~
 ```
 
-andre auto-discovers the config in several locations (current directory, `~/dotfiles/`, etc.). To use a specific path:
+andre reads the config from `~/.config/andre/` (or `$XDG_CONFIG_HOME/andre/`). To use another file or folder:
 
 ```bash
 andre --config ~/dotfiles/andre.yml
+andre --config-folder ~/src/dots   # a folder holding andre.yml and profiles/
 ```
+
+See [REFERENCE.md](REFERENCE.md#full-configuration-reference) for the discovery order and profile files.
 
 Launch without arguments:
 
