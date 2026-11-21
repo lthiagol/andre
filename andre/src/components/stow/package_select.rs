@@ -9,6 +9,7 @@ use crate::theme::ThemeColors;
 use crate::ui::icons::Icons;
 use crate::ui::packages::{align_columns, FlatItem};
 use crate::ui::{render_package_select, status_layout};
+use andre_core::ignore::global_ignore_in;
 use andre_core::StowStatus;
 
 #[derive(Default)]
@@ -71,9 +72,13 @@ impl PackageSelectComponent {
                 None => Vec::new(),
             };
             if let (Some(s), Some(t)) = (&source, &target) {
-                ctx.status_cache
-                    .borrow_mut()
-                    .prefetch_group(s, t, group_name, &packages);
+                ctx.status_cache.borrow_mut().prefetch_group(
+                    s,
+                    t,
+                    group_name,
+                    &packages,
+                    Some(&global_ignore_in(&ctx.home_dir)),
+                );
             }
             let group_selected = self.selected_packages.get(group_name);
             for pkg_name in packages {
@@ -280,11 +285,11 @@ mod tests {
 
     #[test]
     fn test_prepare_sizes_the_viewport_to_the_rows_the_list_shows() {
-        // 80x24 terminal: the content area is 16 rows. The legend takes 8 and the
-        // borders 2, so the list shows 6 rows, and that is the page size.
+        // 80x24 terminal: the content area is 16 rows. The legend takes 9 and the
+        // borders 2, so the list shows 5 rows, and that is the page size.
         let mut component = PackageSelectComponent::new(vec!["dots".into()]);
         component.prepare(Rect::new(0, 0, 80, 16));
-        assert_eq!(component.viewport_height, 6);
+        assert_eq!(component.viewport_height, 5);
 
         // Too short for a legend: the list takes the whole area.
         component.prepare(Rect::new(0, 0, 80, 10));

@@ -16,7 +16,7 @@ use crate::theme::ThemeColors;
 use crate::ui::icons::Icons;
 
 /// Every status in legend order, with the meaning shown beside it.
-const LEGEND: [(StowStatus, &str); 6] = [
+const LEGEND: [(StowStatus, &str); 7] = [
     (StowStatus::Stowed, "all files symlinked correctly"),
     (StowStatus::Unstowed, "package exists but no symlinks"),
     (StowStatus::Partial, "some files symlinked, some not"),
@@ -26,6 +26,10 @@ const LEGEND: [(StowStatus, &str); 6] = [
     ),
     (StowStatus::Missing, "package source directory not found"),
     (StowStatus::Empty, "package contains no files"),
+    (
+        StowStatus::Invalid,
+        "ignore list cannot be read or compiled",
+    ),
 ];
 
 /// The legend's rows plus its two border rows.
@@ -43,6 +47,7 @@ pub fn status_color(colors: &ThemeColors, status: StowStatus) -> Color {
         StowStatus::Partial => colors.warn,
         StowStatus::Conflict => colors.err,
         StowStatus::Missing | StowStatus::Empty => colors.text_dim,
+        StowStatus::Invalid => colors.err,
     }
 }
 
@@ -88,6 +93,7 @@ mod tests {
         assert_eq!(status_word(StowStatus::Unstowed), "unstowed");
         assert_eq!(status_word(StowStatus::Conflict), "conflict");
         assert_eq!(status_word(StowStatus::Empty), "empty");
+        assert_eq!(status_word(StowStatus::Invalid), "invalid");
     }
 
     #[test]
@@ -100,6 +106,7 @@ mod tests {
             assert_eq!(status_color(&colors, StowStatus::Conflict), colors.err);
             assert_eq!(status_color(&colors, StowStatus::Missing), colors.text_dim);
             assert_eq!(status_color(&colors, StowStatus::Empty), colors.text_dim);
+            assert_eq!(status_color(&colors, StowStatus::Invalid), colors.err);
         }
     }
 
@@ -130,13 +137,14 @@ mod tests {
                 StowStatus::Conflict,
                 StowStatus::Missing,
                 StowStatus::Empty,
+                StowStatus::Invalid,
             ]
         );
     }
 
     #[test]
-    fn test_legend_height_is_six_rows_and_two_borders() {
-        assert_eq!(LEGEND_HEIGHT, 8);
+    fn test_legend_height_is_seven_rows_and_two_borders() {
+        assert_eq!(LEGEND_HEIGHT, 9);
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub struct Icons {
     pub conflict: &'static str,
     pub missing: &'static str,
     pub empty: &'static str,
+    pub invalid: &'static str,
     pub link: &'static str,
     pub import: &'static str,
     pub unlink: &'static str,
@@ -40,6 +41,7 @@ pub static NERD: Icons = Icons {
     conflict: "\u{f071}",
     missing: "\u{f128}",
     empty: "\u{f05e}",
+    invalid: "!",
     link: "\u{f0c1}",
     import: "\u{f019}",
     unlink: "\u{f127}",
@@ -64,6 +66,7 @@ pub static UNICODE: Icons = Icons {
     conflict: "✗",
     missing: "?",
     empty: "∅",
+    invalid: "!",
     link: "⇢",
     import: "⇣",
     unlink: "≠",
@@ -91,6 +94,7 @@ impl Icons {
             StowStatus::Conflict => self.conflict,
             StowStatus::Missing => self.missing,
             StowStatus::Empty => self.empty,
+            StowStatus::Invalid => self.invalid,
         }
     }
 
@@ -123,6 +127,7 @@ mod tests {
             icons.conflict,
             icons.missing,
             icons.empty,
+            icons.invalid,
             icons.link,
             icons.import,
             icons.unlink,
@@ -174,6 +179,7 @@ mod tests {
             StowStatus::Conflict,
             StowStatus::Missing,
             StowStatus::Empty,
+            StowStatus::Invalid,
         ];
         for set in [IconSet::Nerd, IconSet::Unicode] {
             let icons = Icons::for_set(set);
@@ -187,6 +193,12 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_invalid_status_is_an_exclamation_mark_in_both_sets() {
+        assert_eq!(NERD.status(StowStatus::Invalid), "!");
+        assert_eq!(UNICODE.status(StowStatus::Invalid), "!");
     }
 
     #[test]

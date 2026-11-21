@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 use crate::state::{StowAction, StowFlags};
-use crate::stow::build_stow_args;
+use crate::stow::{build_stow_args, set_child_home};
 
 #[derive(Debug, Clone)]
 pub enum AdoptionAction {
@@ -114,8 +114,14 @@ pub fn plan_adoption(
 }
 
 /// Move the selected files into the package, then stow it. Adoption always stows,
-/// so `flags.action` is ignored.
-pub fn execute_adoption(plan: &AdoptionPlan, flags: &StowFlags, ignores: &[String]) -> Result<()> {
+/// so `flags.action` is ignored. `home` is the home whose global ignore list GNU stow
+/// reads; `None` inherits the process `HOME`.
+pub fn execute_adoption(
+    plan: &AdoptionPlan,
+    flags: &StowFlags,
+    ignores: &[String],
+    home: Option<&Path>,
+) -> Result<()> {
     let dry_run = flags.dry_run;
     if !plan.package_dir.exists() {
         fs::create_dir_all(&plan.package_dir)?;
@@ -163,6 +169,7 @@ pub fn execute_adoption(plan: &AdoptionPlan, flags: &StowFlags, ignores: &[Strin
         &stow_flags,
         ignores,
     );
+    set_child_home(&mut cmd, home);
 
     let status = cmd.status().map_err(Error::Io)?;
     if !status.success() {
@@ -326,7 +333,7 @@ mod tests {
         fs::write(&file, original).unwrap();
 
         let plan = plan_adoption(&target, &source, "shell", std::slice::from_ref(&file)).unwrap();
-        execute_adoption(&plan, &StowFlags::default(), &[]).unwrap();
+        execute_adoption(&plan, &StowFlags::default(), &[], Some(tmp.path())).unwrap();
 
         let dest = source.join("shell").join(".bashrc");
         assert!(dest.exists(), "File should exist in package dir");

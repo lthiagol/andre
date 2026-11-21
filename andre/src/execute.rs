@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
 
+use andre_core::ignore::global_ignore_in;
 use andre_core::{Config, LinkEngine, LinkOp, StowFlags};
 
 #[derive(Debug, Clone)]
@@ -102,6 +103,7 @@ pub fn build_execution_results(
                     target: tgt.clone(),
                     flags: *flags,
                     ignores: ignores.clone(),
+                    global_ignore: Some(global_ignore_in(home_dir)),
                 });
             }
         } else {

@@ -1720,6 +1720,37 @@ fn test_package_status_glyphs_follow_the_icon_set() {
     }
 }
 
+/// A package whose `.stow-local-ignore` does not compile is shown as invalid, never as
+/// missing, in both icon sets and in the status colour.
+#[test]
+fn test_package_with_a_broken_ignore_list_shows_invalid() {
+    for set in [IconSet::Nerd, IconSet::Unicode] {
+        let icons = Icons::for_set(set);
+        let (mut app, tmp) = make_test_app();
+        add_status_fixtures(tmp.path());
+        let broken = tmp.path().join("dotfiles/home/broken");
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::write(broken.join(".broken_rc"), "x").unwrap();
+        // Look-around is rejected by the regex engine, so the list does not compile.
+        std::fs::write(broken.join(".stow-local-ignore"), "(?=x)y\n").unwrap();
+        app.ctx.core.icons = set;
+        let colors = ThemeColors::from_theme(app.ctx.core.theme);
+        push_screen(&mut app, "Status");
+        let status = render_updated(&mut app, 80, 24);
+
+        let y = (0..status.area().height)
+            .find(|&y| row_text(&status, y).contains("broken  invalid"))
+            .unwrap_or_else(|| panic!("{set:?}: broken row should read invalid"));
+        assert!(
+            !row_text(&status, y).contains("missing"),
+            "{set:?}: an invalid list must not read as missing"
+        );
+        let (_, fg) = glyph_on_row(&status, y, icons.invalid)
+            .unwrap_or_else(|| panic!("{set:?}: invalid glyph missing"));
+        assert_eq!(fg, status_color(&colors, StowStatus::Invalid));
+    }
+}
+
 /// One package per status the status screen can show, in the test home. `plain` is
 /// unstowed, `linked` stowed, `clash` conflicts with a real file, `half` is partly
 /// stowed and `hollow` has no files.
@@ -1770,7 +1801,7 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
         packages_app.ctx.core.icons = set;
         let colors = ThemeColors::from_theme(packages_app.ctx.core.theme);
         push_screen(&mut packages_app, "PackageSelect");
-        let packages = render_updated(&mut packages_app, 80, 24);
+        let packages = render_updated(&mut packages_app, 80, 25);
         // The cursor row keeps its status glyph only where the colour reads at 3:1, so
         // its colour is checked by the cursor-row test instead.
         let cursor_row = find_accent(&packages).map(|(_, y)| y);
@@ -1779,7 +1810,7 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
         add_status_fixtures(tmp.path());
         status_app.ctx.core.icons = set;
         push_screen(&mut status_app, "Status");
-        let status = render_updated(&mut status_app, 80, 24);
+        let status = render_updated(&mut status_app, 80, 25);
 
         let mut checked = 0;
         for (name, state) in STATUS_FIXTURES {
@@ -1941,13 +1972,13 @@ fn test_package_rows_align_group_status_and_detail_columns() {
     );
 }
 
-/// A 60-column package name is cut with `…`, and no row loses its status word at 80x24.
+/// A 60-column package name is cut with `…`, and no row loses its status word at 80x25.
 #[test]
 fn test_long_package_name_is_cut_and_every_status_word_stays_visible() {
     let (mut app, _tmp) = make_two_group_app();
     push_packages(&mut app, &["home"]);
-    // The six `home` packages fill the 80x24 list exactly, so every row is on screen.
-    let buf = render_updated(&mut app, 80, 24);
+    // The six `home` packages fill the 80x25 list exactly, so every row is on screen.
+    let buf = render_updated(&mut app, 80, 25);
 
     let long_row = package_row(&buf, &format!("{}…", "a".repeat(31)));
     assert!(
@@ -2044,7 +2075,8 @@ fn test_package_list_draws_no_scrollbar_when_every_row_fits() {
     let (mut app, _tmp) = make_two_group_app();
     push_packages(&mut app, &["home"]);
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
-    let buf = render_updated(&mut app, 80, 24);
+    // Six packages need 80x25 beside the legend; at 80x24 they overflow.
+    let buf = render_updated(&mut app, 80, 25);
 
     let column = panel_right_column(&buf, PACKAGES_TITLE);
     let rows = panel_rows(&buf, PACKAGES_TITLE);
@@ -2178,7 +2210,7 @@ fn test_status_list_draws_its_scrollbar_thumb_when_rows_overflow() {
 
     let column = panel_right_column(&buf, STATUS_TITLE);
     let rows = panel_rows(&buf, STATUS_TITLE);
-    assert_eq!(rows.len(), 6, "the status list should show 6 rows at 80x24");
+    assert_eq!(rows.len(), 5, "the status list should show 5 rows at 80x24");
     assert!(
         !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
         "no scrollbar thumb on the status list's right border"

@@ -1,3 +1,4 @@
+use andre_core::ignore::global_ignore_in;
 use andre_core::{discover_packages, path::resolve_path, StowStatus};
 use crossterm::event::KeyEvent;
 use ratatui::{layout::Rect, Frame};
@@ -63,6 +64,7 @@ impl Component for StatusComponent {
     fn update(&mut self, ctx: &mut AppContext) -> Transition {
         if !self.invalidated {
             ctx.status_cache.borrow_mut().invalidate_all();
+            let global = global_ignore_in(&ctx.home_dir);
             // Prefetch all groups' status
             for (group_name, group) in &ctx.core.config.groups {
                 let source = resolve_path(&group.source, &ctx.config_dir, &ctx.home_dir);
@@ -70,7 +72,7 @@ impl Component for StatusComponent {
                 if source.exists() && target.exists() {
                     let packages = discover_packages(&source);
                     let mut cache = ctx.status_cache.borrow_mut();
-                    cache.prefetch_group(&source, &target, group_name, &packages);
+                    cache.prefetch_group(&source, &target, group_name, &packages, Some(&global));
                 }
             }
             self.rows = build_rows(ctx);
@@ -174,11 +176,11 @@ mod tests {
 
     #[test]
     fn test_prepare_sizes_the_viewport_to_the_rows_the_list_shows() {
-        // 80x24 terminal: the content area is 16 rows. The legend takes 8 and the
-        // borders 2, so the list shows 6 rows, and that is the page size.
+        // 80x24 terminal: the content area is 16 rows. The legend takes 9 and the
+        // borders 2, so the list shows 5 rows, and that is the page size.
         let mut component = StatusComponent::default();
         component.prepare(Rect::new(0, 0, 80, 16));
-        assert_eq!(component.viewport_height, 6);
+        assert_eq!(component.viewport_height, 5);
 
         // Too short for a legend: the list takes the whole area.
         component.prepare(Rect::new(0, 0, 80, 10));

@@ -11,6 +11,27 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- Per-package ignore lists, GNU Stow semantics (`andre-core/src/ignore.rs`). A
+  package's `.stow-local-ignore` holds one Perl-style regex per line (`#` comments,
+  blank lines skipped). A pattern with `/` matches the path below the package root
+  (`^/` anchors it); one without matches the whole file or folder name. An ignored
+  folder is not entered. The file replaces the built-in list and
+  `$HOME/.stow-global-ignore` for that package, as in GNU Stow. The file itself is
+  never linked. Both engines follow these rules; the native engine uses Rust regex
+  syntax, so look-around and backreferences are an error there (use `engine: stow`).
+  Parity tests run native and GNU stow 2.4.1 on the same fixtures
+  (`andre-core/tests/integration.rs`).
+- Package creation API (`andre-core/src/create.rs`): `plan_package` checks a request
+  and touches no disk; `execute_package` runs it. An empty package, or live files
+  moved into the package and linked back (what `adopt` did), into a new or an
+  existing package. Optional `.gitignore` (secrets and caches template) and
+  `.stow-local-ignore` (the built-in list copied in, so the defaults survive).
+  Optional profile membership through `ProfileSet`. Validation runs first; a step
+  that fails undoes the steps before it. Rollback is tested at every failure point.
+- Ignore file helpers for the TUI editor: read lines, add a line (a bad
+  `.stow-local-ignore` regex is refused), remove a line, create a file from a
+  template (never overwrites), delete a file.
+- `regex` dependency (andre-core): Perl-style ignore patterns.
 - `global.icons` config setting: `nerd` (default, Nerd Font glyphs) or
   `unicode` (common Unicode symbols, no Nerd Font needed). An unknown value warns
   and falls back to `nerd`. Settings gets an `icons` row (Enter cycles it,
@@ -33,6 +54,33 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **Native engine: built-in ignore list.** A package without `.stow-local-ignore`
+  (and without `~/.stow-global-ignore`) now skips GNU's built-in list, as `stow`
+  does: `RCS`, `CVS`, `.svn`, `_darcs`, `.hg`, `.git`, `.gitignore`, `.gitmodules`,
+  `.cvsignore`, `*,v`, `*~`, `#*#`, and top-level `README*`, `LICENSE*`, `COPYING*`.
+  Files with those names are no longer linked by the native engine.
+  **Migration:** links the native engine created for these files earlier stay in
+  place. Native `unstow`, `restow` and `status` skip them, so they are neither removed
+  nor counted. To keep linking them, add a `.stow-local-ignore` to the package with
+  the built-in list minus the names you want (for example, minus `\.gitignore`). Or
+  remove the stale links by hand.
+- **Status counts what gets linked.** The package's ignore list applies to
+  `check_stowed_status`. New `check_stowed_status_with_ignores` also applies a
+  group's `ignore` patterns; the TUI status cache does not call it yet. `collect_package_files`
+  now takes the rules; `linkable_files` is the shared lister used by both engines and status.
+- **GNU stow reads the home it is given.** The stow engine and `execute_adoption`
+  set `HOME` on the GNU child to the home the caller resolved, so GNU reads the same
+  `.stow-global-ignore` as the preview and status. Only the child's environment is
+  set; this process's is not changed.
+- **Package creation refuses links it cannot undo.** With `engine: stow`, a request
+  is refused when GNU would also link an ignore file the request writes (such as
+  `.gitignore`) that the active list does not exclude. Use `engine: native`.
+- **New status `invalid` (`!`).** A package whose ignore list does not compile shows
+  as `invalid` in the error colour, not `missing`. `missing` now means only a missing
+  source.
+- Group and global `ignore` entries are still substring matches in the native
+  engine (regex only with `engine: stow`). The native engine's `NativeUnsupported`
+  message is unchanged.
 - **Breaking (pre-1.0): config discovery.** The config is found in this order:
   `--config <FILE>`, then `--config-folder <DIR>`, then `$XDG_CONFIG_HOME/andre/`
   (`~/.config/andre/`; macOS also `~/Library/Application Support/andre/`). A flag

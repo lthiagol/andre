@@ -21,6 +21,10 @@ pub enum Error {
     NativeUnsupported(String),
     /// Profile name, file, include or package-ref problem (see `profile::ProfileError`).
     Profile(ProfileError),
+    /// An ignore pattern does not compile, or an ignore-file edit was refused.
+    Ignore(String),
+    /// Package creation refused or rolled back (names the package, path or step).
+    Package(String),
 }
 
 impl fmt::Display for Error {
@@ -39,6 +43,8 @@ impl fmt::Display for Error {
                 flag
             ),
             Error::Profile(e) => write!(f, "{}", e),
+            Error::Ignore(msg) => write!(f, "ignore list: {}", msg),
+            Error::Package(msg) => write!(f, "{}", msg),
         }
     }
 }

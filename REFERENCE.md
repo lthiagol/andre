@@ -275,6 +275,38 @@ packages:                                   # optional: "group/package" refs
   write fails, the files already changed by that operation are restored, and the
   profiles in memory are left as they were.
 
+### Ignore Files
+
+A package can hold two ignore files at its root.
+
+**`.stow-local-ignore`** lists files that are never linked. It follows GNU Stow's
+rules (`manual: Ignore Lists`):
+
+- One Perl-style regex per line. Blank lines and `#` comments are skipped. Text after
+  a whitespace-preceded `#` is a comment, and `\#` is a literal `#`.
+- A pattern containing `/` matches the path below the package root, at any depth:
+  `bar/keep` matches `foo/bar/keep`. Start it with `^/` to anchor it to the root:
+  `^/README\.md` matches only the top-level file.
+- A pattern without `/` must match the whole file or folder name: `.*\.swp` matches
+  `draft.swp`, and `cache` matches any folder called `cache`.
+- A folder that matches is not entered, so nothing below it is linked.
+- If the file exists, it **replaces** the built-in list for that package (and
+  `~/.stow-global-ignore`). Without it, the built-in list applies. The built-in list
+  is GNU Stow's own: `RCS`, `CVS`, `.svn`, `_darcs`, `.hg`, `.git`, `.gitignore`,
+  `.gitmodules`, `.cvsignore`, `*,v`, `*~`, `#*#`, and the top-level `README*`,
+  `LICENSE*`, `COPYING*`.
+- The file itself is never linked. A `.stow-local-ignore` in a sub-folder is linked
+  like any other file.
+- The native engine uses Rust regex syntax. Look-around and backreferences are
+  rejected with an error that names the line; use `global.engine: stow` for those.
+
+**`.gitignore`** keeps files out of git. andre never reads it to decide what is
+linked. The secrets template andre can write when a package is created covers `.env`,
+`.env.*`, `*.env`, `*.key`, `*.pem`, `*history*`, `*.swp`, `secrets/`, `.cache/`,
+`__pycache__/`, `.DS_Store`. Such files are still linked unless `.stow-local-ignore`
+excludes them. The built-in list excludes `.gitignore` itself; a replacement list
+must keep `\.gitignore` for the same effect (the template does).
+
 ### Path Resolution
 
 All source and target paths are resolved **relative to the config file's directory**.
@@ -294,10 +326,12 @@ global:
   icons: nerd
 
   # Link engine: 'native' (default, no GNU stow binary required) or 'stow'
-  # (shells out to GNU stow; needed for adopt, dotfiles, and regex ignores)
+  # (shells out to GNU stow; needed for adopt, dotfiles, and regex `ignore` patterns;
+  # per-package .stow-local-ignore regexes work with both engines, see Ignore Files)
   engine: native
 
-  # Patterns to ignore globally (supports glob syntax)
+  # Patterns to ignore globally: substring match with engine: native, regex with
+  # engine: stow
   ignore:
     - .git
     - .DS_Store
@@ -503,7 +537,7 @@ you save the config.
 
 The set also draws the checkboxes on the group, package and file lists (`■` / `□`
 in unicode) and the package status glyphs (`✓` stowed, `→` unstowed, `◐` partial,
-`✗` conflict, `?` missing, `∅` empty in unicode).
+`✗` conflict, `?` missing, `∅` empty in unicode; `!` invalid in both sets).
 
 An unknown value in the config triggers a warning and falls back to `nerd`.
 

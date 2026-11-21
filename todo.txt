@@ -24,6 +24,10 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 - Regenerate `docs/screenshots/*.png` with `make screenshots` now that the redesign batches are done (they still show the old UI).
 - Decide whether to keep ratatui's scrollbar thumb-length convention (6 of 8 rows visible draws a 3-of-6 thumb); if not, size the thumb from `content_len - viewport_len + 1`.
 
+- Pass the group's `ignore` list to status: `andre/src/status_cache.rs` should call
+    `check_stowed_status_with_ignores`, so status counts what a link run links.
+- Move the TUI adopt flow to `andre_core::plan_package` / `execute_package` (F4 "new package").
+
 ## Documentation
 
 - (nothing open) — `global.engine` and the native-engine default are documented

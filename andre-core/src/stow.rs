@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{Error, Result};
+use crate::ignore::IgnoreRules;
 use crate::state::{StowAction, StowFlags};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +14,8 @@ pub enum StowStatus {
     Conflict,
     Missing,
     Empty,
+    /// The package's ignore list cannot be read or compiled, so its status is unknown.
+    Invalid,
 }
 
 impl StowStatus {
@@ -24,6 +27,7 @@ impl StowStatus {
             StowStatus::Conflict => "Conflict",
             StowStatus::Missing => "Missing",
             StowStatus::Empty => "Empty",
+            StowStatus::Invalid => "Invalid",
         }
     }
 
@@ -32,14 +36,34 @@ impl StowStatus {
     }
 }
 
-pub fn check_stowed_status(source: &Path, target: &Path, package: &str) -> Result<StowStatus> {
+/// Status of `package` under `target`, counting only files that would be linked with no
+/// config ignores applied. `global` is the `.stow-global-ignore` path to read, if any.
+/// Use [`check_stowed_status_with_ignores`] to match a group's `ignore` list too.
+pub fn check_stowed_status(
+    source: &Path,
+    target: &Path,
+    package: &str,
+    global: Option<&Path>,
+) -> Result<StowStatus> {
+    check_stowed_status_with_ignores(source, target, package, &[], global)
+}
+
+/// Like [`check_stowed_status`], with the group's config ignores (`ignores`) applied on
+/// top of the package's ignore list, so status counts the same files a link run would.
+pub fn check_stowed_status_with_ignores(
+    source: &Path,
+    target: &Path,
+    package: &str,
+    ignores: &[String],
+    global: Option<&Path>,
+) -> Result<StowStatus> {
     let package_source = source.join(package);
 
     if !package_source.exists() {
         return Ok(StowStatus::Missing);
     }
 
-    let files = collect_package_files(&package_source);
+    let files = linkable_files(&package_source, ignores, global)?;
 
     if files.is_empty() {
         return Ok(StowStatus::Empty);
@@ -125,25 +149,65 @@ pub fn check_stowed_status(source: &Path, target: &Path, package: &str) -> Resul
     }
 }
 
-pub fn collect_package_files(package_dir: &Path) -> Vec<PathBuf> {
+/// The files a link run would link for `package_dir`: the package's ignore list
+/// ([`IgnoreRules::load`], with `global` as the global list) applied, then the group's
+/// `ignores` as substrings of the relative path. Both engines and status use this, so
+/// they agree on what is linked.
+pub fn linkable_files(
+    package_dir: &Path,
+    ignores: &[String],
+    global: Option<&Path>,
+) -> Result<Vec<PathBuf>> {
+    let rules = IgnoreRules::load(package_dir, global)?;
+    Ok(collect_package_files(package_dir, &rules)
+        .into_iter()
+        .filter(|file| {
+            let rel = file.strip_prefix(package_dir).unwrap_or(file);
+            !ignored_by_group(rel, ignores)
+        })
+        .collect())
+}
+
+/// True when the group's `ignores` (substring match) exclude `rel`, a path relative to
+/// the package. Shared by [`linkable_files`] and the create planner, so previews match.
+pub(crate) fn ignored_by_group(rel: &Path, ignores: &[String]) -> bool {
+    let rel = rel.to_string_lossy();
+    ignores.iter().any(|ig| rel.contains(ig.as_str()))
+}
+
+/// Every regular file under `package_dir` that `rules` does not exclude. An excluded
+/// directory is not entered. Entries are visited in name order.
+pub fn collect_package_files(package_dir: &Path, rules: &IgnoreRules) -> Vec<PathBuf> {
     let mut files = Vec::new();
-
-    if !package_dir.is_dir() {
-        return files;
+    if package_dir.is_dir() {
+        walk(package_dir, "", rules, &mut files);
     }
+    files
+}
 
-    if let Ok(entries) = fs::read_dir(package_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                files.push(path);
-            } else if path.is_dir() {
-                files.extend(collect_package_files(&path));
-            }
+fn walk(dir: &Path, prefix: &str, rules: &IgnoreRules, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let rel = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        if rules.is_ignored(&rel) {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_file() {
+            files.push(path);
+        } else if path.is_dir() {
+            walk(&path, &rel, rules, files);
         }
     }
-
-    files
 }
 
 pub fn build_stow_args(
@@ -199,14 +263,27 @@ pub fn build_stow_args(
     cmd
 }
 
+/// Sets `HOME` on a stow child process, so GNU stow reads the `.stow-global-ignore` in
+/// `home` and not the host's. Only the child is affected; this process's environment is
+/// untouched. `None` leaves the child with the inherited `HOME`.
+pub(crate) fn set_child_home(cmd: &mut Command, home: Option<&Path>) {
+    if let Some(home) = home {
+        cmd.env("HOME", home);
+    }
+}
+
+/// Runs GNU stow for one package. `home` is the home whose global ignore list stow
+/// should read (see [`set_child_home`]).
 pub fn execute_stow(
     source: &Path,
     target: &Path,
     package: &str,
     flags: &StowFlags,
     ignores: &[String],
+    home: Option<&Path>,
 ) -> Result<i32> {
     let mut cmd = build_stow_args(source, target, package, flags, ignores);
+    set_child_home(&mut cmd, home);
     let output = cmd.output().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             Error::StowNotFound
@@ -262,7 +339,7 @@ mod tests {
         let link_path = target.join(".bashrc");
         make_symlink(&pkg_src.join(".bashrc"), &link_path).unwrap();
 
-        let status = check_stowed_status(&source, &target, "bash-env").unwrap();
+        let status = check_stowed_status(&source, &target, "bash-env", None).unwrap();
         assert_eq!(status, StowStatus::Stowed);
     }
 
@@ -277,7 +354,7 @@ mod tests {
         fs::write(pkg_src.join(".bashrc"), "content").unwrap();
         fs::create_dir_all(&target).unwrap();
 
-        let status = check_stowed_status(&source, &target, "bash-env").unwrap();
+        let status = check_stowed_status(&source, &target, "bash-env", None).unwrap();
         assert_eq!(status, StowStatus::Unstowed);
     }
 
@@ -290,7 +367,7 @@ mod tests {
         fs::create_dir_all(&source).unwrap();
         fs::create_dir_all(&target).unwrap();
 
-        let status = check_stowed_status(&source, &target, "nonexistent").unwrap();
+        let status = check_stowed_status(&source, &target, "nonexistent", None).unwrap();
         assert_eq!(status, StowStatus::Missing);
     }
 
@@ -304,7 +381,7 @@ mod tests {
         fs::create_dir_all(&pkg_src).unwrap();
         fs::create_dir_all(&target).unwrap();
 
-        let status = check_stowed_status(&source, &target, "empty-pkg").unwrap();
+        let status = check_stowed_status(&source, &target, "empty-pkg", None).unwrap();
         assert_eq!(status, StowStatus::Empty);
     }
 
@@ -321,7 +398,7 @@ mod tests {
 
         fs::write(target.join(".bashrc"), "different content").unwrap();
 
-        let status = check_stowed_status(&source, &target, "bash-env").unwrap();
+        let status = check_stowed_status(&source, &target, "bash-env", None).unwrap();
         assert_eq!(status, StowStatus::Conflict);
     }
 
@@ -339,7 +416,7 @@ mod tests {
 
         make_symlink(&pkg_src.join(".bashrc"), &target.join(".bashrc")).unwrap();
 
-        let status = check_stowed_status(&source, &target, "bash-env").unwrap();
+        let status = check_stowed_status(&source, &target, "bash-env", None).unwrap();
         assert_eq!(status, StowStatus::Partial);
     }
 
@@ -574,6 +651,18 @@ mod tests {
     }
 
     #[test]
+    fn test_stow_status_invalid_ignore_list_is_an_error_not_missing() {
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("packages");
+        let target = tmp.path().join("target");
+        fs::create_dir_all(source.join("bash-env")).unwrap();
+        fs::create_dir_all(&target).unwrap();
+        fs::write(source.join("bash-env/.bashrc"), "rc").unwrap();
+        fs::write(source.join("bash-env/.stow-local-ignore"), "(?=x)y\n").unwrap();
+        assert!(check_stowed_status(&source, &target, "bash-env", None).is_err());
+    }
+
+    #[test]
     fn test_stow_status_missing_source() {
         let tmp = TempDir::new().unwrap();
         let source = tmp.path().join("nonexistent-source");
@@ -581,7 +670,7 @@ mod tests {
 
         fs::create_dir_all(&target).unwrap();
 
-        let status = check_stowed_status(&source, &target, "bash-env").unwrap();
+        let status = check_stowed_status(&source, &target, "bash-env", None).unwrap();
         assert_eq!(status, StowStatus::Missing);
     }
 
@@ -595,7 +684,7 @@ mod tests {
         fs::create_dir_all(&pkg_src).unwrap();
         fs::write(pkg_src.join(".bashrc"), "content").unwrap();
 
-        let status = check_stowed_status(&source, &target, "bash-env").unwrap();
+        let status = check_stowed_status(&source, &target, "bash-env", None).unwrap();
         assert_eq!(status, StowStatus::Unstowed);
     }
 

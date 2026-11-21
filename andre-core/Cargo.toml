@@ -7,6 +7,7 @@ edition = '2021'
 serde = { workspace = true, features = ['derive'] }
 serde_yaml_ng = { workspace = true }
 pathdiff = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

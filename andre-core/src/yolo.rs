@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::ignore::global_ignore_in;
 use crate::{discover_packages, engine::LinkEngine, path::resolve_path, Config, LinkOp, StowFlags};
 
 /// A single group-level stow job: run stow for all packages in one group.
@@ -10,6 +11,8 @@ pub struct StowJob {
     pub target: PathBuf,
     pub packages: Vec<String>,
     pub ignores: Vec<String>,
+    /// The `.stow-global-ignore` path for this run (see [`LinkOp::global_ignore`]).
+    pub global_ignore: Option<PathBuf>,
 }
 
 /// Build a list of stow jobs from config, skipping groups with missing sources.
@@ -35,6 +38,7 @@ pub fn build_plan(config: &Config, config_dir: &Path, home_dir: &Path) -> Vec<St
             target,
             packages,
             ignores,
+            global_ignore: Some(global_ignore_in(home_dir)),
         });
     }
     jobs
@@ -53,6 +57,7 @@ pub fn run_job(job: &StowJob, engine: &dyn LinkEngine, flags: &StowFlags) -> (us
             target: job.target.clone(),
             flags: *flags,
             ignores: job.ignores.clone(),
+            global_ignore: job.global_ignore.clone(),
         };
         match engine.apply(&op) {
             Ok(()) => ok += 1,
@@ -120,6 +125,7 @@ mod tests {
             target,
             packages: vec!["pkg1".to_string()],
             ignores: vec![],
+            global_ignore: None,
         };
 
         let engine = NativeEngine;
@@ -153,6 +159,7 @@ mod tests {
             target,
             packages: vec!["pkg1".to_string()],
             ignores: vec![],
+            global_ignore: None,
         };
 
         let engine = NativeEngine;

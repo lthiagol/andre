@@ -75,6 +75,7 @@ impl Component for AdoptPreviewComponent {
                     plan,
                     &ctx.core.flags,
                     &ctx.core.config.effective_ignores(&self.group_name),
+                    Some(ctx.home_dir.as_path()),
                 );
                 // Adoption can add a package and move links, so cached statuses are stale.
                 ctx.status_cache.borrow_mut().invalidate_all();

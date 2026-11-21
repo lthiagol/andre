@@ -117,6 +117,7 @@ Borrow seams from mature TUIs (e.g. herdr / ratatui event-driven templates), not
 | `serde` (+ `derive`) | andre-core | `Config` Serialize/Deserialize |
 | `serde_yaml_ng` | andre-core | `andre.yml` parse/emit (maintained `serde_yaml` fork — see DIY notes) |
 | `pathdiff` | andre-core | compute relative symlink paths (std lacks `Path::diff_paths`); native engine makes stow-compatible relative links |
+| `regex` | andre-core | Perl-style patterns in `.stow-local-ignore` (Rust regex syntax; look-around rejected, see `ignore.rs`) |
 | `andre-core` | andre | business logic (workspace path) |
 | `ratatui` | andre | TUI framework (widgets, layout, render) |
 | `crossterm` | andre | terminal raw mode + key/resize event input |

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::state::{StowAction, StowFlags};
-use crate::stow::{collect_package_files, execute_stow};
+use crate::stow::{execute_stow, linkable_files};
 
 /// A single package link operation. All fields the engines need to plan/apply.
 #[derive(Debug, Clone)]
@@ -22,6 +22,11 @@ pub struct LinkOp {
     pub target: PathBuf,
     pub flags: StowFlags,
     pub ignores: Vec<String>,
+    /// The `.stow-global-ignore` to read when the package has no list of its own. Build
+    /// it with [`crate::ignore::global_ignore_in`]: the stow engine runs GNU stow with
+    /// `HOME` set to the folder that holds it, so GNU reads the same list. `None` means
+    /// none for the native engine, and GNU then inherits the process `HOME`.
+    pub global_ignore: Option<PathBuf>,
 }
 
 /// Which link engine the config selects. Unknown config values resolve to `Native`.
@@ -93,7 +98,16 @@ impl LinkEngine for StowEngine {
         }
         // Dry-run returned early above, so `op.flags.dry_run` is false here and
         // stow is never run with `-n`.
-        execute_stow(&op.source, &op.target, &op.package, &op.flags, &op.ignores)?;
+        // The list lives in the home it was built from (see `global_ignore_in`).
+        let home = op.global_ignore.as_deref().and_then(Path::parent);
+        execute_stow(
+            &op.source,
+            &op.target,
+            &op.package,
+            &op.flags,
+            &op.ignores,
+            home,
+        )?;
         Ok(())
     }
 
@@ -112,22 +126,15 @@ impl LinkEngine for StowEngine {
 pub struct NativeEngine;
 
 impl NativeEngine {
-    /// Recursively collect package files, applying literal-substring ignores.
-    ///
-    /// NOTE (v1 limitation): stow `--ignore` is a regex; native v1 matches each
-    /// ignore as a substring of the file's relative path. `.*\.swp`-style regex
-    /// patterns are NOT honored — recommend `engine: stow` for regex ignores.
-    fn collect(source_pkg: &Path, ignores: &[String]) -> Vec<PathBuf> {
-        collect_package_files(source_pkg)
-            .into_iter()
-            .filter(|file| {
-                let rel = file
-                    .strip_prefix(source_pkg)
-                    .unwrap_or(file)
-                    .to_string_lossy();
-                !ignores.iter().any(|ig| rel.contains(ig.as_str()))
-            })
-            .collect()
+    /// Package files that will be linked. Honours the package's ignore list
+    /// (`.stow-local-ignore`, else the global list, else GNU's built-in list) and the
+    /// group's `ignores`. See [`crate::stow::linkable_files`].
+    fn collect(
+        source_pkg: &Path,
+        ignores: &[String],
+        global: Option<&Path>,
+    ) -> Result<Vec<PathBuf>> {
+        linkable_files(source_pkg, ignores, global)
     }
 
     /// True when `link` is a symlink whose resolved target lies inside `pkg_src`.
@@ -153,14 +160,9 @@ impl NativeEngine {
             _ => false,
         }
     }
-}
 
-impl LinkEngine for NativeEngine {
-    fn name(&self) -> &'static str {
-        "native"
-    }
-
-    fn plan(&self, op: &LinkOp) -> Result<Vec<LinkAction>> {
+    /// Plans the file-level actions. With `only`, files outside it are dropped.
+    fn plan_within(&self, op: &LinkOp, only: Option<&[PathBuf]>) -> Result<Vec<LinkAction>> {
         // Native v1 is file-level only; adopt and dotfiles would change behavior
         // we do not implement. Folding is inherent (native never folds), so
         // no_folding does not require an error.
@@ -176,10 +178,13 @@ impl LinkEngine for NativeEngine {
             return Err(Error::SourceNotFound(pkg_src));
         }
 
-        let files = Self::collect(&pkg_src, &op.ignores);
+        let files = Self::collect(&pkg_src, &op.ignores, op.global_ignore.as_deref())?;
         let mut actions = Vec::with_capacity(files.len());
         for f in files {
             let rel = f.strip_prefix(&pkg_src).unwrap_or(&f).to_path_buf();
+            if !in_scope(&rel, only) {
+                continue;
+            }
             let link = op.target.join(&rel);
             match op.flags.action {
                 StowAction::Stow => actions.push(LinkAction::CreateSymlink {
@@ -207,9 +212,9 @@ impl LinkEngine for NativeEngine {
         Ok(actions)
     }
 
-    fn apply(&self, op: &LinkOp) -> Result<()> {
+    fn run(&self, op: &LinkOp, only: Option<&[PathBuf]>) -> Result<()> {
         let pkg_src = op.source.join(&op.package);
-        let actions = self.plan(op)?;
+        let actions = self.plan_within(op, only)?;
         if op.flags.dry_run {
             return Ok(());
         }
@@ -258,6 +263,34 @@ impl LinkEngine for NativeEngine {
         }
         Ok(())
     }
+
+    /// Like [`LinkEngine::apply`], but only for the package files at or under one of
+    /// `only` (paths relative to the package). Other files stay unlinked, so existing
+    /// unstowed files in the package are left alone. Package creation uses this to link
+    /// back only the files it moved.
+    pub fn apply_within(&self, op: &LinkOp, only: &[PathBuf]) -> Result<()> {
+        self.run(op, Some(only))
+    }
+}
+
+/// True when `rel` (package-relative) is at or under one of `only`. `None` means no
+/// restriction.
+fn in_scope(rel: &Path, only: Option<&[PathBuf]>) -> bool {
+    only.is_none_or(|paths| paths.iter().any(|p| rel.starts_with(p)))
+}
+
+impl LinkEngine for NativeEngine {
+    fn name(&self) -> &'static str {
+        "native"
+    }
+
+    fn plan(&self, op: &LinkOp) -> Result<Vec<LinkAction>> {
+        self.plan_within(op, None)
+    }
+
+    fn apply(&self, op: &LinkOp) -> Result<()> {
+        self.run(op, None)
+    }
 }
 
 #[cfg(unix)]
@@ -301,6 +334,7 @@ mod tests {
                 verbosity: 0,
             },
             ignores: vec![],
+            global_ignore: None,
         }
     }
 
@@ -438,6 +472,34 @@ mod tests {
     }
 
     #[test]
+    fn native_reads_the_global_list_it_is_given() {
+        let tmp = TempDir::new().unwrap();
+        let (source, target, pkg_src) = pkg(&tmp);
+        fs::write(pkg_src.join("secret"), "s").unwrap();
+        let global = tmp.path().join("global-ignore");
+        fs::write(&global, "secret\n").unwrap();
+
+        let mut o = op(source, target, StowAction::Stow);
+        o.global_ignore = Some(global);
+        let actions = NativeEngine.plan(&o).unwrap();
+        assert_eq!(actions.len(), 1, "the global list excludes secret");
+        assert!(actions[0].clone().link().ends_with(".bashrc"));
+    }
+
+    #[test]
+    fn apply_within_links_only_the_given_paths() {
+        let tmp = TempDir::new().unwrap();
+        let (source, target, pkg_src) = pkg(&tmp);
+        fs::write(pkg_src.join("extra"), "e").unwrap();
+        let o = op(source, target.clone(), StowAction::Stow);
+        NativeEngine
+            .apply_within(&o, &[PathBuf::from(".bashrc")])
+            .unwrap();
+        assert!(target.join(".bashrc").is_symlink());
+        assert!(!target.join("extra").exists(), "outside the given paths");
+    }
+
+    #[test]
     fn engine_for_factory_selects_by_kind() {
         assert_eq!(engine_for(EngineKind::Native).name(), "native");
         assert_eq!(engine_for(EngineKind::Stow).name(), "stow");
@@ -483,6 +545,7 @@ mod tests {
                     verbosity: 0,
                 },
                 ignores: vec![],
+                global_ignore: None,
             })
             .unwrap();
         let link = target.join(".bashrc");
@@ -505,6 +568,7 @@ mod tests {
                     verbosity: 0,
                 },
                 ignores: vec![],
+                global_ignore: None,
             })
             .unwrap();
         assert!(
@@ -529,6 +593,7 @@ mod tests {
                     verbosity: 0,
                 },
                 ignores: vec![],
+                global_ignore: None,
             })
             .unwrap_err();
         assert!(
@@ -584,6 +649,7 @@ mod tests {
                 verbosity: 0,
             },
             ignores: vec![],
+            global_ignore: None,
         }
     }
 
