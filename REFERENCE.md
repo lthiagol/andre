@@ -611,8 +611,8 @@ Located at `tests/e2e/<NN>-<name>/`. Each contains `andre.yml`, optionally `pack
 | # | Scenario | What it Verifies |
 |---|----------|------------------|
 | 01 | basic-stow | Basic symlink creation |
-| 02 | multi-package-one-group | Group-level batch stow |
-| 03 | multi-group-config | Cross-group stow |
+| 02 | multi-package-one-group | Batch stow of several packages |
+| 03 | two-profiles | `--yolo --profile` links only that profile's packages |
 | 04 | nested-directories | Directory structure preservation |
 | 05 | hidden-dotfiles | Dotfile handling |
 | 06 | executables | Permission preservation |

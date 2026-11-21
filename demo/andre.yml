@@ -1,6 +1,9 @@
 # Local demo fixture for `make run` / `make screenshots`.
 # Paths resolve relative to this file's directory.
 
+packages: packages
+target: target
+
 global:
   engine: native  # default; set `stow` to shell out to GNU Stow (folding/adopt/dotfiles/regex-ignore)
   theme: catppuccin-mocha
@@ -13,8 +16,3 @@ global:
     no_folding: false
     adopt: false
     action: stow
-
-groups:
-  home:
-    source: packages
-    target: target

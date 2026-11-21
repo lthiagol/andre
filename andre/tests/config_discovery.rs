@@ -340,8 +340,32 @@ fn demo_fixture_profiles_resolve_through_their_include() {
         .resolve("editor", &known)
         .expect("editor resolves");
     let packages: Vec<&str> = editor.entries.iter().map(|e| e.package.as_str()).collect();
-    assert_eq!(packages, ["home/nvim", "home/shell", "home/git"]);
+    assert_eq!(packages, ["nvim", "shell", "git"]);
     assert_eq!(editor.missing().count(), 0);
+}
+
+#[test]
+fn demo_fixture_screens_render_without_panic_at_120x40_and_200x50() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    // The `make run` fixture: the main menu, then the profiles, packages and settings
+    // screens, at the two sizes the screens are checked at.
+    let demo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("demo")
+        .join("andre.yml");
+    for (cols, rows) in [(120, 40), (200, 50)] {
+        for digit in ['1', '2', '6'] {
+            let tmp = TempDir::new().unwrap();
+            let mut app = App::with_home(demo.clone(), tmp.path().to_path_buf()).unwrap();
+            app.set_terminal_size(cols, rows);
+            app.component_dispatch(KeyEvent::new(KeyCode::Char(digit), KeyModifiers::NONE));
+            let mut terminal = Terminal::new(TestBackend::new(cols, rows)).unwrap();
+            terminal.draw(|f| andre::ui::render(&mut app, f)).unwrap();
+        }
+    }
 }
 
 // ---- headless --profile (F5) ----

@@ -560,14 +560,12 @@ mod tests {
         fs::write(
             &config_path,
             r#"
+packages: packages
+target: target
 global:
   stow:
     verbosity: 2
     dry_run: true
-groups:
-  main:
-    source: packages
-    target: target
 "#,
         )
         .unwrap();
@@ -575,7 +573,8 @@ groups:
         let config = Config::load(&config_path).unwrap();
         assert_eq!(config.stow_flags().verbosity, 2);
         assert!(config.stow_flags().dry_run);
-        assert_eq!(config.groups.len(), 1);
+        assert_eq!(config.packages.as_deref(), Some("packages"));
+        assert_eq!(config.target.as_deref(), Some("target"));
     }
 
     #[test]
@@ -609,10 +608,8 @@ groups:
 global:
   stow:
     dry_run: false
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -632,10 +629,8 @@ groups:
 global:
   stow:
     verbosity: 1
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -658,10 +653,8 @@ global:
     - .DS_Store
   stow:
     verbosity: 0
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -682,10 +675,8 @@ groups:
 global:
   stow:
     verbosity: 0
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -705,10 +696,8 @@ groups:
 global:
   stow:
     verbosity: 0
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -728,10 +717,8 @@ groups:
 global:
   stow:
     dotfiles: true
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -748,6 +735,8 @@ groups:
         fs::write(
             &config_path,
             r#"
+packages: dotfiles
+target: "~"
 global:
   theme: dracula
   ignore:
@@ -757,13 +746,6 @@ global:
     verbosity: 2
     dry_run: true
     action: restow
-groups:
-  home:
-    source: dotfiles/home
-    target: "~"
-  config:
-    source: dotfiles/config
-    target: ~/.config
 "#,
         )
         .unwrap();
@@ -777,8 +759,8 @@ groups:
         assert!(reloaded.stow_flags().dry_run);
         assert_eq!(reloaded.stow_flags().action, StowAction::Restow);
         assert_eq!(reloaded.global.theme.as_deref(), Some("dracula"));
-        assert_eq!(reloaded.groups.len(), 2);
-        assert_eq!(reloaded.groups.get("home").unwrap().source, "dotfiles/home");
+        assert_eq!(reloaded.packages.as_deref(), Some("dotfiles"));
+        assert_eq!(reloaded.target.as_deref(), Some("~"));
     }
 
     #[test]
@@ -793,10 +775,8 @@ global:
   stow:
     verbosity: 0
     dry_run: false
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -861,21 +841,12 @@ groups:
     #[test]
     fn test_add_and_remove_group() {
         let tmp = TempDir::new().unwrap();
-        let config_path = tmp.path().join("andre.yml");
-
-        fs::write(
-            &config_path,
-            r#"
-global: {}
-groups:
-  main:
-    source: packages
-    target: target
-"#,
-        )
-        .unwrap();
-
-        let mut config = Config::load(&config_path).unwrap();
+        let mut config = Config::default_empty();
+        config.add_group(
+            "main".to_string(),
+            "packages".to_string(),
+            "target".to_string(),
+        );
         assert_eq!(config.groups.len(), 1);
 
         config.add_group(
@@ -969,10 +940,8 @@ groups:
             &config_path,
             r#"
 global: {}
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -997,21 +966,8 @@ groups:
     #[test]
     fn test_group_ignore_round_trip() {
         let tmp = TempDir::new().unwrap();
-        let config_path = tmp.path().join("andre.yml");
-
-        fs::write(
-            &config_path,
-            r#"
-global: {}
-groups:
-  main:
-    source: packages
-    target: target
-"#,
-        )
-        .unwrap();
-
-        let mut config = Config::load(&config_path).unwrap();
+        let mut config = Config::default_empty();
+        config.add_group("main".into(), "packages".into(), "target".into());
         config.set_group_ignore("main", vec!["*.log".to_string(), "tmp".to_string()]);
 
         let save_path = tmp.path().join("saved.yml");
@@ -1034,10 +990,8 @@ groups:
             &config_path,
             r#"
 global: {}
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -1078,21 +1032,8 @@ groups:
     #[test]
     fn test_update_group_source_target() {
         let tmp = TempDir::new().unwrap();
-        let config_path = tmp.path().join("andre.yml");
-
-        fs::write(
-            &config_path,
-            r#"
-global: {}
-groups:
-  main:
-    source: packages
-    target: target
-"#,
-        )
-        .unwrap();
-
-        let mut config = Config::load(&config_path).unwrap();
+        let mut config = Config::default_empty();
+        config.add_group("main".into(), "packages".into(), "target".into());
         config.update_group_source("main", "new/source".to_string());
         config.update_group_target("main", "/new/target".to_string());
 
@@ -1108,19 +1049,12 @@ groups:
     #[test]
     fn test_get_group_source_returns_none_when_missing() {
         let tmp = TempDir::new().unwrap();
-        let config_path = tmp.path().join("andre.yml");
-        fs::write(
-            &config_path,
-            r#"
-global: {}
-groups:
-  main:
-    source: /nonexistent/source/path
-    target: /nonexistent/target/path
-"#,
-        )
-        .unwrap();
-        let config = Config::load(&config_path).unwrap();
+        let mut config = Config::default_empty();
+        config.add_group(
+            "main".into(),
+            "/nonexistent/source/path".into(),
+            "/nonexistent/target/path".into(),
+        );
         let result = config.get_group_source("main", tmp.path(), tmp.path());
         assert!(
             result.is_none(),
@@ -1131,19 +1065,12 @@ groups:
     #[test]
     fn test_get_group_target_returns_none_when_missing() {
         let tmp = TempDir::new().unwrap();
-        let config_path = tmp.path().join("andre.yml");
-        fs::write(
-            &config_path,
-            r#"
-global: {}
-groups:
-  main:
-    source: /nonexistent/source/path
-    target: /nonexistent/target/path
-"#,
-        )
-        .unwrap();
-        let config = Config::load(&config_path).unwrap();
+        let mut config = Config::default_empty();
+        config.add_group(
+            "main".into(),
+            "/nonexistent/source/path".into(),
+            "/nonexistent/target/path".into(),
+        );
         let result = config.get_group_target("main", tmp.path(), tmp.path());
         assert!(
             result.is_none(),
@@ -1154,7 +1081,7 @@ groups:
     #[test]
     fn test_validate_clean_config_returns_no_warnings() {
         let config = Config {
-            packages: None,
+            packages: Some("packages".into()),
             target: None,
             global: GlobalSettings {
                 engine: None,
@@ -1170,18 +1097,7 @@ groups:
                     action: Some("stow".to_string()),
                 }),
             },
-            groups: {
-                let mut g = BTreeMap::new();
-                g.insert(
-                    "test".to_string(),
-                    Group {
-                        source: "/tmp".to_string(),
-                        target: "/tmp".to_string(),
-                        ignore: None,
-                    },
-                );
-                g
-            },
+            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert!(
@@ -1194,7 +1110,7 @@ groups:
     #[test]
     fn test_validate_unknown_theme_returns_warning() {
         let config = Config {
-            packages: None,
+            packages: Some("packages".into()),
             target: None,
             global: GlobalSettings {
                 engine: None,
@@ -1203,18 +1119,7 @@ groups:
                 ignore: None,
                 stow: None,
             },
-            groups: {
-                let mut g = BTreeMap::new();
-                g.insert(
-                    "test".to_string(),
-                    Group {
-                        source: "/tmp".to_string(),
-                        target: "/tmp".to_string(),
-                        ignore: None,
-                    },
-                );
-                g
-            },
+            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1224,7 +1129,7 @@ groups:
     #[test]
     fn test_validate_unknown_action_returns_warning() {
         let config = Config {
-            packages: None,
+            packages: Some("packages".into()),
             target: None,
             global: GlobalSettings {
                 engine: None,
@@ -1240,18 +1145,7 @@ groups:
                     action: Some("invalid-action".to_string()),
                 }),
             },
-            groups: {
-                let mut g = BTreeMap::new();
-                g.insert(
-                    "test".to_string(),
-                    Group {
-                        source: "/tmp".to_string(),
-                        target: "/tmp".to_string(),
-                        ignore: None,
-                    },
-                );
-                g
-            },
+            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1261,7 +1155,7 @@ groups:
     #[test]
     fn test_validate_verbosity_out_of_range_returns_warning() {
         let config = Config {
-            packages: None,
+            packages: Some("packages".into()),
             target: None,
             global: GlobalSettings {
                 engine: None,
@@ -1277,18 +1171,7 @@ groups:
                     action: None,
                 }),
             },
-            groups: {
-                let mut g = BTreeMap::new();
-                g.insert(
-                    "test".to_string(),
-                    Group {
-                        source: "/tmp".to_string(),
-                        target: "/tmp".to_string(),
-                        ignore: None,
-                    },
-                );
-                g
-            },
+            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1307,7 +1190,7 @@ groups:
                 ignore: None,
                 stow: None,
             },
-            groups: BTreeMap::new(),
+            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1325,7 +1208,7 @@ global:
   stow:
     verbosity: 0
     nonexistent_field: true
-groups: {}
+packages: packages
 "#,
         )
         .unwrap();
@@ -1359,7 +1242,7 @@ groups: {}
         let path = tmp.path().join("andre.yml");
         std::fs::write(
             &path,
-            "global:\n  engine: STOW\n  stow:\n    verbosity: 0\ngroups: {}\n",
+            "global:\n  engine: STOW\n  stow:\n    verbosity: 0\npackages: packages\n",
         )
         .unwrap();
         let config = Config::load(&path).unwrap();
@@ -1385,7 +1268,7 @@ groups: {}
                 ignore: None,
                 stow: None,
             },
-            groups: BTreeMap::new(),
+            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert!(
@@ -1406,7 +1289,7 @@ groups: {}
                 ignore: None,
                 stow: None,
             },
-            groups: BTreeMap::new(),
+            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert!(
@@ -1420,7 +1303,7 @@ groups: {}
         let path = tmp.path().join("andre.yml");
         std::fs::write(
             &path,
-            "global:\n  icons: unicode\n  stow:\n    verbosity: 0\ngroups: {}\n",
+            "global:\n  icons: unicode\n  stow:\n    verbosity: 0\npackages: packages\n",
         )
         .unwrap();
         let config = Config::load(&path).unwrap();
@@ -1530,6 +1413,18 @@ groups: {}
     }
 
     #[test]
+    fn test_demo_config_links_inside_the_demo_folder() {
+        // `make run` loads demo/andre.yml: its packages and links must stay in the demo
+        // folder, never in the real home.
+        let demo = fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../demo")).unwrap();
+        let config = Config::load(&demo.join("andre.yml")).unwrap();
+        let home = Path::new("/nonexistent-home");
+
+        assert!(config.packages_dir(&demo, home).unwrap().starts_with(&demo));
+        assert!(config.target_dir(&demo, home).starts_with(&demo));
+    }
+
+    #[test]
     fn test_package_entries_empty_without_packages_folder() {
         let tmp = TempDir::new().unwrap();
         let config = Config::default_empty();
@@ -1544,8 +1439,10 @@ groups: {}
         let home = tmp.path().join("home");
         fs::create_dir_all(config_dir.join("packages/git")).unwrap();
 
-        let yaml = "global:\n  ignore: [.DS_Store]\ngroups:\n  home:\n    source: packages\n    target: \"~\"\n    ignore: [README.md]\n";
-        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+        let mut config: Config =
+            serde_yaml_ng::from_str("global:\n  ignore: [.DS_Store]\n").unwrap();
+        config.add_group("home".into(), "packages".into(), "~".into());
+        config.set_group_ignore("home", vec!["README.md".into()]);
         let entries = config.package_entries(config_dir, &home);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "home/git");

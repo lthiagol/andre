@@ -45,6 +45,7 @@ impl TestEnv {
             .join("e2e")
             .join(scenario_name);
         let packages_source = fixture_source.join("packages");
+        let profiles_source = fixture_source.join("profiles");
         let target_source = fixture_source.join("target");
 
         if !fixture_source.is_dir() {
@@ -62,6 +63,10 @@ impl TestEnv {
         fs::create_dir_all(&target_dir).expect("Failed to create target dir");
         if packages_source.exists() {
             recurse_copy(&packages_source, &packages_dir).expect("Failed to copy packages");
+        }
+        if profiles_source.exists() {
+            recurse_copy(&profiles_source, &temp_path.join("profiles"))
+                .expect("Failed to copy profiles");
         }
         if target_source.exists() {
             recurse_copy(&target_source, &target_dir).expect("Failed to copy target dir");

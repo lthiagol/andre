@@ -117,11 +117,16 @@ fn test_hidden_dotfiles_stowed_correctly() {
 }
 
 #[test]
-fn test_multi_group_stow() {
-    let env = TestEnv::from_scenario("03-multi-group-config");
+fn test_two_profiles_stow_every_package() {
+    let env = TestEnv::from_scenario("03-two-profiles");
 
     let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
+    env.assert_symlinks(&[
+        (".bashrc", "../packages/bash-env/.bashrc"),
+        (".vimrc", "../packages/vim-env/.vimrc"),
+        (".gitconfig", "../packages/git-env/.gitconfig"),
+    ]);
 }
 
 #[test]

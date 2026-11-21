@@ -1,4 +1,4 @@
 description: Editor on top of the terminal setup
 includes: [terminal]
 packages:
-  - home/nvim
+  - nvim

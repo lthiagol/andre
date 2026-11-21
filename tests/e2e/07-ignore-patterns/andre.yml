@@ -1,3 +1,5 @@
+packages: packages
+target: target
 global:
   engine: stow  # exercises regex ignore patterns (native v1 ignore is literal-substring)
   stow:
@@ -10,8 +12,3 @@ global:
     - .git
     - .DS_Store
     - '.*\.log'
-
-groups:
-  main:
-    source: packages
-    target: target

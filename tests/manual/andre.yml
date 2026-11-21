@@ -1,3 +1,5 @@
+packages: packages
+target: target
 global:
   theme: catppuccin-mocha
   ignore:
@@ -10,7 +12,3 @@ global:
     adopt: false
     dotfiles: false
     action: stow
-groups:
-  home:
-    source: packages
-    target: target

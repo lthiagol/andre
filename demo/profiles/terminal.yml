@@ -1,4 +1,4 @@
 description: Shell and git
 packages:
-  - home/shell
-  - home/git
+  - shell
+  - git

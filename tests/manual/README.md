@@ -1,12 +1,12 @@
 # Manual Test Setup
 
-This directory contains a manual test setup for andre with a single `home` group, 7 stow packages, and pre-existing files for adoption testing.
+This directory contains a manual test setup for andre with one packages folder (`packages/`, linked into `target/`), 7 stow packages, and pre-existing files for adoption testing.
 
 ## Structure
 
 ```
 tests/manual/
-├── andre.yml              # Single group: home (packages → target)
+├── andre.yml              # packages: packages, target: target
 ├── target/               # Simulates $HOME
 │   ├── .bashrc           # Pre-existing (for adoption tests)
 │   └── .ssh/
@@ -51,7 +51,7 @@ cd tests/manual && ../../target/release/andre
 ## Testing Scenarios
 
 ### Basic stow
-1. Run andre, select `home` group, select packages, confirm, execute
+1. Run andre, select packages, confirm, execute
 2. Run `./view-and-reset.sh` to see symlinks created
 
 ### Adoption

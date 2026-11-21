@@ -7,15 +7,6 @@ fn test_scenario_01_basic_stow() {
     let env = TestEnv::from_scenario("01-basic-stow");
     let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0, "andre failed: {}", result.stderr);
-
-    env.assert_symlinks(&[(".bashrc", "../packages/bash-env/.bashrc")]);
-}
-
-#[test]
-fn test_scenario_15_flat_basic() {
-    let env = TestEnv::from_scenario("15-flat-basic");
-    let result = env.run_andre(&["--yolo"]).unwrap();
-    assert_eq!(result.exit_code, 0, "andre failed: {}", result.stderr);
     assert_eq!(
         result.stdout,
         "ok    bash-env\n1 succeeded, 0 failed (total: 1)\n"
@@ -25,18 +16,18 @@ fn test_scenario_15_flat_basic() {
 }
 
 #[test]
-fn test_yolo_creates_a_missing_group_target_for_the_stow_engine() {
-    let env = TestEnv::from_scenario("15-flat-basic");
+fn test_yolo_creates_a_missing_target_for_the_stow_engine() {
+    let env = TestEnv::from_scenario("01-basic-stow");
     std::fs::write(
         &env.config_path,
-        "global:\n  engine: stow\ngroups:\n  main:\n    source: packages\n    target: nested/sub\n",
+        "global:\n  engine: stow\npackages: packages\ntarget: nested/sub\n",
     )
     .unwrap();
     let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0, "andre failed: {}", result.stderr);
     assert_eq!(
         result.stdout,
-        "ok    main/bash-env\n1 succeeded, 0 failed (total: 1)\n"
+        "ok    bash-env\n1 succeeded, 0 failed (total: 1)\n"
     );
     assert!(
         env.temp_dir.path().join("nested/sub/.bashrc").is_symlink(),
@@ -58,16 +49,30 @@ fn test_scenario_02_multi_package_one_group() {
 }
 
 #[test]
-fn test_scenario_03_multi_group_config() {
-    let env = TestEnv::from_scenario("03-multi-group-config");
-    let result = env.run_andre(&["--yolo"]).unwrap();
-    assert_eq!(result.exit_code, 0);
+fn test_scenario_03_two_profiles() {
+    let env = TestEnv::from_scenario("03-two-profiles");
+    let result = env.run_andre(&["--yolo", "--profile", "personal"]).unwrap();
+    assert_eq!(result.exit_code, 0, "andre failed: {}", result.stderr);
 
     env.assert_symlinks(&[
-        ("home/.bashrc", "../../packages/shared/.bashrc"),
-        ("config/.vimrc", "../../packages/shared/.vimrc"),
-        ("emacs/.emacs.el", "../../packages/shared/.emacs.el"),
+        (".bashrc", "../packages/bash-env/.bashrc"),
+        (".vimrc", "../packages/vim-env/.vimrc"),
     ]);
+    assert!(
+        !env.target_dir.join(".gitconfig").exists(),
+        "--profile personal must not stow the work profile's package"
+    );
+}
+
+#[test]
+fn test_scenario_03_two_profiles_work_links_only_its_package() {
+    let env = TestEnv::from_scenario("03-two-profiles");
+    let result = env.run_andre(&["--yolo", "--profile", "work"]).unwrap();
+    assert_eq!(result.exit_code, 0, "andre failed: {}", result.stderr);
+
+    env.assert_symlinks(&[(".gitconfig", "../packages/git-env/.gitconfig")]);
+    assert!(!env.target_dir.join(".bashrc").exists());
+    assert!(!env.target_dir.join(".vimrc").exists());
 }
 
 #[test]
@@ -133,14 +138,14 @@ fn test_stow_engine_failure_is_one_fail_line() {
     let env = TestEnv::from_scenario("08-defer-existing-target");
     std::fs::write(
         &env.config_path,
-        "global:\n  engine: stow\ngroups:\n  main:\n    source: packages\n    target: target\n",
+        "global:\n  engine: stow\npackages: packages\ntarget: target\n",
     )
     .unwrap();
     let result = env.run_andre(&["--yolo"]).unwrap();
     let lines: Vec<&str> = result.stderr.lines().collect();
     assert_eq!(lines.len(), 1, "one line per package: {:?}", result.stderr);
     assert!(
-        lines[0].starts_with("FAIL  main/bash-env  (engine=stow): Stow failed: "),
+        lines[0].starts_with("FAIL  bash-env  (engine=stow): Stow failed: "),
         "{:?}",
         lines[0]
     );

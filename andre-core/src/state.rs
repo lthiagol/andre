@@ -307,10 +307,8 @@ global:
     no_folding: true
     adopt: false
     action: restow
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -338,10 +336,8 @@ groups:
 global:
   stow:
     verbosity: 0
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();
@@ -407,10 +403,8 @@ groups:
 global:
   stow:
     action: unstow
-groups:
-  main:
-    source: packages
-    target: target
+packages: packages
+target: target
 "#,
         )
         .unwrap();

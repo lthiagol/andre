@@ -1,3 +1,5 @@
+packages: packages
+target: target/bin
 global:
   stow:
     verbosity: 0
@@ -5,8 +7,3 @@ global:
     no_folding: false
     adopt: false
     action: stow
-
-groups:
-  main:
-    source: packages
-    target: target/bin

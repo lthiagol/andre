@@ -1258,7 +1258,7 @@ mod tests {
     }
 
     #[test]
-    fn known_packages_lists_group_packages_that_exist() {
+    fn known_packages_lists_packages_that_exist() {
         let tmp = TempDir::new().unwrap();
         let config_dir = tmp.path();
         let home = tmp.path().join("home");
@@ -1266,13 +1266,10 @@ mod tests {
         fs::create_dir_all(config_dir.join("packages/shell")).unwrap();
         fs::write(config_dir.join("packages/loose.txt"), "").unwrap();
 
-        let yaml = "global: {}\ngroups:\n  home:\n    source: packages\n    target: out\n  ghost:\n    source: nowhere\n    target: out\n";
+        let yaml = "global: {}\npackages: packages\ntarget: out\n";
         let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
         let known = known_packages(&config, config_dir, &home);
-        assert_eq!(
-            known.into_iter().collect::<Vec<_>>(),
-            ["home/git", "home/shell"]
-        );
+        assert_eq!(known.into_iter().collect::<Vec<_>>(), ["git", "shell"]);
     }
 
     #[test]

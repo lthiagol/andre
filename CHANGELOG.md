@@ -190,6 +190,10 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   unstow item opens the target folder at once. `←` stops at the target. The crumb is
   `unstow`; a link's detail names its package (`package shell`), and the review says
   `Restow shell to put the link back.`
+- **Demo and test fixtures use the flat model.** `demo/` and `tests/manual/` set
+  `packages:` and `target:`, and the demo profiles name packages plainly (`nvim`). The e2e
+  fixtures follow; `03-multi-group-config` is now `03-two-profiles`, where `--yolo --profile`
+  links only that profile's packages.
 
 ### Changed
 
