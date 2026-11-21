@@ -181,6 +181,7 @@ Always via `resolve_path(path, config_dir, home_dir)` from `andre-core/src/path.
 ### Theme Colors
 `ThemeColors::from_theme(theme)` → 13 field color struct: `bg`, `border`, `accent`, `on_accent`, `ok`, `warn`, `err`, `text`, `text_dim`, `value`, `key`, `selection`, and `banner: [Color; 5]`. Roles name purpose, not importance: `text` is body text, `text_dim` is secondary text that must still be read, `accent` is brand and focus, `value` is user data, `key` is hotkey letters, `ok`/`warn`/`err` are status only. `on_accent` is the text on an `accent` fill (the action pill). 8 themes cycled with `t`.
 `selection` is the fill of the selected main-menu row. It is chosen per theme so the label (`text`) reads at ≥4.5:1 and the icon (`accent`) at ≥3:1 on it; `test_selected_row_text_is_readable_in_every_theme` enforces both, plus the accent bar at ≥3:1 on the normal background. Any new theme must pass that test.
+`theme::tests::test_every_theme_meets_contrast_floors` enforces the contrast floors for every role (text, dim text, accents, banner letters, border, selection) in every theme; Default's `Reset` background is checked on `#000000` and `#282828`. Any new theme must pass it too.
 
 ---
 

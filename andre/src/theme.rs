@@ -242,4 +242,116 @@ mod tests {
     fn test_contrast_ratio_is_none_for_non_rgb_colours() {
         assert_eq!(contrast_ratio(Color::Reset, Color::Rgb(0, 0, 0)), None);
     }
+
+    /// `Some` message when `fg` on `bg` misses `floor`, or either colour is not RGB.
+    fn floor_failure(
+        theme: &str,
+        fg_role: &str,
+        fg: Color,
+        bg_role: &str,
+        bg: Color,
+        floor: f64,
+    ) -> Option<String> {
+        match contrast_ratio(fg, bg) {
+            Some(ratio) if ratio >= floor => None,
+            Some(ratio) => Some(format!(
+                "{theme} {fg_role}/{bg_role} {ratio:.2} < {floor:?}"
+            )),
+            None => Some(format!("{theme} {fg_role}/{bg_role} is not an RGB pair")),
+        }
+    }
+
+    /// Every theme meets the contrast floors in the design table (THEME_AUDIT §4).
+    /// `Reset` is the terminal's own background, so Default is checked on the two
+    /// dark backgrounds it is built for. Every failing pair is reported at once.
+    #[test]
+    fn test_every_theme_meets_contrast_floors() {
+        let mut failures: Vec<String> = Vec::new();
+        for theme in Theme::ALL {
+            let c = ThemeColors::from_theme(theme);
+            let name = theme.name();
+
+            let mut roles: Vec<(String, Color)> = vec![
+                ("border".into(), c.border),
+                ("accent".into(), c.accent),
+                ("on_accent".into(), c.on_accent),
+                ("ok".into(), c.ok),
+                ("warn".into(), c.warn),
+                ("err".into(), c.err),
+                ("text".into(), c.text),
+                ("text_dim".into(), c.text_dim),
+                ("value".into(), c.value),
+                ("key".into(), c.key),
+                ("selection".into(), c.selection),
+            ];
+            roles.extend(
+                c.banner
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &color)| (format!("banner[{i}]"), color)),
+            );
+            for (role, color) in roles {
+                if !matches!(color, Color::Rgb(..)) {
+                    failures.push(format!("{name} {role} is not an RGB colour"));
+                }
+            }
+            if c.selection == c.border {
+                failures.push(format!("{name} selection equals border"));
+            }
+
+            let backgrounds = match c.bg {
+                Color::Reset => vec![
+                    ("#000000", Color::Rgb(0, 0, 0)),
+                    ("#282828", Color::Rgb(0x28, 0x28, 0x28)),
+                ],
+                bg => vec![("bg", bg)],
+            };
+            for (bg_role, bg) in backgrounds {
+                let on_bg = [
+                    ("text", c.text, 7.0),
+                    ("text_dim", c.text_dim, 4.5),
+                    ("accent", c.accent, 3.0),
+                    ("key", c.key, 3.0),
+                    ("value", c.value, 3.0),
+                    ("ok", c.ok, 3.0),
+                    ("warn", c.warn, 3.0),
+                    ("err", c.err, 3.0),
+                    ("border", c.border, 1.5),
+                    ("selection", c.selection, 1.25),
+                ];
+                for (role, fg, floor) in on_bg {
+                    failures.extend(floor_failure(name, role, fg, bg_role, bg, floor));
+                }
+                for (i, &letter) in c.banner.iter().enumerate() {
+                    let role = format!("banner[{i}]");
+                    failures.extend(floor_failure(name, &role, letter, bg_role, bg, 3.0));
+                }
+            }
+
+            let on_selection = [("text", c.text, 4.5), ("accent", c.accent, 3.0)];
+            for (role, fg, floor) in on_selection {
+                failures.extend(floor_failure(
+                    name,
+                    role,
+                    fg,
+                    "selection",
+                    c.selection,
+                    floor,
+                ));
+            }
+            failures.extend(floor_failure(
+                name,
+                "on_accent",
+                c.on_accent,
+                "accent",
+                c.accent,
+                4.5,
+            ));
+        }
+        assert!(
+            failures.is_empty(),
+            "contrast floors broken:\n{}",
+            failures.join("\n")
+        );
+    }
 }

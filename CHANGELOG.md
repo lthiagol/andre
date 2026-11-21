@@ -40,6 +40,16 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   `-` rules are `border`; the banner breadcrumb and taglines are `text_dim`. The
   derived colours are noted in `andre/src/theme.rs`. Colours change in every
   theme; the glyph fallbacks shrink to the five listed below.
+- The banner takes the theme's `banner` colours: `BIG_COLORS` is gone, and the
+  compact name uses the same five colours. The too-small screen paints the
+  theme's `bg` and uses `err`, `text` and `text_dim`.
+- `theme::tests::test_every_theme_meets_contrast_floors` checks every theme
+  against these floors (WCAG 2.x): `text` ≥7.0 on `bg` and ≥4.5 on `selection`;
+  `text_dim` ≥4.5 on `bg`; `accent`, `key`, `value`, `ok`, `warn`, `err` ≥3.0 on
+  `bg`; `accent` ≥3.0 on `selection`; `on_accent` ≥4.5 on `accent`; each banner
+  letter ≥3.0 on `bg`; `border` ≥1.5 and `selection` ≥1.25 on `bg`. `selection`
+  differs from `border`, and every role except `bg` is RGB. Default's `Reset`
+  background is checked against `#000000` and `#282828`.
 - Main menu is a list and a detail panel. The list on the left shows each action
   with an icon, its label and a jump digit (`1`–`7`) at the right edge. The
   selected row is filled edge to edge with a new `selection` theme colour and

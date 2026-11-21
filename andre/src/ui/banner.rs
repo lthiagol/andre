@@ -2,21 +2,13 @@ use std::sync::OnceLock;
 
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::Paragraph,
     Frame,
 };
 
 use crate::theme::ThemeColors;
-
-const BIG_COLORS: [Color; 5] = [
-    Color::Rgb(255, 80, 80),
-    Color::Rgb(255, 160, 40),
-    Color::Rgb(255, 215, 0),
-    Color::Rgb(80, 200, 80),
-    Color::Rgb(0, 180, 255),
-];
 
 const LETTERS: [char; 5] = ['A', 'N', 'D', 'R', 'E'];
 
@@ -25,57 +17,91 @@ const TAGLINE: &str = "Another Neat Dotfile Repository Engine";
 /// The name on the one-row title of screens other than the main menu.
 const COMPACT_NAME: &str = "andre";
 
-/// Built once per process. The banner content is fully static — rebuilding
-/// it on every render frame was pure waste (5 `format!()` calls + Vec
-/// allocations per row × 4 rows × every redraw).
-static TITLE: OnceLock<Vec<Line<'static>>> = OnceLock::new();
+/// One letter's box on a row of the big title. `letter` indexes `LETTERS`
+/// and `ThemeColors::banner`.
+struct Glyph {
+    col: usize,
+    letter: usize,
+    text: String,
+}
 
-fn big_title() -> &'static [Line<'static>] {
-    TITLE.get_or_init(|| {
-        let bw = "\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}"
+/// Where every letter box sits. Colour is not part of it, so one cache serves
+/// every theme.
+struct Geometry {
+    rows: Vec<Vec<Glyph>>,
+    box_width: usize,
+    width: usize,
+}
+
+/// Built once per process. The layout is fully static — rebuilding it on every
+/// render frame was pure waste (5 `format!()` calls + Vec allocations per row ×
+/// 4 rows × every redraw).
+static GEOMETRY: OnceLock<Geometry> = OnceLock::new();
+
+fn geometry() -> &'static Geometry {
+    GEOMETRY.get_or_init(|| {
+        let box_width = "\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}"
             .chars()
             .count();
-        let n = LETTERS.len();
-        let top_count = n.div_ceil(2);
+        let top_count = LETTERS.len().div_ceil(2);
         let stride =
-            TAGLINE.chars().count().saturating_sub(bw) / top_count.saturating_sub(1).max(1);
+            TAGLINE.chars().count().saturating_sub(box_width) / top_count.saturating_sub(1).max(1);
         let offset = stride / 2;
-        let total_width = stride * top_count.saturating_sub(1) + bw;
+        let width = stride * top_count.saturating_sub(1) + box_width;
 
-        let mut lines: Vec<Line<'static>> = Vec::with_capacity(4);
+        let mut rows: Vec<Vec<Glyph>> = Vec::with_capacity(4);
         for r in 0..4usize {
-            let mut items: Vec<(usize, Color, String)> = Vec::new();
-            for (i, &color) in BIG_COLORS.iter().enumerate() {
-                let base_row = i % 2;
+            let mut glyphs: Vec<Glyph> = Vec::new();
+            for (letter, &name) in LETTERS.iter().enumerate() {
+                let base_row = letter % 2;
                 let rib = r as isize - base_row as isize;
                 if !(0..=2).contains(&rib) {
                     continue;
                 }
-                let col = (i / 2) * stride + (i % 2) * offset;
+                let col = (letter / 2) * stride + (letter % 2) * offset;
                 let text = match rib {
                     0 => "\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}".to_string(),
-                    1 => format!("\u{2551} {}. \u{2551}", LETTERS[i]),
+                    1 => format!("\u{2551} {name}. \u{2551}"),
                     _ => "\u{255a}\u{2550}\u{2550}\u{2550}\u{2550}\u{255d}".to_string(),
                 };
-                items.push((col, color, text));
+                glyphs.push(Glyph { col, letter, text });
             }
-            items.sort_by_key(|(c, _, _)| *c);
+            glyphs.sort_by_key(|g| g.col);
+            rows.push(glyphs);
+        }
+        Geometry {
+            rows,
+            box_width,
+            width,
+        }
+    })
+}
+
+/// The big title's four rows, each letter in its theme colour.
+fn big_title(colors: &ThemeColors) -> Vec<Line<'static>> {
+    let geometry = geometry();
+    geometry
+        .rows
+        .iter()
+        .map(|glyphs| {
             let mut spans: Vec<Span> = Vec::new();
             let mut cursor = 0usize;
-            for (col, color, text) in items {
-                if col > cursor {
-                    spans.push(Span::raw(" ".repeat(col - cursor)));
+            for glyph in glyphs {
+                if glyph.col > cursor {
+                    spans.push(Span::raw(" ".repeat(glyph.col - cursor)));
                 }
-                spans.push(Span::styled(text, Style::default().fg(color)));
-                cursor = col + bw;
+                spans.push(Span::styled(
+                    glyph.text.clone(),
+                    Style::default().fg(colors.banner[glyph.letter]),
+                ));
+                cursor = glyph.col + geometry.box_width;
             }
-            if cursor < total_width {
-                spans.push(Span::raw(" ".repeat(total_width - cursor)));
+            if cursor < geometry.width {
+                spans.push(Span::raw(" ".repeat(geometry.width - cursor)));
             }
-            lines.push(Line::from(spans));
-        }
-        lines
-    })
+            Line::from(spans)
+        })
+        .collect()
 }
 
 /// One-row title for every screen except the main menu: the name in the
@@ -88,7 +114,7 @@ pub fn render_compact_banner(
 ) {
     let mut spans: Vec<Span> = COMPACT_NAME
         .chars()
-        .zip(BIG_COLORS)
+        .zip(colors.banner)
         .map(|(letter, color)| {
             Span::styled(
                 letter.to_string(),
@@ -121,10 +147,10 @@ pub fn render_banner(frame: &mut Frame, area: Rect, colors: &ThemeColors) {
         return;
     }
 
-    let title = big_title();
+    let title = big_title(colors);
     let mut rows: Vec<Line<'static>> = Vec::with_capacity(title.len() + 3);
     rows.push(Line::from(""));
-    rows.extend(title.iter().cloned());
+    rows.extend(title);
     rows.push(Line::from(""));
     rows.push(Line::from(TAGLINE));
 

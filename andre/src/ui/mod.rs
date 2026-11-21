@@ -38,7 +38,7 @@ use crate::app::App;
 use crate::theme::ThemeColors;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
     Frame,
@@ -61,12 +61,11 @@ pub fn plural(n: usize, one: &'static str, many: &'static str) -> &'static str {
 
 pub fn render(app: &mut App, frame: &mut Frame) {
     let (cols, rows) = app.ctx.terminal_size;
+    let colors = ThemeColors::from_theme(app.ctx.core.theme);
     if cols < 80 || rows < 24 {
-        render_too_small_overlay(frame, cols, rows);
+        render_too_small_overlay(frame, cols, rows, &colors);
         return;
     }
-
-    let colors = ThemeColors::from_theme(app.ctx.core.theme);
 
     let outer =
         crate::ui::themed_panel(&colors).style(Style::default().fg(colors.border).bg(colors.bg));
@@ -161,27 +160,32 @@ fn centred(area: Rect, max_width: u16) -> Rect {
     }
 }
 
-fn render_too_small_overlay(frame: &mut Frame, cols: u16, rows: u16) {
+fn render_too_small_overlay(frame: &mut Frame, cols: u16, rows: u16, colors: &ThemeColors) {
     let text = Text::from(vec![
         Line::from(Span::styled(
             "Terminal too small",
-            Style::default().fg(Color::Rgb(255, 80, 80)),
+            Style::default().fg(colors.err),
         )),
         Line::from(Span::raw("")),
         Line::from(Span::styled(
             "Needs at least 80 columns x 24 rows",
-            Style::default().fg(Color::Rgb(180, 180, 180)),
+            Style::default().fg(colors.text),
         )),
         Line::from(Span::styled(
             format!("Current size: {} columns x {} rows", cols, rows),
-            Style::default().fg(Color::Rgb(120, 120, 120)),
+            Style::default().fg(colors.text_dim),
         )),
     ]);
 
     let area = frame.area();
-    let paragraph = Paragraph::new(text)
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
+    // Paint the surface, so the text colours sit on the theme's background
+    // and not on whatever the terminal shows.
+    frame.render_widget(Block::default().style(Style::default().bg(colors.bg)), area);
+    let paragraph = Paragraph::new(text).alignment(Alignment::Center).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors.border)),
+    );
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

@@ -385,6 +385,49 @@ fn test_banner_has_content() {
     assert!(top_content, "banner area empty");
 }
 
+/// The banner letters take the theme's banner colours: the big letters on the
+/// main menu, the compact name on every other screen.
+#[test]
+fn test_banner_letters_take_the_theme_banner_colours_in_every_theme() {
+    for theme in Theme::ALL {
+        let colors = ThemeColors::from_theme(theme);
+        let (mut app, _) = make_test_app();
+        app.ctx.core.theme = theme;
+
+        let buf = render_app(&mut app, 80, 24);
+        for (letter, expected) in ['A', 'N', 'D', 'R', 'E'].into_iter().zip(colors.banner) {
+            // The letter sits two columns into its "║ X. ║" box.
+            let fragment = format!("\u{2551} {letter}. \u{2551}");
+            let y = (0..buf.area().height)
+                .find(|&y| row_text(&buf, y).contains(&fragment))
+                .expect("big banner row missing");
+            let x = column_of(&buf, y, &fragment).unwrap() + 2;
+            assert_eq!(buf[(x, y)].symbol(), letter.to_string());
+            assert_eq!(
+                buf[(x, y)].fg,
+                expected,
+                "{}: big banner letter {letter}",
+                theme.name()
+            );
+        }
+
+        push_screen(&mut app, "Settings");
+        let buf = render_app(&mut app, 80, 24);
+        let y = (0..buf.area().height)
+            .find(|&y| row_text(&buf, y).contains("andre"))
+            .expect("compact banner row missing");
+        let x = column_of(&buf, y, "andre").unwrap();
+        for (i, expected) in colors.banner.into_iter().enumerate() {
+            assert_eq!(
+                buf[(x + i as u16, y)].fg,
+                expected,
+                "{}: compact banner letter {i}",
+                theme.name()
+            );
+        }
+    }
+}
+
 #[test]
 fn test_help_screen_has_key_info() {
     let (mut app, _tmp) = make_test_app();
