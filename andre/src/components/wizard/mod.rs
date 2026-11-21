@@ -11,6 +11,7 @@ mod finish_view;
 mod picker;
 mod view;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use andre_core::create::{is_valid_package_name, PackagePlan};
@@ -116,6 +117,13 @@ pub struct NewPackageWizard {
 impl Component for NewPackageWizard {
     fn id(&self) -> &'static str {
         "NewPackage"
+    }
+
+    fn crumbs(&self, _ctx: &AppContext) -> Vec<Cow<'static, str>> {
+        match self.step {
+            Step::Files => vec![Cow::Borrowed("new package"), Cow::Borrowed("files")],
+            _ => vec![Cow::Borrowed("new package")],
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

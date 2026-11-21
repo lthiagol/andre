@@ -107,6 +107,11 @@ pub fn fit_scroll(d: &Detail, area: Rect, colors: &ThemeColors, scroll: u16) -> 
     scroll.min(u16::try_from(last).unwrap_or(u16::MAX))
 }
 
+/// The rows `d` takes at the size of `area`, before any scroll. A scrollbar needs it.
+pub fn detail_rows(d: &Detail, area: Rect, colors: &ThemeColors) -> usize {
+    wrapped_rows(&detail_lines(d, colors), detail_inner(area).width)
+}
+
 /// The rows `lines` take when each breaks at spaces to fit `width` columns. A word wider
 /// than a row breaks inside itself. This is the estimate `fit_scroll` clamps with, so it
 /// follows the paragraph's greedy word wrap.

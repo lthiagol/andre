@@ -3,6 +3,7 @@
 //! Edits go to a draft. `w` writes the draft to the profile file. Esc with unsaved edits
 //! asks first.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use andre_core::profile::{
@@ -352,6 +353,10 @@ impl ProfileEditComponent {
 impl Component for ProfileEditComponent {
     fn id(&self) -> &'static str {
         "ProfileEdit"
+    }
+
+    fn crumbs(&self, _ctx: &AppContext) -> Vec<Cow<'static, str>> {
+        vec![Cow::Owned(self.draft.name.clone())]
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

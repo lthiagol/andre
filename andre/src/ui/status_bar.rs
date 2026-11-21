@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -9,6 +11,7 @@ use unicode_width::UnicodeWidthStr;
 
 use andre_core::{IconSet, StowFlags, MAX_VERBOSITY};
 
+use super::elide;
 use crate::theme::ThemeColors;
 use crate::ui::icons::Icons;
 
@@ -29,34 +32,54 @@ enum Labels {
     LevelOnly,
 }
 
-/// Short display label for a component stack id in the breadcrumb.
+/// The crumb's separator in the title row.
+const CRUMB_SEP: &str = " \u{203a} ";
+
+/// Short, lowercase label for a component stack id. A screen about one entity names the
+/// entity instead (`Component::crumb`); these labels are for the rest.
 pub fn breadcrumb_label(id: &str) -> &str {
     match id {
-        "MainMenu" => "Main",
-        "Packages" => "Packages",
-        "Settings" => "Settings",
-        "Status" => "Status",
-        "Help" => "Help",
-        "Confirm" => "Confirm",
-        "Profiles" => "Profiles",
-        "ProfileEdit" => "Edit",
-        "NewPackage" => "New package",
-        "IgnoreEdit" => "Ignore",
-        "Execute" => "Execute",
-        "UnstowTargetSelect" => "Unstow",
-        "UnstowBrowse" => "Browse",
-        "UnstowConfirm" => "UnstowConfirm",
+        "MainMenu" => "main",
+        "Packages" => "packages",
+        "Settings" => "settings",
+        "Status" => "status",
+        "Help" => "help",
+        "Confirm" => "review",
+        "Profiles" => "profiles",
+        "NewPackage" => "new package",
+        "Execute" => "run",
+        "UnstowTargetSelect" => "unstow",
+        "UnstowConfirm" => "review",
         other => other,
     }
 }
 
-/// Join stack ids into a breadcrumb string (`Main > Settings`).
-pub fn format_breadcrumb(stack_ids: &[&str]) -> String {
-    stack_ids
+/// The crumbs joined with ` › `, fitted to `width` columns. When the whole trail is too
+/// wide, the leftmost crumbs go, behind `… › `, until the rest fits. A last crumb that is
+/// still too wide on its own is elided.
+pub fn fit_breadcrumb(crumbs: &[Cow<'_, str>], width: usize) -> String {
+    let full = join_crumbs(crumbs);
+    if full.width() <= width {
+        return full;
+    }
+    for start in 1..crumbs.len() {
+        let tail = format!("\u{2026}{CRUMB_SEP}{}", join_crumbs(&crumbs[start..]));
+        if tail.width() <= width {
+            return tail;
+        }
+    }
+    crumbs
+        .last()
+        .map(|last| elide(last, width))
+        .unwrap_or_default()
+}
+
+fn join_crumbs(crumbs: &[Cow<'_, str>]) -> String {
+    crumbs
         .iter()
-        .map(|id| breadcrumb_label(id))
-        .collect::<Vec<_>>()
-        .join(" > ")
+        .map(|crumb| crumb.as_ref())
+        .collect::<Vec<&str>>()
+        .join(CRUMB_SEP)
 }
 
 pub fn render_status_bar(
@@ -272,7 +295,7 @@ fn spans_width(spans: &[Span<'static>]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{breadcrumb_label, format_breadcrumb, top_bar_line, DIVIDER};
+    use super::{breadcrumb_label, fit_breadcrumb, top_bar_line, DIVIDER};
     use crate::theme::ThemeColors;
     use crate::ui::icons::{Icons, NERD, UNICODE};
     use andre_core::{StowAction, StowFlags, Theme, MAX_VERBOSITY};
@@ -280,6 +303,7 @@ mod tests {
         style::Modifier,
         text::{Line, Span},
     };
+    use std::borrow::Cow;
     use unicode_width::UnicodeWidthStr;
 
     fn colors() -> ThemeColors {
@@ -324,17 +348,32 @@ mod tests {
         top_bar_line(&colors(), flags, icons, debug, width)
     }
 
-    #[test]
-    fn test_format_breadcrumb_single() {
-        assert_eq!(format_breadcrumb(&["MainMenu"]), "Main");
+    fn crumbs(parts: &[&'static str]) -> Vec<Cow<'static, str>> {
+        parts.iter().map(|part| Cow::Borrowed(*part)).collect()
     }
 
     #[test]
-    fn test_format_breadcrumb_stack() {
+    fn test_fit_breadcrumb_joins_the_crumbs_with_a_chevron() {
+        let trail = crumbs(&["main", "settings"]);
+        assert_eq!(fit_breadcrumb(&trail, 80), "main \u{203a} settings");
+        assert_eq!(fit_breadcrumb(&crumbs(&["main"]), 80), "main");
+        assert_eq!(fit_breadcrumb(&[], 80), "");
+    }
+
+    #[test]
+    fn test_fit_breadcrumb_drops_the_leftmost_crumbs_behind_an_ellipsis() {
+        let trail = crumbs(&["main", "packages", "home/shell"]);
         assert_eq!(
-            format_breadcrumb(&["MainMenu", "Settings"]),
-            "Main > Settings"
+            fit_breadcrumb(&trail, 25),
+            "\u{2026} \u{203a} packages \u{203a} home/shell"
         );
+        assert_eq!(fit_breadcrumb(&trail, 18), "\u{2026} \u{203a} home/shell");
+    }
+
+    #[test]
+    fn test_fit_breadcrumb_elides_a_last_crumb_too_wide_for_the_row() {
+        let trail = crumbs(&["main", "a-very-long-name"]);
+        assert_eq!(fit_breadcrumb(&trail, 8), "a-very-\u{2026}");
     }
 
     #[test]
@@ -343,9 +382,12 @@ mod tests {
     }
 
     #[test]
-    fn test_breadcrumb_label_capitalises_the_profile_editor_like_its_siblings() {
-        assert_eq!(breadcrumb_label("Profiles"), "Profiles");
-        assert_eq!(breadcrumb_label("ProfileEdit"), "Edit");
+    fn test_breadcrumb_labels_are_lowercase() {
+        assert_eq!(breadcrumb_label("MainMenu"), "main");
+        assert_eq!(breadcrumb_label("Profiles"), "profiles");
+        assert_eq!(breadcrumb_label("Confirm"), "review");
+        assert_eq!(breadcrumb_label("Execute"), "run");
+        assert_eq!(breadcrumb_label("UnstowConfirm"), "review");
     }
 
     #[test]

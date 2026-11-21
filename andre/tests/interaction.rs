@@ -666,7 +666,7 @@ fn test_quit_screen_ignores_keys() {
     assert!(app.quitting);
 }
 
-// --- Help Scrolling ---
+// --- Help Topics ---
 
 fn help(app: &App) -> &andre::components::help::HelpComponent {
     app.component_stack
@@ -678,17 +678,19 @@ fn help(app: &App) -> &andre::components::help::HelpComponent {
 }
 
 #[test]
-fn test_help_scroll_down_clamped() {
+fn test_help_topic_cursor_starts_on_keys_and_wraps_through_the_topics() {
     let (mut app, _) = make_test_app();
     push_component(&mut app, "Help");
-    let start = help(&app).scroll_index;
-    assert_eq!(start, 0);
-    for _ in 0..50 {
+    assert_eq!(help(&app).list.cursor, 0);
+    for _ in 0..andre::components::help::Topic::ALL.len() {
         app.component_dispatch(down_key());
     }
-    // Should clamp at last item, not grow unboundedly
-    let max = andre::ui::help::help_item_count() - 1;
-    assert_eq!(help(&app).scroll_index, max);
+    assert_eq!(help(&app).list.cursor, 0, "eight steps wrap back to keys");
+    for _ in 0..3 {
+        app.component_dispatch(down_key());
+    }
+    app.component_dispatch(up_key());
+    assert_eq!(help(&app).list.cursor, 2);
 }
 
 #[test]
@@ -698,6 +700,18 @@ fn test_help_esc_goes_back() {
     app.component_dispatch(down_key());
     app.component_dispatch(esc_key());
     assert_eq!(component_id(&app), "MainMenu");
+}
+
+#[test]
+fn test_help_enter_stays_on_help() {
+    let (mut app, _) = make_test_app();
+    push_component(&mut app, "Help");
+    app.component_dispatch(enter_key());
+    assert_eq!(
+        component_id(&app),
+        "Help",
+        "Enter does nothing on help; Esc leaves"
+    );
 }
 
 /// The wizard on its name step, which is text input: group `config` is the first row.

@@ -135,6 +135,17 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **Help is a two-pane screen, and titles are lowercase trails.** `help` lists eight
+  topics (keys, mouse, status glyphs, profiles, packages, new package, ignore files,
+  about) with the selected one's text beside them. PgUp/PgDn scroll it, and a scrollbar
+  shows when it overflows. Enter no longer leaves help; Esc does. The status glyph topic names all seven stow statuses and the
+  unknown `·`, and its legend lines the meanings up in one column. The title row reads
+  `andre  main › packages › home/shell › ignore`: an entity screen names its profile,
+  package or group, a sub-screen adds its own crumb (`ignore`, `files`), the review and
+  run screens read `review` and `run`, the browse screen names the folder it shows, and a
+  trail too wide for the row drops its leftmost crumbs behind `… › `. The mouse topic says mouse support is not in this build yet. The
+  too-small box names the needed and the current size (`needs   80 × 24`,
+  `now     60 × 18`), drawing each dimension in `ok` or `err`.
 - **Settings uses the list and detail layout.** One list with section headers (`stow
   options`, `appearance`, `config`, `groups`) and the selected row's detail beside it. The
   global ignore list and each group are rows; `+` adds a group, `x` removes one, and a

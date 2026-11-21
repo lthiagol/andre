@@ -943,7 +943,7 @@ fn test_breadcrumb_updates_on_stack_push() {
     push_screen(&mut app, "Settings");
     let buf = render_app(&mut app, 120, 24);
     assert!(
-        line_contains(&buf, "Main > Settings"),
+        line_contains(&buf, "main › settings"),
         "breadcrumb did not reflect MainMenu > Settings stack"
     );
 }
@@ -954,7 +954,7 @@ fn test_breadcrumb_updates_on_deeper_stack() {
     push_screen(&mut app, "Help");
     let buf = render_app(&mut app, 120, 24);
     assert!(
-        line_contains(&buf, "Main > Help"),
+        line_contains(&buf, "main › help"),
         "breadcrumb missing Help segment from panel title"
     );
 }
@@ -1173,7 +1173,7 @@ fn test_chrome_renders_across_themes() {
         push_screen(&mut app, "Settings");
         let buf = render_app(&mut app, 120, 24);
         assert!(
-            line_contains(&buf, "Main > Settings"),
+            line_contains(&buf, "main › settings"),
             "breadcrumb missing under theme {:?}",
             theme.name()
         );
@@ -1196,7 +1196,7 @@ fn test_too_small_overlay_on_undersized_terminal() {
     push_screen(&mut app, "Help");
     let buf = render_app(&mut app, 40, 24);
     assert!(
-        line_contains(&buf, "Terminal too small"),
+        line_contains(&buf, "terminal too small"),
         "undersized terminal must show too-small overlay"
     );
 }
@@ -1472,7 +1472,7 @@ fn test_compact_title_shows_the_breadcrumb() {
     push_screen(&mut app, "Packages");
     let buf = render_app(&mut app, 80, 24);
     assert!(
-        row_text(&buf, 1).contains("andre  Main > Packages"),
+        row_text(&buf, 1).contains("andre  main › packages"),
         "compact title lost the breadcrumb: {:?}",
         row_text(&buf, 1)
     );
@@ -1781,7 +1781,7 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
         }
         // The compact banner is the only place the breadcrumb is drawn now.
         assert_eq!(
-            text.matches("Main >").count(),
+            text.matches("main ›").count(),
             1,
             "{screen}: the breadcrumb is repeated in a panel title"
         );
@@ -3006,7 +3006,11 @@ fn test_profile_edit_and_profile_status_render_at_120x40_and_200x50() {
     app.component_dispatch(key_char('c'));
     for (width, height) in [(120, 40), (200, 50)] {
         let buf = render_updated(&mut app, width, height);
-        assert!(line_contains(&buf, "Status"), "{width}x{height}");
+        assert!(
+            row_text(&buf, 1).contains("main › profiles › status"),
+            "{width}x{height}: {:?}",
+            row_text(&buf, 1)
+        );
     }
 }
 
@@ -3366,7 +3370,7 @@ fn test_ignore_editor_at_80x24_shows_the_file_tabs_the_lines_and_the_detail() {
         "missing file tab"
     );
     assert!(
-        line_contains(&buf, "Main > Packages > Ignore"),
+        line_contains(&buf, "main › packages › home/test › ignore"),
         "the breadcrumb names the screen"
     );
     assert!(line_contains(&buf, "*.env"), "the lines are listed");
@@ -3653,6 +3657,28 @@ fn test_new_package_file_picker_shows_symlink_targets_sizes_and_the_move_rule() 
     press(&mut app, &[down_key(), down_key()]);
     let buf = render_updated(&mut app, 80, 24);
     assert!(line_contains(&buf, "file, 2.1 KB"));
+}
+
+#[test]
+fn test_new_package_file_step_title_row_adds_files_after_new_package() {
+    let (mut app, _tmp) = wizard_app();
+    render_updated(&mut app, 80, 24);
+    choose_home(&mut app);
+    press(&mut app, &[key_char('t'), key_char('m'), enter_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  main › new package"),
+        "source step title row: {:?}",
+        row_text(&buf, 1)
+    );
+
+    press(&mut app, &[down_key(), enter_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  main › new package › files"),
+        "file picker title row: {:?}",
+        row_text(&buf, 1)
+    );
 }
 
 #[test]
@@ -4565,4 +4591,280 @@ fn test_settings_unsaved_dot_is_drawn_in_the_warn_colour() {
         line_contains(&buf, "unsaved \u{25cf}"),
         "title should read `unsaved ●`"
     );
+}
+
+// --- Help screen, title row and too-small box (F6e) ---
+
+#[test]
+fn test_help_title_row_reads_main_then_help() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Help");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  main › help"),
+        "title row: {:?}",
+        row_text(&buf, 1)
+    );
+}
+
+#[test]
+fn test_help_lists_every_topic_with_the_cursor_on_keys() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Help");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, " help "),
+        "the topic list is titled help"
+    );
+    assert!(
+        row_containing(&buf, "▌keys").is_some(),
+        "the cursor bar does not sit on keys"
+    );
+    for topic in [
+        "mouse",
+        "status glyphs",
+        "profiles",
+        "packages",
+        "new package",
+        "ignore files",
+        "about",
+    ] {
+        assert!(line_contains(&buf, topic), "topic {topic:?} is not listed");
+    }
+}
+
+#[test]
+fn test_help_status_glyph_topic_names_every_status_and_the_unknown_glyph() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Help");
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "status glyphs"), "detail title missing");
+    for meaning in [
+        "stowed — every file is linked",
+        "not stowed — nothing is linked",
+        "partial — some files linked",
+        "conflict — a real file is in place",
+        "missing — the package is gone",
+        "empty — the package has no files",
+        "invalid — ignore list unreadable",
+        "unknown — not scanned yet",
+        "marked, unmarked, some",
+        "folder, symlink, file",
+    ] {
+        assert!(
+            line_contains(&buf, meaning),
+            "status glyph topic lacks {meaning:?}"
+        );
+    }
+}
+
+#[test]
+fn test_help_mark_fold_and_kind_legend_lines_up_in_one_column() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Help");
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
+    let buf = render_updated(&mut app, 80, 24);
+    let meanings = [
+        "marked, unmarked, some",
+        "chosen, not chosen",
+        "open, folded group",
+        "folder, symlink, file",
+    ];
+    let column =
+        column_of(&buf, row_of(&buf, meanings[0]), meanings[0]).expect("the mark legend is drawn");
+    for meaning in meanings {
+        let y = row_of(&buf, meaning);
+        assert_eq!(
+            column_of(&buf, y, meaning),
+            Some(column),
+            "{meaning:?} does not start in the meaning column"
+        );
+    }
+}
+
+#[test]
+fn test_help_keys_sit_one_column_under_their_heading() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Help");
+    let buf = render_updated(&mut app, 80, 24);
+    let heading = column_of(&buf, row_of(&buf, "everywhere"), "everywhere")
+        .expect("the everywhere heading is drawn");
+    let key = column_of(
+        &buf,
+        row_of(&buf, "\u{2191}\u{2193} / jk"),
+        "\u{2191}\u{2193} / jk",
+    )
+    .expect("the move key is drawn");
+    assert_eq!(key, heading + 1, "key rows are indented under the heading");
+}
+
+#[test]
+fn test_too_small_overlay_names_the_needed_and_the_current_size() {
+    let (mut app, _tmp) = make_test_app();
+    let buf = render_app(&mut app, 60, 18);
+    assert!(line_contains(&buf, "terminal too small"), "title missing");
+    assert!(
+        line_contains(&buf, "needs   80 × 24"),
+        "needed size missing"
+    );
+    assert!(
+        line_contains(&buf, "now     60 × 18"),
+        "current size missing"
+    );
+}
+
+#[test]
+fn test_too_small_overlay_colours_each_dimension_by_whether_it_passes() {
+    let (mut app, _tmp) = make_test_app();
+    let colors = ThemeColors::from_theme(app.ctx.core.theme);
+    let buf = render_app(&mut app, 100, 18);
+    let y = row_of(&buf, "now     ");
+    let cols = column_of(&buf, y, "100").expect("the column count is drawn");
+    assert_eq!(buf[(cols, y)].fg, colors.ok, "100 columns passes");
+    let rows = column_of(&buf, y, "18").expect("the row count is drawn");
+    assert_eq!(buf[(rows, y)].fg, colors.err, "18 rows fails");
+}
+
+#[test]
+fn test_help_topics_render_at_120x40_and_200x50() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_test_app();
+        push_screen(&mut app, "Help");
+        for topic in andre::components::help::Topic::ALL {
+            let buf = render_updated(&mut app, width, height);
+            assert!(
+                row_text(&buf, 1).contains("andre  main › help"),
+                "{width}x{height}: title row"
+            );
+            assert!(
+                line_contains(&buf, &format!(" {} ─", topic.label())),
+                "{width}x{height}: detail titled {:?} missing",
+                topic.label()
+            );
+            assert!(
+                row_containing(&buf, "q quit").is_some(),
+                "{width}x{height}: footer missing"
+            );
+            app.component_dispatch(down_key());
+        }
+    }
+}
+
+#[test]
+fn test_help_page_down_brings_the_end_of_a_long_topic_into_view_and_stops_there() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Help");
+    for _ in 0..6 {
+        app.component_dispatch(down_key());
+    }
+    let page_down = KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE);
+    let top = render_updated(&mut app, 80, 24);
+    assert!(
+        !line_contains(&top, "w saves"),
+        "the end starts out of view"
+    );
+
+    app.component_dispatch(page_down);
+    let end = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&end, "w saves"),
+        "PgDn shows the end of the text"
+    );
+    assert!(line_contains(&end, "█"), "a long topic shows its scrollbar");
+
+    app.component_dispatch(page_down);
+    let again = render_updated(&mut app, 80, 24);
+    assert_eq!(
+        buffer_text(&again),
+        buffer_text(&end),
+        "PgDn past the end stops at the end"
+    );
+}
+
+#[test]
+fn test_unstow_browse_title_row_names_the_folder_being_browsed() {
+    let (mut app, tmp) = make_unstow_app();
+    std::fs::create_dir_all(tmp.path().join(".config")).unwrap();
+    push_screen(&mut app, "UnstowTargetSelect");
+    push_browse(&mut app, tmp.path());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  main › unstow › ~"),
+        "title row: {:?}",
+        row_text(&buf, 1)
+    );
+
+    app.component_stack.pop();
+    push_browse(&mut app, &tmp.path().join(".config"));
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  main › unstow › ~/.config"),
+        "title row after opening a folder: {:?}",
+        row_text(&buf, 1)
+    );
+}
+
+#[test]
+fn test_review_and_run_title_rows_name_their_screen() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Packages");
+    push_screen(&mut app, "Confirm");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  main › packages › review"),
+        "review title row: {:?}",
+        row_text(&buf, 1)
+    );
+
+    app.component_stack.pop();
+    push_screen(&mut app, "Execute");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  main › packages › run"),
+        "run title row: {:?}",
+        row_text(&buf, 1)
+    );
+}
+
+#[test]
+fn test_profile_edit_title_row_names_the_profile() {
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    open_editor_render(&mut app, "agent");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        row_text(&buf, 1).contains("andre  main › profiles › agent"),
+        "title row: {:?}",
+        row_text(&buf, 1)
+    );
+}
+
+#[test]
+fn test_compact_title_drops_the_leftmost_crumbs_when_the_trail_is_too_wide() {
+    let long = "a".repeat(60);
+    let (mut app, _tmp) = make_profiles_app(&[(long.as_str(), "packages: [home/test]\n")]);
+    open_editor_render(&mut app, &long);
+    let buf = render_updated(&mut app, 80, 24);
+    let title = row_text(&buf, 1);
+    assert!(
+        title.contains(&format!("andre  … › {long}")),
+        "title row: {title:?}"
+    );
+}
+
+#[test]
+fn test_ignore_editor_title_row_names_the_package_at_120x40_and_200x50() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_test_app();
+        write_package_ignore(&app, ".gitignore", "# secrets\n*.env\n");
+        open_ignore_render(&mut app);
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            row_text(&buf, 1).contains("andre  main › packages › home/test › ignore"),
+            "{width}x{height}: title row {:?}",
+            row_text(&buf, 1)
+        );
+    }
 }

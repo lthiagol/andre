@@ -7,6 +7,7 @@
 mod preview;
 mod view;
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 use andre_core::ignore::{read_lines, save_lines, IgnoreRules, RuleSource};
@@ -385,6 +386,10 @@ impl IgnoreEditComponent {
 impl Component for IgnoreEditComponent {
     fn id(&self) -> &'static str {
         "IgnoreEdit"
+    }
+
+    fn crumbs(&self, _ctx: &AppContext) -> Vec<Cow<'static, str>> {
+        vec![Cow::Owned(self.package.clone()), Cow::Borrowed("ignore")]
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

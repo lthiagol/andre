@@ -218,7 +218,11 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
         ],
         "Packages" => vec![arrows("navigate"), space("mark"), enter("run"), esc("back")],
         "Status" => status_hints(),
-        "Help" => vec![esc("back")],
+        "Help" => vec![
+            arrows("topic"),
+            Hint::new("PgUp/PgDn", "scroll", PRIO_VERB),
+            esc("back"),
+        ],
         "Settings" => settings_hints(false),
         "UnstowTargetSelect" => vec![arrows("move"), enter("browse"), esc("back")],
         "UnstowBrowse" => unstow_browse_hints(0),

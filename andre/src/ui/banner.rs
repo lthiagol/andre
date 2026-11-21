@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::OnceLock;
 
 use ratatui::{
@@ -7,8 +8,10 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::theme::ThemeColors;
+use crate::ui::status_bar::fit_breadcrumb;
 
 const LETTERS: [char; 5] = ['A', 'N', 'D', 'R', 'E'];
 
@@ -105,12 +108,12 @@ fn big_title(colors: &ThemeColors) -> Vec<Line<'static>> {
 }
 
 /// One-row title for every screen except the main menu: the name in the
-/// banner's colours, then the breadcrumb.
+/// banner's colours, then the crumbs, fitted to the row's width.
 pub fn render_compact_banner(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
-    breadcrumb: &str,
+    crumbs: &[Cow<'_, str>],
 ) {
     let mut spans: Vec<Span> = COMPACT_NAME
         .chars()
@@ -122,8 +125,10 @@ pub fn render_compact_banner(
             )
         })
         .collect();
+    // The name, then two spaces before the trail.
+    let room = usize::from(area.width).saturating_sub(COMPACT_NAME.width() + 2);
     spans.push(Span::styled(
-        format!("  {breadcrumb}"),
+        format!("  {}", fit_breadcrumb(crumbs, room)),
         Style::default().fg(colors.text_dim),
     ));
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

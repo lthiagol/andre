@@ -350,6 +350,10 @@ impl Component for UnstowBrowseComponent {
         "UnstowBrowse"
     }
 
+    fn crumbs(&self, ctx: &AppContext) -> Vec<Cow<'static, str>> {
+        vec![Cow::Owned(display_path(&self.browser.path, &ctx.home_dir))]
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -74,15 +75,6 @@ pub struct AppContext {
     pub event_log: RefCell<Vec<LogEntry>>,
     /// Single toast; newer replaces older. Cleared by `tick_toast`.
     pub toast: Option<Toast>,
-    /// Pre-formatted breadcrumb for the current component stack (e.g.
-    /// `"Main > Groups > bash-env"`). Refreshed each frame in
-    /// `ui::render`; components read it when building panel titles.
-    pub breadcrumb: String,
-    /// Last component stack we formatted `breadcrumb` for. The render loop
-    /// compares the live stack to this Vec and only re-runs `format_breadcrumb`
-    /// (which allocates a Vec + String) when it changes — typically rare
-    /// (Enter/Esc transitions), not per-frame.
-    pub breadcrumb_cache: Vec<&'static str>,
 }
 
 /// Input mode for a component. Controls whether global shortcuts are active.
@@ -113,8 +105,6 @@ impl AppContext {
             log_file: None,
             event_log: RefCell::new(Vec::new()),
             toast: None,
-            breadcrumb: String::from("Main"),
-            breadcrumb_cache: Vec::new(),
         }
     }
 }
@@ -230,6 +220,13 @@ pub trait Component {
     /// overrides this. It must not touch the disk: paint calls it.
     fn hints(&self, _ctx: &AppContext) -> Vec<Hint> {
         screen_hints(self.id())
+    }
+
+    /// The crumbs this screen adds to the title row, such as `packages` or `home/shell › ignore`.
+    /// Defaults to the screen's own label; a screen about one entity names the entity, and a
+    /// sub-screen adds its own crumb after that.
+    fn crumbs(&self, _ctx: &AppContext) -> Vec<Cow<'static, str>> {
+        vec![Cow::Borrowed(crate::ui::breadcrumb_label(self.id()))]
     }
 
     /// Pre-render bookkeeping using the area the component will be painted
