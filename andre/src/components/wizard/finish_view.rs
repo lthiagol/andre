@@ -241,10 +241,9 @@ fn profile_detail(
     let count = wizard.profile_counts.get(name).copied().unwrap_or_default();
     let mut facts = vec![(Cow::Borrowed("packages"), count.packages.to_string())];
     if wizard.chosen_profiles.iter().any(|chosen| chosen == name) {
-        let package_ref = wizard.package_ref();
         facts.push((
             Cow::Borrowed("after"),
-            format!("{} (+ {package_ref})", count.after),
+            format!("{} (+ {})", count.after, wizard.name.value),
         ));
     }
     Detail {
@@ -272,9 +271,9 @@ pub fn render_review(
 ) {
     let title = match &wizard.plan {
         Some(plan) if plan.package_exists => {
-            format!("review \u{b7} add to {}", plan.package_ref)
+            format!("review \u{b7} add to {}", plan.package)
         }
-        Some(plan) => format!("review \u{b7} new package {}", plan.package_ref),
+        Some(plan) => format!("review \u{b7} new package {}", plan.package),
         None => "review".to_string(),
     };
     let block = focus_panel(colors, true).title(format!(" {title} "));
@@ -316,10 +315,10 @@ fn done_lines(
     colors: &ThemeColors,
     icons: &Icons,
 ) -> Vec<Line<'static>> {
-    let package_ref = wizard
+    let package = wizard
         .plan
         .as_ref()
-        .map_or("", |plan| plan.package_ref.as_str());
+        .map_or("", |plan| plan.package.as_str());
     let line = match done {
         Done::Created => Line::from(vec![
             Span::styled(
@@ -327,7 +326,7 @@ fn done_lines(
                 Style::default().fg(colors.ok).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("created {package_ref}"),
+                format!("created {package}"),
                 Style::default().fg(colors.text),
             ),
         ]),
@@ -337,7 +336,7 @@ fn done_lines(
                 Style::default().fg(colors.ok).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("added files to {package_ref}"),
+                format!("added files to {package}"),
                 Style::default().fg(colors.text),
             ),
         ]),

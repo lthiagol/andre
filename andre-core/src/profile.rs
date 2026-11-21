@@ -1,8 +1,7 @@
 //! Profiles: named collections of packages, one YAML file each.
 //!
 //! A profile lives at `<config-folder>/profiles/<name>.yml` and lists package refs
-//! (package names like `nvim`; `group/package` while a `groups:` config is still
-//! supported). It may also include other profiles. [`ProfileSet::resolve`]
+//! (package names like `nvim`). It may also include other profiles. [`ProfileSet::resolve`]
 //! flattens the includes into one ordered, de-duplicated list and records where each
 //! entry came from. Cycles and unknown includes are errors; package refs that point
 //! at nothing are kept and marked `missing`.
@@ -68,7 +67,11 @@ impl fmt::Display for ProfileError {
                 name
             ),
             ProfileError::InvalidPackageRef(pkg) => {
-                write!(f, "invalid package ref '{}': expected a package name like 'nvim'", pkg)
+                write!(
+                    f,
+                    "invalid package ref '{}': refs are plain package names like 'nvim'",
+                    pkg
+                )
             }
             ProfileError::WrongExtension(file) => {
                 write!(f, "'{}': profile files must use the .yml extension", file)
@@ -312,7 +315,7 @@ impl ProfileSet {
 
     /// Renames a package ref in every profile. Returns the profiles that changed.
     pub fn rename_package(&mut self, old: &str, new: &str) -> Result<Vec<String>> {
-        if !is_valid_ref(new) {
+        if !is_valid_package_name(new) {
             return Err(ProfileError::InvalidPackageRef(new.to_string()).into());
         }
         self.rewrite_packages(|pkg| {
@@ -479,17 +482,6 @@ pub fn is_valid_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
-/// Splits `group/package` at its last `/`. Both halves must be non-empty.
-pub fn split_package_ref(pkg: &str) -> Option<(&str, &str)> {
-    let (group, package) = pkg.rsplit_once('/')?;
-    (!group.is_empty() && !package.is_empty()).then_some((group, package))
-}
-
-/// A ref is a package name (`nvim`) or, while `groups:` is supported, `group/package`.
-fn is_valid_ref(pkg: &str) -> bool {
-    is_valid_package_name(pkg) || split_package_ref(pkg).is_some()
-}
-
 /// Reads one `*.yml` file. `Ok(None)` for files that are not profiles at all.
 fn read_profile(path: &Path) -> Result<Option<Profile>> {
     let file = path
@@ -530,7 +522,7 @@ fn check_profile(profile: &Profile) -> Result<()> {
 
 fn check_refs(profile: &Profile) -> Result<()> {
     for pkg in &profile.packages {
-        if !is_valid_ref(pkg) {
+        if !is_valid_package_name(pkg) {
             return Err(ProfileError::InvalidPackageRef(pkg.clone()).into());
         }
     }
@@ -699,12 +691,8 @@ mod tests {
     fn loads_profiles_by_file_stem_in_name_order() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
-        write(
-            &dir,
-            "work.yml",
-            "description: Work\npackages: [home/git]\n",
-        );
-        write(&dir, "agent-base.yml", "packages: [config/nvim]\n");
+        write(&dir, "work.yml", "description: Work\npackages: [git]\n");
+        write(&dir, "agent-base.yml", "packages: [nvim]\n");
         write(&dir, "README.txt", "not a profile");
         fs::create_dir_all(dir.join("subdir.yml")).unwrap();
 
@@ -713,7 +701,7 @@ mod tests {
         assert_eq!(names, ["agent-base", "work"]);
         let work = set.get("work").unwrap();
         assert_eq!(work.description.as_deref(), Some("Work"));
-        assert_eq!(work.packages, ["home/git"]);
+        assert_eq!(work.packages, ["git"]);
         assert!(work.includes.is_empty());
         assert!(set.issues().is_empty());
     }
@@ -732,8 +720,8 @@ mod tests {
     fn unknown_field_skips_only_that_file() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
-        write(&dir, "good.yml", "packages: [home/git]\n");
-        write(&dir, "bad.yml", "packages: [home/git]\npakages: [x/y]\n");
+        write(&dir, "good.yml", "packages: [git]\n");
+        write(&dir, "bad.yml", "packages: [git]\npakages: [x/y]\n");
 
         let set = load(&dir);
         assert!(set.get("good").is_some());
@@ -770,7 +758,19 @@ mod tests {
         write(&dir, "p.yml", "packages: [bad name]\n");
         let set = load(&dir);
         assert!(set.get("p").is_none());
-        assert!(set.issues()[0].message.contains("expected a package name"));
+        assert!(set.issues()[0].message.contains("plain package names"));
+    }
+
+    #[test]
+    fn old_group_ref_is_a_load_issue_with_the_plain_name_hint() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("profiles");
+        write(&dir, "p.yml", "packages: [home/nvim]\n");
+        let set = load(&dir);
+        assert!(set.get("p").is_none());
+        assert!(set.issues()[0]
+            .message
+            .contains("plain package names like 'nvim'"));
     }
 
     #[test]
@@ -784,22 +784,13 @@ mod tests {
     }
 
     #[test]
-    fn split_package_ref_needs_both_halves() {
-        assert_eq!(split_package_ref("home/git"), Some(("home", "git")));
-        assert_eq!(split_package_ref("a/b/c"), Some(("a/b", "c")));
-        assert_eq!(split_package_ref("home/"), None);
-        assert_eq!(split_package_ref("/git"), None);
-        assert_eq!(split_package_ref("git"), None);
-    }
-
-    #[test]
     fn resolve_own_packages_in_listed_order() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("p", &[], &["b/two", "a/one"])).unwrap();
+        set.create(profile("p", &[], &["two", "one"])).unwrap();
 
-        let resolved = set.resolve("p", &known(&["a/one", "b/two"])).unwrap();
-        assert_eq!(entry_names(&resolved), ["b/two", "a/one"]);
+        let resolved = set.resolve("p", &known(&["one", "two"])).unwrap();
+        assert_eq!(entry_names(&resolved), ["two", "one"]);
         assert!(resolved.entries.iter().all(|e| e.origin == Origin::Own));
         assert!(resolved.entries.iter().all(|e| !e.missing));
     }
@@ -808,26 +799,25 @@ mod tests {
     fn resolve_includes_recursively_own_first_then_includes_in_order() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("base", &[], &["core/a"])).unwrap();
-        set.create(profile("tools", &["base"], &["tools/t"]))
-            .unwrap();
-        set.create(profile("work", &["tools", "base"], &["work/w", "core/a"]))
+        set.create(profile("base", &[], &["a"])).unwrap();
+        set.create(profile("tools", &["base"], &["t"])).unwrap();
+        set.create(profile("work", &["tools", "base"], &["w", "a"]))
             .unwrap();
 
-        let all = known(&["core/a", "tools/t", "work/w"]);
+        let all = known(&["a", "t", "w"]);
         let resolved = set.resolve("work", &all).unwrap();
-        // own: work/w, core/a; tools: (tools/t, then base's core/a = duplicate, skipped);
+        // own: w, a; tools: (t, then base's a = duplicate, skipped);
         // base again is already done.
-        assert_eq!(entry_names(&resolved), ["work/w", "core/a", "tools/t"]);
+        assert_eq!(entry_names(&resolved), ["w", "a", "t"]);
     }
 
     #[test]
     fn resolve_records_origin_through_nested_includes() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("leaf", &[], &["x/leaf"])).unwrap();
-        set.create(profile("mid", &["leaf"], &["x/mid"])).unwrap();
-        set.create(profile("root", &["mid"], &["x/root"])).unwrap();
+        set.create(profile("leaf", &[], &["leaf"])).unwrap();
+        set.create(profile("mid", &["leaf"], &["mid"])).unwrap();
+        set.create(profile("root", &["mid"], &["root"])).unwrap();
 
         let resolved = set.resolve("root", &known(&[])).unwrap();
         assert_eq!(resolved.entries[0].origin, Origin::Own);
@@ -851,11 +841,10 @@ mod tests {
     fn duplicate_refs_keep_first_origin() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("base", &[], &["home/git"])).unwrap();
-        set.create(profile("top", &["base"], &["home/git"]))
-            .unwrap();
+        set.create(profile("base", &[], &["git"])).unwrap();
+        set.create(profile("top", &["base"], &["git"])).unwrap();
 
-        let resolved = set.resolve("top", &known(&["home/git"])).unwrap();
+        let resolved = set.resolve("top", &known(&["git"])).unwrap();
         assert_eq!(resolved.entries.len(), 1);
         assert_eq!(resolved.entries[0].origin, Origin::Own);
     }
@@ -896,14 +885,12 @@ mod tests {
     fn resolve_draft_uses_the_draft_without_writing_it() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("base", &[], &["home/a"])).unwrap();
-        set.create(profile("agent", &[], &["home/b"])).unwrap();
+        set.create(profile("base", &[], &["a"])).unwrap();
+        set.create(profile("agent", &[], &["b"])).unwrap();
 
-        let draft = profile("agent", &["base"], &["home/b"]);
-        let resolved = set
-            .resolve_draft(&draft, &known(&["home/a", "home/b"]))
-            .unwrap();
-        assert_eq!(entry_names(&resolved), vec!["home/b", "home/a"]);
+        let draft = profile("agent", &["base"], &["b"]);
+        let resolved = set.resolve_draft(&draft, &known(&["a", "b"])).unwrap();
+        assert_eq!(entry_names(&resolved), vec!["b", "a"]);
 
         // Nothing was written: a fresh load still has the stored profile.
         assert!(set.get("agent").unwrap().includes.is_empty());
@@ -942,29 +929,28 @@ mod tests {
     fn diamond_is_not_a_cycle() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("shared", &[], &["s/one"])).unwrap();
+        set.create(profile("shared", &[], &["one"])).unwrap();
         set.create(profile("left", &["shared"], &[])).unwrap();
         set.create(profile("right", &["shared"], &[])).unwrap();
         set.create(profile("top", &["left", "right"], &[])).unwrap();
 
-        let resolved = set.resolve("top", &known(&["s/one"])).unwrap();
-        assert_eq!(entry_names(&resolved), ["s/one"]);
+        let resolved = set.resolve("top", &known(&["one"])).unwrap();
+        assert_eq!(entry_names(&resolved), ["one"]);
     }
 
     #[test]
     fn missing_refs_are_kept_and_flagged() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("p", &[], &["home/git", "gone/pkg"]))
-            .unwrap();
+        set.create(profile("p", &[], &["git", "pkg"])).unwrap();
 
-        let resolved = set.resolve("p", &known(&["home/git"])).unwrap();
+        let resolved = set.resolve("p", &known(&["git"])).unwrap();
         assert_eq!(resolved.entries.len(), 2);
         let missing: Vec<&str> = resolved.missing().map(|e| e.package.as_str()).collect();
-        assert_eq!(missing, ["gone/pkg"]);
+        assert_eq!(missing, ["pkg"]);
 
-        let warnings = set.warnings(&known(&["home/git"]));
-        assert_eq!(warnings, ["profile 'p': package 'gone/pkg' not found"]);
+        let warnings = set.warnings(&known(&["git"]));
+        assert_eq!(warnings, ["profile 'p': package 'pkg' not found"]);
     }
 
     #[test]
@@ -1000,7 +986,7 @@ mod tests {
             name: "agent-work".into(),
             description: Some("Servers".into()),
             includes: vec!["base".into()],
-            packages: vec!["home/git".into()],
+            packages: vec!["git".into()],
         })
         .unwrap();
 
@@ -1042,10 +1028,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("p", &[], &["a/b"])).unwrap();
-        set.save(profile("p", &[], &["c/d"])).unwrap();
+        set.create(profile("p", &[], &["b"])).unwrap();
+        set.save(profile("p", &[], &["d"])).unwrap();
 
-        assert_eq!(load(&dir).get("p").unwrap().packages, ["c/d"]);
+        assert_eq!(load(&dir).get("p").unwrap().packages, ["d"]);
     }
 
     #[test]
@@ -1053,7 +1039,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("base", &[], &["a/b"])).unwrap();
+        set.create(profile("base", &[], &["b"])).unwrap();
         set.create(profile("top", &["base"], &[])).unwrap();
         set.create(profile("other", &[], &[])).unwrap();
 
@@ -1067,8 +1053,8 @@ mod tests {
         let reloaded = load(&dir);
         assert_eq!(reloaded.get("core").unwrap().name, "core");
         assert_eq!(reloaded.get("top").unwrap().includes, ["core"]);
-        let resolved = reloaded.resolve("top", &known(&["a/b"])).unwrap();
-        assert_eq!(entry_names(&resolved), ["a/b"]);
+        let resolved = reloaded.resolve("top", &known(&["b"])).unwrap();
+        assert_eq!(entry_names(&resolved), ["b"]);
     }
 
     #[test]
@@ -1140,8 +1126,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("base", &[], &["a/b"])).unwrap();
-        set.create(profile("x", &["base"], &["c/d"])).unwrap();
+        set.create(profile("base", &[], &["b"])).unwrap();
+        set.create(profile("x", &["base"], &["d"])).unwrap();
         set.create(profile("y", &["base", "x"], &[])).unwrap();
         set.create(profile("other", &[], &[])).unwrap();
 
@@ -1168,33 +1154,32 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("a", &[], &["home/git", "home/shell"]))
-            .unwrap();
-        set.create(profile("b", &[], &["home/shell"])).unwrap();
-        set.create(profile("c", &[], &["other/x"])).unwrap();
+        set.create(profile("a", &[], &["git", "shell"])).unwrap();
+        set.create(profile("b", &[], &["shell"])).unwrap();
+        set.create(profile("c", &[], &["x"])).unwrap();
 
-        let changed = set.rename_package("home/git", "home/vcs").unwrap();
+        let changed = set.rename_package("git", "vcs").unwrap();
         assert_eq!(changed, ["a"]);
-        assert_eq!(set.get("a").unwrap().packages, ["home/vcs", "home/shell"]);
+        assert_eq!(set.get("a").unwrap().packages, ["vcs", "shell"]);
 
         // Renaming onto an existing ref keeps one copy.
-        let changed = set.rename_package("home/shell", "home/vcs").unwrap();
+        let changed = set.rename_package("shell", "vcs").unwrap();
         assert_eq!(changed, ["a", "b"]);
-        assert_eq!(set.get("a").unwrap().packages, ["home/vcs"]);
-        assert_eq!(load(&dir).get("b").unwrap().packages, ["home/vcs"]);
-        assert_eq!(set.get("c").unwrap().packages, ["other/x"]);
+        assert_eq!(set.get("a").unwrap().packages, ["vcs"]);
+        assert_eq!(load(&dir).get("b").unwrap().packages, ["vcs"]);
+        assert_eq!(set.get("c").unwrap().packages, ["x"]);
     }
 
     #[test]
     fn rename_package_rejects_bad_target() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("a", &[], &["home/git"])).unwrap();
+        set.create(profile("a", &[], &["git"])).unwrap();
         assert!(matches!(
-            set.rename_package("home/git", "bad name"),
+            set.rename_package("git", "bad name"),
             Err(Error::Profile(ProfileError::InvalidPackageRef(_)))
         ));
-        assert_eq!(set.get("a").unwrap().packages, ["home/git"]);
+        assert_eq!(set.get("a").unwrap().packages, ["git"]);
     }
 
     #[test]
@@ -1202,24 +1187,26 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("a", &[], &["home/git", "home/shell"]))
-            .unwrap();
-        set.create(profile("b", &[], &["config/nvim"])).unwrap();
+        set.create(profile("a", &[], &["git", "shell"])).unwrap();
+        set.create(profile("b", &[], &["nvim"])).unwrap();
 
-        assert_eq!(set.remove_package("home/git").unwrap(), ["a"]);
-        assert_eq!(set.get("a").unwrap().packages, ["home/shell"]);
-        assert_eq!(load(&dir).get("a").unwrap().packages, ["home/shell"]);
+        assert_eq!(set.remove_package("git").unwrap(), ["a"]);
+        assert_eq!(set.get("a").unwrap().packages, ["shell"]);
+        assert_eq!(load(&dir).get("a").unwrap().packages, ["shell"]);
         // Removing a ref that no profile lists changes nothing.
-        assert!(set.remove_package("home/git").unwrap().is_empty());
+        assert!(set.remove_package("git").unwrap().is_empty());
     }
 
     #[test]
-    fn flat_package_names_are_valid_refs() {
+    fn refs_are_plain_package_names() {
         let tmp = TempDir::new().unwrap();
         let mut set = ProfileSet::new(tmp.path().join("profiles"));
-        set.create(profile("p", &[], &["nvim", "home/git"]))
-            .unwrap();
-        assert_eq!(set.get("p").unwrap().packages, ["nvim", "home/git"]);
+        set.create(profile("p", &[], &["nvim"])).unwrap();
+        assert_eq!(set.get("p").unwrap().packages, ["nvim"]);
+        assert!(matches!(
+            set.create(profile("q", &[], &["home/git"])),
+            Err(Error::Profile(ProfileError::InvalidPackageRef(_)))
+        ));
         assert!(matches!(
             set.create(profile("q", &[], &["bad name"])),
             Err(Error::Profile(ProfileError::InvalidPackageRef(_)))
@@ -1229,8 +1216,8 @@ mod tests {
             Err(Error::Profile(ProfileError::InvalidPackageRef(_)))
         ));
         assert_eq!(
-            ProfileError::InvalidPackageRef("home/nvim/".to_string()).to_string(),
-            "invalid package ref 'home/nvim/': expected a package name like 'nvim'"
+            ProfileError::InvalidPackageRef("home/nvim".to_string()).to_string(),
+            "invalid package ref 'home/nvim': refs are plain package names like 'nvim'"
         );
     }
 
@@ -1286,13 +1273,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("p", &[], &["a/b"])).unwrap();
+        set.create(profile("p", &[], &["b"])).unwrap();
         assert!(!dir.join(".p.yml.tmp").exists());
 
         // Leftover from an interrupted write, cut off mid-line.
         write(&dir, ".p.yml.tmp", "packages: [c/");
         let reloaded = load(&dir);
-        assert_eq!(reloaded.get("p").unwrap().packages, ["a/b"]);
+        assert_eq!(reloaded.get("p").unwrap().packages, ["b"]);
         assert!(reloaded.issues().is_empty());
     }
 
@@ -1301,13 +1288,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("p", &[], &["a/b"])).unwrap();
+        set.create(profile("p", &[], &["b"])).unwrap();
 
         // A directory where the temp file goes makes the write fail before the rename.
         fs::create_dir(dir.join(".p.yml.tmp")).unwrap();
-        assert!(set.save(profile("p", &[], &["c/d"])).is_err());
-        assert_eq!(load(&dir).get("p").unwrap().packages, ["a/b"]);
-        assert_eq!(set.get("p").unwrap().packages, ["a/b"]);
+        assert!(set.save(profile("p", &[], &["d"])).is_err());
+        assert_eq!(load(&dir).get("p").unwrap().packages, ["b"]);
+        assert_eq!(set.get("p").unwrap().packages, ["b"]);
     }
 
     #[test]
@@ -1315,7 +1302,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("base", &[], &["a/b"])).unwrap();
+        set.create(profile("base", &[], &["b"])).unwrap();
         set.create(profile("top", &["base"], &[])).unwrap();
 
         // `top` cannot be replaced: a directory sits at its path. The new `core` file
@@ -1336,21 +1323,17 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("a", &[], &["home/git", "home/shell"]))
-            .unwrap();
-        set.create(profile("b", &[], &["home/git"])).unwrap();
+        set.create(profile("a", &[], &["git", "shell"])).unwrap();
+        set.create(profile("b", &[], &["git"])).unwrap();
 
         // `b` is rewritten after `a`; blocking it makes `a`'s rewrite the one to undo.
         fs::remove_file(dir.join("b.yml")).unwrap();
         fs::create_dir(dir.join("b.yml")).unwrap();
 
-        assert!(set.remove_package("home/git").is_err());
-        assert_eq!(
-            load(&dir).get("a").unwrap().packages,
-            ["home/git", "home/shell"]
-        );
-        assert_eq!(set.get("a").unwrap().packages, ["home/git", "home/shell"]);
-        assert_eq!(set.get("b").unwrap().packages, ["home/git"]);
+        assert!(set.remove_package("git").is_err());
+        assert_eq!(load(&dir).get("a").unwrap().packages, ["git", "shell"]);
+        assert_eq!(set.get("a").unwrap().packages, ["git", "shell"]);
+        assert_eq!(set.get("b").unwrap().packages, ["git"]);
     }
 
     #[cfg(unix)]
@@ -1361,8 +1344,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         let mut set = ProfileSet::new(dir.clone());
-        set.create(profile("base", &[], &["a/b"])).unwrap();
-        set.create(profile("top", &["base"], &["a/b"])).unwrap();
+        set.create(profile("base", &[], &["b"])).unwrap();
+        set.create(profile("top", &["base"], &["b"])).unwrap();
 
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
         let probe = dir.join(".probe");
@@ -1373,7 +1356,7 @@ mod tests {
             return;
         }
         let renamed = set.rename("base", "core");
-        let removed = set.remove_package("a/b");
+        let removed = set.remove_package("b");
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
 
         assert!(renamed.is_err());
@@ -1381,8 +1364,8 @@ mod tests {
         assert!(dir.join("base.yml").exists());
         assert!(!dir.join("core.yml").exists());
         assert_eq!(load(&dir).get("top").unwrap().includes, ["base"]);
-        assert_eq!(load(&dir).get("base").unwrap().packages, ["a/b"]);
-        assert_eq!(set.get("base").unwrap().packages, ["a/b"]);
+        assert_eq!(load(&dir).get("base").unwrap().packages, ["b"]);
+        assert_eq!(set.get("base").unwrap().packages, ["b"]);
         assert_eq!(set.get("top").unwrap().includes, ["base"]);
         assert!(set.get("core").is_none());
     }

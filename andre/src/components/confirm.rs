@@ -130,7 +130,7 @@ fn build_plan(selected: &[String], ctx: &AppContext, flags: &StowFlags) -> Plan 
                 let cmd = build_stow_args(
                     Path::new(&display_path(&entry.source, &ctx.home_dir)),
                     Path::new(&display_path(&entry.target, &ctx.home_dir)),
-                    &entry.folder_name(),
+                    &entry.name,
                     flags,
                     &entry.ignores,
                 );
@@ -316,7 +316,7 @@ impl ConfirmComponent {
             &ctx.home_dir,
             &flags,
         );
-        let planned = ops.iter().map(|op| op.name.clone()).collect();
+        let planned = ops.iter().map(|op| op.package.clone()).collect();
         // Select the link engine from config (native default, stow opt-in).
         let engine = engine_for(ctx.core.config.effective_engine());
         let total = ops.len() + skipped.len();
@@ -568,7 +568,7 @@ mod tests {
             &ctx.home_dir,
             &StowFlags::default(),
         );
-        let run: Vec<String> = ops.iter().map(|op| op.name.clone()).collect();
+        let run: Vec<String> = ops.iter().map(|op| op.package.clone()).collect();
 
         assert!(skipped.is_empty());
         assert_eq!(reviewed.len(), 6);

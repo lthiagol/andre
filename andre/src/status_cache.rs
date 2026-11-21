@@ -35,9 +35,8 @@ impl StatusCache {
         self.inner.get(name).copied()
     }
 
-    /// Prefetch and cache one package's status. The package's ignores (`entry.ignores`:
-    /// `global.ignore` and the interim group's list) apply, so status counts the same files a
-    /// link run would. `global` is the `.stow-global-ignore` to honour (see
+    /// Prefetch and cache one package's status. The package's ignores (`entry.ignores`,
+    /// which is `global.ignore`) apply, so status counts the same files a link run would. `global` is the `.stow-global-ignore` to honour (see
     /// `andre_core::ignore::global_ignore_in`).
     pub fn prefetch(&mut self, entry: &PackageEntry, global: Option<&Path>) -> StowStatus {
         if let Some(&st) = self.inner.get(&entry.name) {
@@ -48,7 +47,7 @@ impl StatusCache {
         let st = check_stowed_status_with_ignores(
             &entry.source,
             &entry.target,
-            &entry.folder_name(),
+            &entry.name,
             &entry.ignores,
             global,
         )

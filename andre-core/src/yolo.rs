@@ -39,11 +39,7 @@ pub fn run_package(
     global_ignore: Option<&Path>,
 ) -> Result<()> {
     engine.apply(&LinkOp {
-        name: entry.name.clone(),
-        package: entry
-            .dir
-            .file_name()
-            .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
+        package: entry.name.clone(),
         source: entry.source.clone(),
         target: entry.target.clone(),
         flags: *flags,
@@ -103,24 +99,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let config = Config::default_empty();
         assert!(build_plan(&config, tmp.path(), tmp.path()).is_empty());
-    }
-
-    #[test]
-    fn test_build_plan_of_a_groups_config_names_group_then_package() {
-        let tmp = TempDir::new().unwrap();
-        let src = tmp.path().join("dotfiles").join("home");
-        fs::create_dir_all(src.join("pkg1")).unwrap();
-        let mut config = Config::default_empty();
-        config.add_group(
-            "home".into(),
-            src.to_string_lossy().into(),
-            tmp.path().join("target").to_string_lossy().into(),
-        );
-        let names: Vec<String> = build_plan(&config, tmp.path(), tmp.path())
-            .into_iter()
-            .map(|e| e.name)
-            .collect();
-        assert_eq!(names, vec!["home/pkg1"]);
     }
 
     #[test]

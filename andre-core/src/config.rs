@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
@@ -9,8 +8,12 @@ use crate::packages::discover_packages;
 use crate::path::resolve_path;
 use crate::state::{IconSet, StowAction, StowFlags, Theme, MAX_VERBOSITY};
 
-/// Why a config with both `packages:` and `groups:` does not load.
-pub const KEYS_CONFLICT: &str = "set `packages:` or `groups:`, not both";
+/// Load error for a config in the removed format. `main` prints the file path in front.
+pub const GROUPS_REMOVED: &str = "`groups:` is no longer supported.
+andre reads one packages folder now:
+  packages: ~/dotfiles   # every subfolder is a package; relative paths start at the config folder
+  target: ~              # optional; where links go (default: your home folder)
+Profile refs are plain package names: `nvim`, not `home/nvim`.";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -23,15 +26,12 @@ pub struct Config {
     pub target: Option<String>,
     #[serde(default)]
     pub global: GlobalSettings,
-    /// Interim: the grouped model, removed in G10. Cannot be combined with `packages`.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub groups: BTreeMap<String, Group>,
 }
 
 /// One package as every consumer sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageEntry {
-    /// `nvim` (interim: `home/nvim` for a `groups:` config).
+    /// The folder name, `nvim` for `<packages>/nvim`. Also the name `stow` takes.
     pub name: String,
     /// `<packages>/nvim`.
     pub dir: PathBuf,
@@ -39,18 +39,8 @@ pub struct PackageEntry {
     pub source: PathBuf,
     /// The resolved target, passed to `stow -t`.
     pub target: PathBuf,
-    /// `global.ignore`, plus the group's own list for an interim `groups:` entry.
+    /// `global.ignore`.
     pub ignores: Vec<String>,
-}
-
-impl PackageEntry {
-    /// The package's folder name: `nvim` for `<packages>/nvim`, which `stow` takes as the
-    /// package. Unlike `name`, it has no `group/` part in an interim `groups:` config.
-    pub fn folder_name(&self) -> String {
-        self.dir
-            .file_name()
-            .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
-    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -75,15 +65,6 @@ pub struct StowConfig {
     pub adopt: Option<bool>,
     pub dotfiles: Option<bool>,
     pub action: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Group {
-    pub source: String,
-    pub target: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ignore: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,14 +108,13 @@ impl Config {
                 ignore: None,
                 stow: None,
             },
-            groups: BTreeMap::new(),
         }
     }
 
     pub fn validate(&self) -> Vec<ConfigWarning> {
         let mut warnings = Vec::new();
 
-        if self.packages.is_none() && self.groups.is_empty() {
+        if self.packages.is_none() {
             warnings.push(ConfigWarning::NoPackagesFolder);
         }
 
@@ -177,17 +157,14 @@ impl Config {
             return Err(Error::ConfigNotFound(path.to_path_buf()));
         }
         let content = std::fs::read_to_string(path)?;
-        let config: Config = serde_yaml_ng::from_str(&content).map_err(Error::YamlParse)?;
-        if config.keys_conflict() {
-            return Err(Error::InvalidConfig(KEYS_CONFLICT.to_string()));
+        // Checked before the struct parse, so an old file gets this message rather than an
+        // unknown-field error.
+        let top: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&content).map_err(Error::YamlParse)?;
+        if top.get("groups").is_some() {
+            return Err(Error::InvalidConfig(GROUPS_REMOVED.to_string()));
         }
-        Ok(config)
-    }
-
-    /// True when both `packages:` and `groups:` are set. The file is not loaded then. The
-    /// interim keeps both keys for one release; `groups:` goes in G10.
-    pub fn keys_conflict(&self) -> bool {
-        self.packages.is_some() && !self.groups.is_empty()
+        serde_yaml_ng::from_str(&content).map_err(Error::YamlParse)
     }
 
     /// The packages folder, resolved. `None` when `packages:` is unset.
@@ -205,42 +182,23 @@ impl Config {
         }
     }
 
-    /// Every package, sorted by name. Interim: a `groups:` config yields `group/package`
-    /// entries (`packages:` and `groups:` cannot both be set; see `load`).
+    /// Every package in the packages folder, sorted by name. Empty without `packages:`.
     pub fn package_entries(&self, config_dir: &Path, home_dir: &Path) -> Vec<PackageEntry> {
-        let mut entries = Vec::new();
-
-        if let Some(source) = self.packages_dir(config_dir, home_dir) {
-            let target = self.target_dir(config_dir, home_dir);
-            let ignores = self.ignores();
-            for name in discover_packages(&source) {
-                entries.push(PackageEntry {
-                    dir: source.join(&name),
-                    name,
-                    source: source.clone(),
-                    target: target.clone(),
-                    ignores: ignores.clone(),
-                });
-            }
-        }
-
-        for (group_name, group) in &self.groups {
-            let source = resolve_path(&group.source, config_dir, home_dir);
-            let target = resolve_path(&group.target, config_dir, home_dir);
-            let ignores = self.effective_ignores(group_name);
-            for package in discover_packages(&source) {
-                entries.push(PackageEntry {
-                    name: format!("{group_name}/{package}"),
-                    dir: source.join(&package),
-                    source: source.clone(),
-                    target: target.clone(),
-                    ignores: ignores.clone(),
-                });
-            }
-        }
-
-        entries.sort_by(|a, b| a.name.cmp(&b.name));
-        entries
+        let Some(source) = self.packages_dir(config_dir, home_dir) else {
+            return Vec::new();
+        };
+        let target = self.target_dir(config_dir, home_dir);
+        let ignores = self.ignores();
+        discover_packages(&source)
+            .into_iter()
+            .map(|name| PackageEntry {
+                dir: source.join(&name),
+                name,
+                source: source.clone(),
+                target: target.clone(),
+                ignores: ignores.clone(),
+            })
+            .collect()
     }
 
     /// The entry called `name`, if that package exists.
@@ -259,8 +217,8 @@ impl Config {
         self.packages = packages;
     }
 
-    /// Validates that the packages folder exists, that the target is not the packages
-    /// folder or inside it, and that every group's resolved source directory exists.
+    /// Validates that the packages folder exists and that the target is not the packages
+    /// folder or inside it.
     pub fn validate_sources(&self, config_dir: &Path, home_dir: &Path) -> Result<()> {
         if let Some(packages) = self.packages_dir(config_dir, home_dir) {
             if !packages.exists() {
@@ -275,68 +233,7 @@ impl Config {
                 )));
             }
         }
-        for group in self.groups.values() {
-            let path = resolve_path(&group.source, config_dir, home_dir);
-            if !path.exists() {
-                return Err(Error::SourceNotFound(path));
-            }
-        }
         Ok(())
-    }
-
-    /// Returns the resolved source path for a group, or `None` if the group doesn't exist.
-    /// Unlike `get_group_source`, this does NOT check whether the path exists on disk.
-    pub fn resolve_group_source(
-        &self,
-        name: &str,
-        config_dir: &Path,
-        home_dir: &Path,
-    ) -> Option<PathBuf> {
-        self.resolve_group_path(name, config_dir, home_dir, |group| &group.source)
-    }
-
-    /// Returns the source path only if the group exists AND the resolved path exists on disk.
-    pub fn get_group_source(
-        &self,
-        name: &str,
-        config_dir: &Path,
-        home_dir: &Path,
-    ) -> Option<PathBuf> {
-        self.resolve_group_source(name, config_dir, home_dir)
-            .filter(|path| path.exists())
-    }
-
-    /// Returns the resolved target path for a group, or `None` if the group doesn't exist.
-    /// Unlike `get_group_target`, this does NOT check whether the path exists on disk.
-    pub fn resolve_group_target(
-        &self,
-        name: &str,
-        config_dir: &Path,
-        home_dir: &Path,
-    ) -> Option<PathBuf> {
-        self.resolve_group_path(name, config_dir, home_dir, |group| &group.target)
-    }
-
-    /// Returns the target path only if the group exists AND the resolved path exists on disk.
-    pub fn get_group_target(
-        &self,
-        name: &str,
-        config_dir: &Path,
-        home_dir: &Path,
-    ) -> Option<PathBuf> {
-        self.resolve_group_target(name, config_dir, home_dir)
-            .filter(|path| path.exists())
-    }
-
-    fn resolve_group_path(
-        &self,
-        name: &str,
-        config_dir: &Path,
-        home_dir: &Path,
-        field: fn(&Group) -> &str,
-    ) -> Option<PathBuf> {
-        let group = self.groups.get(name)?;
-        Some(resolve_path(field(group), config_dir, home_dir))
     }
 
     /// The stow options from `global.stow`. Missing or unrecognised values fall back to
@@ -371,22 +268,6 @@ impl Config {
         self.global.ignore.clone().unwrap_or_default()
     }
 
-    pub fn get_group_ignore(&self, group_name: &str) -> Option<&[String]> {
-        self.groups
-            .get(group_name)
-            .and_then(|g| g.ignore.as_deref())
-    }
-
-    pub fn effective_ignores(&self, group_name: &str) -> Vec<String> {
-        let global = self.global_ignore();
-        let group = self
-            .groups
-            .get(group_name)
-            .and_then(|g| g.ignore.clone())
-            .unwrap_or_default();
-        global.into_iter().chain(group).collect()
-    }
-
     pub fn save(&self, path: &Path) -> Result<()> {
         let yaml = serde_yaml_ng::to_string(self).map_err(Error::YamlParse)?;
         std::fs::write(path, yaml).map_err(Error::Io)?;
@@ -416,43 +297,6 @@ impl Config {
         self.global.icons = icons;
     }
 
-    /// Adds a group. Returns `true` if a group with the same name was overwritten.
-    pub fn add_group(&mut self, name: String, source: String, target: String) -> bool {
-        self.groups
-            .insert(
-                name,
-                Group {
-                    source,
-                    target,
-                    ignore: None,
-                },
-            )
-            .is_some()
-    }
-
-    /// Removes a group. Returns `true` if the group existed and was removed.
-    pub fn remove_group(&mut self, name: &str) -> bool {
-        self.groups.remove(name).is_some()
-    }
-
-    /// Renames a group, keeping its source, target and ignores. Returns `false` when
-    /// `old` does not exist or `new` is already taken by a different group (nothing changes).
-    pub fn rename_group(&mut self, old: &str, new: &str) -> bool {
-        if old == new {
-            return self.groups.contains_key(old);
-        }
-        if self.groups.contains_key(new) {
-            return false;
-        }
-        match self.groups.remove(old) {
-            Some(group) => {
-                self.groups.insert(new.to_string(), group);
-                true
-            }
-            None => false,
-        }
-    }
-
     pub fn add_global_ignore(&mut self, pattern: String) {
         self.global
             .ignore
@@ -463,42 +307,6 @@ impl Config {
     pub fn remove_global_ignore(&mut self, pattern: &str) {
         if let Some(ref mut ignores) = self.global.ignore {
             ignores.retain(|i| i != pattern);
-        }
-    }
-
-    /// Sets per-group ignores; an empty list clears them. Returns `true` if the group existed.
-    pub fn set_group_ignore(&mut self, group_name: &str, ignores: Vec<String>) -> bool {
-        if let Some(group) = self.groups.get_mut(group_name) {
-            group.ignore = if ignores.is_empty() {
-                None
-            } else {
-                Some(ignores)
-            };
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Returns `true` if the group existed.
-    pub fn update_group_source(&mut self, group_name: &str, source: String) -> bool {
-        match self.groups.get_mut(group_name) {
-            Some(group) => {
-                group.source = source;
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// Returns `true` if the group existed.
-    pub fn update_group_target(&mut self, group_name: &str, target: String) -> bool {
-        match self.groups.get_mut(group_name) {
-            Some(group) => {
-                group.target = target;
-                true
-            }
-            None => false,
         }
     }
 }
@@ -839,99 +647,6 @@ target: target
     }
 
     #[test]
-    fn test_add_and_remove_group() {
-        let tmp = TempDir::new().unwrap();
-        let mut config = Config::default_empty();
-        config.add_group(
-            "main".to_string(),
-            "packages".to_string(),
-            "target".to_string(),
-        );
-        assert_eq!(config.groups.len(), 1);
-
-        config.add_group(
-            "shell".to_string(),
-            "dotfiles/shell".to_string(),
-            "~".to_string(),
-        );
-        assert_eq!(config.groups.len(), 2);
-        assert_eq!(config.groups["shell"].source, "dotfiles/shell");
-        assert!(config.groups["shell"].ignore.is_none());
-
-        config.remove_group("main");
-        assert_eq!(config.groups.len(), 1);
-        assert!(!config.groups.contains_key("main"));
-        assert!(config.groups.contains_key("shell"));
-
-        let save_path = tmp.path().join("saved.yml");
-        config.save(&save_path).unwrap();
-        let reloaded = Config::load(&save_path).unwrap();
-        assert_eq!(reloaded.groups.len(), 1);
-        assert!(reloaded.groups.contains_key("shell"));
-    }
-
-    #[test]
-    fn test_rename_group_keeps_source_target_and_ignore() {
-        let mut config = Config::default_empty();
-        config.add_group("home".into(), "dotfiles/home".into(), "~".into());
-        config.set_group_ignore("home", vec![".git".into()]);
-
-        assert!(config.rename_group("home", "work"));
-        assert!(!config.groups.contains_key("home"));
-        let renamed = &config.groups["work"];
-        assert_eq!(renamed.source, "dotfiles/home");
-        assert_eq!(renamed.target, "~");
-        assert_eq!(renamed.ignore, Some(vec![".git".to_string()]));
-    }
-
-    #[test]
-    fn test_rename_group_refuses_missing_or_taken_names() {
-        let mut config = Config::default_empty();
-        config.add_group("home".into(), "dotfiles/home".into(), "~".into());
-        config.add_group(
-            "config".into(),
-            "dotfiles/config".into(),
-            "~/.config".into(),
-        );
-
-        assert!(!config.rename_group("missing", "work"));
-        assert!(!config.rename_group("home", "config"));
-        assert_eq!(config.groups["home"].source, "dotfiles/home");
-        assert_eq!(config.groups["config"].source, "dotfiles/config");
-        assert_eq!(config.groups.len(), 2);
-    }
-
-    #[test]
-    fn test_rename_group_to_same_name_is_noop() {
-        let mut config = Config::default_empty();
-        config.add_group("home".into(), "dotfiles/home".into(), "~".into());
-
-        assert!(config.rename_group("home", "home"));
-        assert_eq!(config.groups["home"].source, "dotfiles/home");
-        assert!(!config.rename_group("missing", "missing"));
-    }
-
-    #[test]
-    fn test_groups_serialize_in_sorted_order() {
-        let tmp = TempDir::new().unwrap();
-        let mut config = Config::default_empty();
-        for name in ["zeta", "alpha", "mid"] {
-            config.add_group(name.into(), format!("dotfiles/{name}"), "~".into());
-        }
-
-        let names: Vec<&str> = config.groups.keys().map(String::as_str).collect();
-        assert_eq!(names, ["alpha", "mid", "zeta"]);
-
-        let save_path = tmp.path().join("andre.yml");
-        config.save(&save_path).unwrap();
-        let yaml = fs::read_to_string(&save_path).unwrap();
-        let alpha = yaml.find("alpha:").unwrap();
-        let mid = yaml.find("mid:").unwrap();
-        let zeta = yaml.find("zeta:").unwrap();
-        assert!(alpha < mid && mid < zeta, "groups not sorted:\n{yaml}");
-    }
-
-    #[test]
     fn test_add_remove_global_ignore() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
@@ -964,24 +679,6 @@ target: target
     }
 
     #[test]
-    fn test_group_ignore_round_trip() {
-        let tmp = TempDir::new().unwrap();
-        let mut config = Config::default_empty();
-        config.add_group("main".into(), "packages".into(), "target".into());
-        config.set_group_ignore("main", vec!["*.log".to_string(), "tmp".to_string()]);
-
-        let save_path = tmp.path().join("saved.yml");
-        config.save(&save_path).unwrap();
-
-        let reloaded = Config::load(&save_path).unwrap();
-        let group = reloaded.groups.get("main").unwrap();
-        assert_eq!(
-            group.ignore.as_ref().unwrap(),
-            &vec!["*.log".to_string(), "tmp".to_string()]
-        );
-    }
-
-    #[test]
     fn test_ensure_stow_creates_on_first_mutation() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
@@ -1008,77 +705,6 @@ target: target
     }
 
     #[test]
-    fn test_set_group_ignore_empty_clears_and_reports_missing_group() {
-        let mut config = Config::default_empty();
-        config.add_group("main".into(), "src".into(), "dst".into());
-        assert!(config.set_group_ignore("main", vec![".git".into()]));
-        assert!(config.set_group_ignore("main", vec![]));
-        assert_eq!(config.groups["main"].ignore, None);
-        assert!(!config.set_group_ignore("missing", vec![".git".into()]));
-    }
-
-    #[test]
-    fn test_update_group_paths_report_missing_group() {
-        let mut config = Config::default_empty();
-        config.add_group("main".into(), "src".into(), "dst".into());
-        assert!(config.update_group_source("main", "new/src".into()));
-        assert!(config.update_group_target("main", "/new/dst".into()));
-        assert!(!config.update_group_source("missing", "x".into()));
-        assert!(!config.update_group_target("missing", "x".into()));
-        assert_eq!(config.groups["main"].source, "new/src");
-        assert_eq!(config.groups["main"].target, "/new/dst");
-    }
-
-    #[test]
-    fn test_update_group_source_target() {
-        let tmp = TempDir::new().unwrap();
-        let mut config = Config::default_empty();
-        config.add_group("main".into(), "packages".into(), "target".into());
-        config.update_group_source("main", "new/source".to_string());
-        config.update_group_target("main", "/new/target".to_string());
-
-        let save_path = tmp.path().join("saved.yml");
-        config.save(&save_path).unwrap();
-
-        let reloaded = Config::load(&save_path).unwrap();
-        let group = reloaded.groups.get("main").unwrap();
-        assert_eq!(group.source, "new/source");
-        assert_eq!(group.target, "/new/target");
-    }
-
-    #[test]
-    fn test_get_group_source_returns_none_when_missing() {
-        let tmp = TempDir::new().unwrap();
-        let mut config = Config::default_empty();
-        config.add_group(
-            "main".into(),
-            "/nonexistent/source/path".into(),
-            "/nonexistent/target/path".into(),
-        );
-        let result = config.get_group_source("main", tmp.path(), tmp.path());
-        assert!(
-            result.is_none(),
-            "get_group_source should return None when source dir doesn't exist"
-        );
-    }
-
-    #[test]
-    fn test_get_group_target_returns_none_when_missing() {
-        let tmp = TempDir::new().unwrap();
-        let mut config = Config::default_empty();
-        config.add_group(
-            "main".into(),
-            "/nonexistent/source/path".into(),
-            "/nonexistent/target/path".into(),
-        );
-        let result = config.get_group_target("main", tmp.path(), tmp.path());
-        assert!(
-            result.is_none(),
-            "get_group_target should return None when target dir doesn't exist"
-        );
-    }
-
-    #[test]
     fn test_validate_clean_config_returns_no_warnings() {
         let config = Config {
             packages: Some("packages".into()),
@@ -1097,7 +723,6 @@ target: target
                     action: Some("stow".to_string()),
                 }),
             },
-            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert!(
@@ -1119,7 +744,6 @@ target: target
                 ignore: None,
                 stow: None,
             },
-            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1145,7 +769,6 @@ target: target
                     action: Some("invalid-action".to_string()),
                 }),
             },
-            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1171,7 +794,6 @@ target: target
                     action: None,
                 }),
             },
-            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1190,7 +812,6 @@ target: target
                 ignore: None,
                 stow: None,
             },
-            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert_eq!(warnings.len(), 1);
@@ -1268,7 +889,6 @@ packages: packages
                 ignore: None,
                 stow: None,
             },
-            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert!(
@@ -1289,7 +909,6 @@ packages: packages
                 ignore: None,
                 stow: None,
             },
-            ..Config::default_empty()
         };
         let warnings = config.validate();
         assert!(
@@ -1331,14 +950,12 @@ packages: packages
         let config = Config::load(&config_path).unwrap();
         assert_eq!(config.packages.as_deref(), Some("~/src/dotfiles"));
         assert_eq!(config.target.as_deref(), Some("~"));
-        assert!(config.groups.is_empty());
 
         let yaml = serde_yaml_ng::to_string(&config).unwrap();
         let packages = yaml.find("packages:").unwrap();
         let target = yaml.find("target:").unwrap();
         let global = yaml.find("global:").unwrap();
         assert!(packages < target && target < global, "{yaml}");
-        assert!(!yaml.contains("groups"), "{yaml}");
 
         let reloaded: Config = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(reloaded.packages, config.packages);
@@ -1433,36 +1050,27 @@ packages: packages
     }
 
     #[test]
-    fn test_groups_config_yields_grouped_entries_with_group_ignores() {
-        let tmp = TempDir::new().unwrap();
-        let config_dir = tmp.path();
-        let home = tmp.path().join("home");
-        fs::create_dir_all(config_dir.join("packages/git")).unwrap();
-
-        let mut config: Config =
-            serde_yaml_ng::from_str("global:\n  ignore: [.DS_Store]\n").unwrap();
-        config.add_group("home".into(), "packages".into(), "~".into());
-        config.set_group_ignore("home", vec!["README.md".into()]);
-        let entries = config.package_entries(config_dir, &home);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].name, "home/git");
-        assert_eq!(entries[0].target, home);
-        assert_eq!(entries[0].ignores, [".DS_Store", "README.md"]);
-    }
-
-    #[test]
-    fn test_load_rejects_packages_and_groups_together() {
+    fn test_load_refuses_the_removed_groups_key_with_the_migration_text() {
         let tmp = TempDir::new().unwrap();
         let config_path = tmp.path().join("andre.yml");
         fs::write(
             &config_path,
-            "packages: dotfiles\ngroups:\n  home:\n    source: packages\n    target: \"~\"\n",
+            "groups:\n  home:\n    source: packages\n    target: \"~\"\n",
         )
         .unwrap();
 
         let err = Config::load(&config_path).unwrap_err();
         assert!(matches!(err, Error::InvalidConfig(_)));
-        assert_eq!(err.to_string(), "set `packages:` or `groups:`, not both");
+        let text = err.to_string();
+        assert!(
+            text.starts_with("`groups:` is no longer supported."),
+            "{text}"
+        );
+        assert!(
+            text.contains("packages:") && text.contains("target:"),
+            "{text}"
+        );
+        assert!(text.contains("plain package names"), "{text}");
     }
 
     #[test]

@@ -66,7 +66,7 @@ struct Editing {
 }
 
 pub struct IgnoreEditComponent {
-    /// `group/package`, for the leave dialog.
+    /// The package name, for the leave dialog.
     package: String,
     /// The package folder, where the ignore files live.
     dir: PathBuf,
@@ -93,7 +93,7 @@ pub struct IgnoreEditComponent {
 
 impl IgnoreEditComponent {
     /// Opens the editor on the ignore files in `dir`, the folder of package `package`
-    /// (`group/package`), drawn in `theme`. Fails when an existing file cannot be read.
+    /// (`package`), drawn in `theme`. Fails when an existing file cannot be read.
     pub fn open(package: String, dir: PathBuf, theme: Theme) -> andre_core::Result<Self> {
         let mut files = Vec::new();
         for kind in FILES {

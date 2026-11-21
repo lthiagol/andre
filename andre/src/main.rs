@@ -1,6 +1,5 @@
-use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};
@@ -192,9 +191,8 @@ fn parse_args() -> Args {
 fn run_yolo(app: &App, plan: &[PackageEntry]) -> Result<()> {
     use andre_core::engine_for;
 
-    // A config with groups gives each package its own target, so create every distinct one.
-    let targets: BTreeSet<&Path> = plan.iter().map(|entry| entry.target.as_path()).collect();
-    for target in targets {
+    // Every package links into the same target, which may not exist yet on a new machine.
+    if let Some(target) = plan.first().map(|entry| entry.target.as_path()) {
         if !target.exists() {
             fs::create_dir_all(target)?;
         }
@@ -402,8 +400,7 @@ fn try_main() -> Result<()> {
 
     if args.yolo {
         let config = &app.ctx.core.config;
-        // Interim: a config with groups has its folders, so it is not "no packages folder".
-        if config.packages.is_none() && config.groups.is_empty() {
+        if config.packages.is_none() {
             eprintln!(
                 "no packages folder: set `packages:` in {}",
                 config_path.display()
@@ -526,7 +523,6 @@ mod cli_tests {
         let path = tmp.path().join("andre.yml");
         std::fs::write(&path, ONBOARD_CONFIG).unwrap();
         let config = andre_core::Config::load(&path).unwrap();
-        assert!(config.groups.is_empty());
         assert_eq!(
             config.validate(),
             [andre_core::config::ConfigWarning::NoPackagesFolder]

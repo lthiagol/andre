@@ -444,54 +444,6 @@ fn test_on_packages_starts_the_cursor_on_the_packages_row() {
 }
 
 #[test]
-fn test_saving_a_groups_config_keeps_its_groups() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    // The group's source must exist: a config whose sources are missing does not launch.
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    let mut config = Config::default_empty();
-    config.add_group("dots".into(), "src".into(), "tgt".into());
-    let mut ctx = AppContext::for_tests(config, tmp.path());
-    let mut component = open(&mut ctx);
-    select(&mut component, "theme");
-    press(&mut component, &mut ctx, KeyCode::Char('t'));
-    press(&mut component, &mut ctx, KeyCode::Char('w'));
-
-    let saved = saved_yaml(&ctx);
-    assert!(
-        saved.groups.contains_key("dots"),
-        "groups are not ours to drop"
-    );
-    assert!(saved.packages.is_none());
-}
-
-#[test]
-fn test_save_refuses_a_packages_folder_beside_groups() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    std::fs::create_dir_all(tmp.path().join("pick")).unwrap();
-    let mut config = Config::default_empty();
-    config.add_group("dots".into(), "src".into(), "tgt".into());
-    let mut ctx = AppContext::for_tests(config, tmp.path());
-    let mut component = open(&mut ctx);
-    select(&mut component, "packages");
-    press(&mut component, &mut ctx, KeyCode::Enter);
-    pick_entry(&mut component, "pick");
-    press(&mut component, &mut ctx, KeyCode::Enter);
-    press(&mut component, &mut ctx, KeyCode::Char('w'));
-
-    assert!(
-        !ctx.config_path.exists(),
-        "a file that would not load is not written"
-    );
-    assert!(component.dirty, "the edit stays pending");
-    let toast = ctx.toast.as_ref().expect("error toast");
-    assert!(
-        toast.message.starts_with("Save failed:"),
-        "unexpected toast: {}",
-        toast.message
-    );
-}
-
-#[test]
 fn test_saving_a_new_packages_folder_drops_the_status_cache() {
     let (_tmp, mut ctx) = fixture();
     ctx.status_cache

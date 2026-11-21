@@ -28,14 +28,14 @@
 
 **GNU Stow** is a CLI symlink farm manager. It creates symlinks from a source directory to a target directory — most commonly used to keep dotfiles in a version-controlled repo while making them appear in your home directory.
 
-**andre** implements the same model, with a terminal UI on top. Instead of remembering CLI flags and running stow manually per package group, you get a visual interface to mark groups and packages, toggle options, and execute with live feedback. It runs on its own **native** engine by default, so no external binary is required; set `global.engine: stow` if you want it to drive GNU Stow itself.
+**andre** implements the same model, with a terminal UI on top. Instead of remembering CLI flags and running stow manually per package, you get a visual interface to mark packages, toggle options, and execute with live feedback. It runs on its own **native** engine by default, so no external binary is required; set `global.engine: stow` if you want it to drive GNU Stow itself.
 
 See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configuration reference.
 
 <a name="features"></a>
 ## ✨ Features
 
-- **Multi-group config** — Define multiple stow targets (e.g., `~`, `~/.config`) each with its own source directory
+- **One packages folder** — Every subfolder is a package; `target:` says where links go (default: your home folder)
 - **Interactive package selection** — Browse the packages in one list, select/unselect with Space (`*` for all), smart pre-selection based on action
 - **Live settings toggles** — Toggle dry-run, verbosity, adopt, no-folding on the fly from any screen
 - **Config editor built-in** — Edit `andre.yml` from within the TUI: pick the packages folder, change global defaults and the global ignore list
@@ -128,9 +128,9 @@ Mark the packages you want (`Space`), then press `Enter` to stow them.
 ## 🗺️ Main Menu
 
 The main menu lists the actions on the left. The panel on the right describes
-the selected one and shows what it touches: group and package counts, how many
-packages are stowed once their status has been checked (`–` until then), and
-the target directories. Move with `↑`/`↓`, or press `1`–`8` to jump to an
+the selected one and shows what it touches: the packages folder, the package
+count, how many packages are stowed once their status has been checked (`–`
+until then), and the target folder the packages link into. Move with `↑`/`↓`, or press `1`–`8` to jump to an
 action. On a fresh machine whose config folder is not yet linked to `~/.config/andre`,
 the first item, `set up this machine`, links it (`0`). Every other screen shows a one-row title with its breadcrumb instead of
 the full banner. On the list screens the cursor row is filled with the theme's
@@ -139,8 +139,8 @@ selection colour and marked with a `▌` bar.
 | Option | What it does |
 |--------|-------------|
 | **profiles** | Named sets of packages. Pick one and run the current action on all of it |
-| **packages** | Select groups and packages, then run the current action (stow, restow or unstow) |
-| **new package** | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
+| **packages** | Select packages, then run the current action (stow, restow or unstow) |
+| **new package** | Create a package: empty, or from files that already sit in the target; sets its ignore files and profiles |
 | **unstow** | Remove symlinks interactively |
 | **verify status** | View stow status of every package |
 | **settings** | Edit config: the packages folder, options, global ignore |

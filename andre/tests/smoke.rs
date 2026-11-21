@@ -96,6 +96,37 @@ fn yolo_without_a_packages_folder_exits_one_and_says_so() {
 }
 
 #[test]
+fn groups_config_exits_one_and_names_the_packages_folder_and_target() {
+    // A config from before groups must not launch with a half-read model. The text is the
+    // migration hint: the two keys that replace `groups:`.
+    let tmp = TempDir::new().unwrap();
+    let config = tmp.path().join("andre.yml");
+    std::fs::write(
+        &config,
+        "groups:\n  home:\n    source: packages\n    target: \"~\"\n",
+    )
+    .unwrap();
+    let output = Command::new(andre_bin())
+        .args(["--config", config.to_str().unwrap(), "--yolo"])
+        .env("HOME", tmp.path())
+        .output()
+        .expect("failed to spawn andre binary");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a groups: config must not load"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`groups:` is no longer supported.")
+            && stderr.contains("packages:")
+            && stderr.contains("target:"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
 fn andre_unknown_flag_exits_nonzero() {
     // Usage errors must NOT exit 0 (a zero exit would let CI scripts that
     // pipe `--help` to a pager accidentally treat typos as success).

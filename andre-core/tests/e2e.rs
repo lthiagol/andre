@@ -36,8 +36,8 @@ fn test_yolo_creates_a_missing_target_for_the_stow_engine() {
 }
 
 #[test]
-fn test_scenario_02_multi_package_one_group() {
-    let env = TestEnv::from_scenario("02-multi-package-one-group");
+fn test_scenario_02_multi_package() {
+    let env = TestEnv::from_scenario("02-multi-package");
     let result = env.run_andre(&["--yolo"]).unwrap();
     assert_eq!(result.exit_code, 0);
 

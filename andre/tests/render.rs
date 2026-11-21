@@ -4088,6 +4088,39 @@ fn test_new_package_review_lines_are_inset_one_column_from_the_border_at_80x24()
 }
 
 #[test]
+fn test_new_package_profiles_step_counts_the_join_at_80x24() {
+    let (mut app, _tmp) = wizard_app_with_profile();
+    wizard_on_ignore_step(&mut app);
+    press(&mut app, &[enter_key(), key_char(' ')]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(
+        line_contains(&buf, "after"),
+        "the profile detail has no after fact"
+    );
+    assert!(
+        line_contains(&buf, "(+ tmux)"),
+        "the join is not counted by name"
+    );
+}
+
+#[test]
+fn wizard_profiles_and_review_render_without_panic_at_120x40_and_200x50() {
+    // The wizard's profiles step, with its `after` fact, and the review of a new package that
+    // joins a profile.
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = wizard_app_with_profile();
+        wizard_on_ignore_step(&mut app);
+        press(&mut app, &[enter_key()]);
+        render_updated(&mut app, width, height);
+        press(&mut app, &[key_char(' ')]);
+        render_updated(&mut app, width, height);
+        press(&mut app, &[enter_key()]);
+        render_updated(&mut app, width, height);
+    }
+}
+
+#[test]
 fn test_new_package_review_lists_the_plan_and_its_counts_at_80x24() {
     let (mut app, _tmp) = wizard_app_with_profile();
     wizard_on_ignore_step(&mut app);
@@ -5371,7 +5404,7 @@ fn test_ignore_editor_title_row_names_the_package_at_120x40_and_200x50() {
     }
 }
 
-// ---- G2: the run screen names each package by its name ----
+// ---- the run screen names each package by its name ----
 
 #[test]
 fn test_run_rows_show_the_package_name_at_80x24() {

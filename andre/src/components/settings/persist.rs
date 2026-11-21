@@ -1,5 +1,3 @@
-use andre_core::config::KEYS_CONFLICT;
-
 use crate::components::settings::SettingsComponent;
 use crate::components::AppContext;
 use crate::ui::elide;
@@ -15,11 +13,6 @@ pub fn save_config(component: &mut SettingsComponent, ctx: &mut AppContext) -> b
     };
 
     let config = pending.to_config();
-    if config.keys_conflict() {
-        let msg = elide(&format!("Save failed: {KEYS_CONFLICT}"), 60);
-        ctx.show_error_toast(msg);
-        return false;
-    }
     if let Err(e) = config.validate_sources(&ctx.config_dir, &ctx.home_dir) {
         let msg = elide(&format!("Save failed: {e}"), 60);
         ctx.show_error_toast(msg);

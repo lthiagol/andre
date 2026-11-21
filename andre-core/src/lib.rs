@@ -13,7 +13,7 @@ pub mod stow;
 pub mod yolo;
 
 pub use adopt::{list_target_dirs, TargetEntry};
-pub use config::{Config, ConfigWarning, GlobalSettings, Group, PackageEntry, StowConfig};
+pub use config::{Config, ConfigWarning, GlobalSettings, PackageEntry, StowConfig};
 pub use create::{execute_package, plan_package, FileMove, NewPackage, PackagePlan, ProfileEdit};
 pub use engine::{
     engine_for, EngineKind, LinkAction, LinkEngine, LinkOp, NativeEngine, StowEngine,

@@ -96,22 +96,17 @@ impl NewPackageWizard {
     fn open_profiles(&mut self, ctx: &AppContext) {
         self.profile_names = ctx.core.profiles.iter().map(|p| p.name.clone()).collect();
         let known = self.listed_packages();
-        let package_ref = self.package_ref();
+        let package = self.name.value.clone();
         self.profile_counts = self
             .profile_names
             .iter()
             .map(|name| {
-                let count = profile_count(&ctx.core.profiles, name, &known, &package_ref);
+                let count = profile_count(&ctx.core.profiles, name, &known, &package);
                 (name.clone(), count)
             })
             .collect();
         self.profile_list.cursor = 0;
         self.step = Step::Profiles;
-    }
-
-    /// The profile ref the package will have: its name.
-    pub(super) fn package_ref(&self) -> String {
-        self.name.value.clone()
     }
 
     /// Every package in the packages folder, as the profiles list them.
@@ -182,7 +177,6 @@ impl NewPackageWizard {
             .map(|profile| profile.name.clone())
             .collect();
         NewPackage {
-            package_ref: self.name.value.clone(),
             source_root: config
                 .packages_dir(&ctx.config_dir, &ctx.home_dir)
                 .unwrap_or_default(),
@@ -256,13 +250,13 @@ impl NewPackageWizard {
     }
 }
 
-/// Counts a profile's packages with its includes resolved, and with `package_ref` added. A
+/// Counts a profile's packages with its includes resolved, and with `package` added. A
 /// profile that does not resolve (an include cycle) counts its own packages.
 fn profile_count(
     profiles: &ProfileSet,
     name: &str,
     known: &BTreeSet<String>,
-    package_ref: &str,
+    package: &str,
 ) -> ProfileCount {
     let packages: Vec<String> = match profiles.resolve(name, known) {
         Ok(resolved) => resolved.entries.into_iter().map(|e| e.package).collect(),
@@ -271,7 +265,7 @@ fn profile_count(
             .map(|profile| profile.packages.clone())
             .unwrap_or_default(),
     };
-    let joins = packages.iter().any(|package| package == package_ref);
+    let joins = packages.iter().any(|listed| listed == package);
     ProfileCount {
         packages: packages.len(),
         after: packages.len() + usize::from(!joins),
@@ -314,10 +308,7 @@ pub fn review_lines(plan: &PackagePlan, ctx: &AppContext) -> Vec<ReviewLine> {
         .filter(|edit| !edit.already_member)
         .collect();
     for edit in &edits {
-        let text = format!(
-            "{PROFILES_DIR}/{}.yml  + {}",
-            edit.profile, edit.package_ref
-        );
+        let text = format!("{PROFILES_DIR}/{}.yml  + {}", edit.profile, edit.package);
         lines.push(line("edit", text));
     }
     let (moves, links) = (plan.moves.len(), plan.links.len());
@@ -340,10 +331,10 @@ fn line(verb: &'static str, text: String) -> ReviewLine {
     ReviewLine { verb, text }
 }
 
-/// A path inside the new package, as `package_ref/rest`.
+/// A path inside the new package, as `package/rest`.
 fn in_package(plan: &PackagePlan, path: &Path) -> String {
     let rest = path.strip_prefix(&plan.package_dir).unwrap_or(path);
-    format!("{}/{}", plan.package_ref, rest.display())
+    format!("{}/{}", plan.package, rest.display())
 }
 
 /// What an ignore file written by the wizard holds, for its review line.

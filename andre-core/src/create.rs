@@ -25,9 +25,6 @@ use crate::stow::{collect_package_files, ignored_by_config};
 /// What to create. `source_root` holds the packages, `target_root` is where live files sit.
 #[derive(Debug, Clone, Default)]
 pub struct NewPackage {
-    /// The profile ref the package is written as: `nvim` for a flat config, `home/nvim`
-    /// for an interim `groups:` config. Must end in `package`; `plan_package` refuses others.
-    pub package_ref: String,
     pub source_root: PathBuf,
     pub target_root: PathBuf,
     pub package: String,
@@ -42,7 +39,7 @@ pub struct NewPackage {
     /// Write `.stow-local-ignore` with GNU's built-in list. The file replaces the
     /// built-in list, so the template copies it in.
     pub stow_local_ignore: bool,
-    /// Profiles to add the package to. Each gets `package_ref`.
+    /// Profiles to add the package to. Each gets the package name as a ref.
     pub profiles: Vec<String>,
     /// Engine for the link-back step.
     pub engine: EngineKind,
@@ -66,15 +63,13 @@ pub struct FileMove {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileEdit {
     pub profile: String,
-    pub package_ref: String,
+    pub package: String,
     pub already_member: bool,
 }
 
 /// What [`execute_package`] will do. Built by [`plan_package`] without touching disk.
 #[derive(Debug, Clone)]
 pub struct PackagePlan {
-    /// The profile ref the package is written as (see [`NewPackage::package_ref`]).
-    pub package_ref: String,
     pub package: String,
     pub package_dir: PathBuf,
     /// The package folder already exists. Its files stay; the new ones are added.
@@ -115,27 +110,12 @@ pub fn is_valid_package_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
-/// A profile ref for `package`: the bare name, or `<group>/<name>` for an interim
-/// `groups:` config. Anything else is refused, so a profile never names a path.
-fn valid_package_ref(package_ref: &str, package: &str) -> bool {
-    match package_ref.rsplit_once('/') {
-        None => package_ref == package,
-        Some((group, name)) => name == package && !group.is_empty() && !group.contains('/'),
-    }
-}
-
 /// Checks the request and works out every change. Nothing on disk is touched.
 pub fn plan_package(req: &NewPackage, profiles: &ProfileSet) -> Result<PackagePlan> {
     if !is_valid_package_name(&req.package) {
         return Err(Error::Package(format!(
             "invalid package name '{}': use letters, digits, '-', '_' and '.', starting with a letter or digit",
             req.package
-        )));
-    }
-    if !valid_package_ref(&req.package_ref, &req.package) {
-        return Err(Error::Package(format!(
-            "invalid package ref '{}' for package '{}'",
-            req.package_ref, req.package
         )));
     }
     if !req.source_root.is_dir() {
@@ -229,7 +209,6 @@ pub fn plan_package(req: &NewPackage, profiles: &ProfileSet) -> Result<PackagePl
     }
 
     Ok(PackagePlan {
-        package_ref: req.package_ref.clone(),
         package: req.package.clone(),
         package_dir,
         package_exists,
@@ -274,7 +253,6 @@ pub fn execute_package(plan: &PackagePlan, profiles: &mut ProfileSet) -> Result<
 }
 
 fn plan_profile_edits(req: &NewPackage, profiles: &ProfileSet) -> Result<Vec<ProfileEdit>> {
-    let package_ref = &req.package_ref;
     let mut seen = BTreeSet::new();
     let mut edits = Vec::new();
     for name in &req.profiles {
@@ -286,8 +264,8 @@ fn plan_profile_edits(req: &NewPackage, profiles: &ProfileSet) -> Result<Vec<Pro
             .ok_or_else(|| Error::Profile(ProfileError::NotFound(name.clone())))?;
         edits.push(ProfileEdit {
             profile: name.clone(),
-            package_ref: package_ref.clone(),
-            already_member: profile.packages.contains(package_ref),
+            package: req.package.clone(),
+            already_member: profile.packages.contains(&req.package),
         });
     }
     Ok(edits)
@@ -494,7 +472,6 @@ fn apply(plan: &PackagePlan, profiles: &mut ProfileSet, log: &mut Vec<Undo>) -> 
     if !plan.moves.is_empty() {
         step()?;
         let op = LinkOp {
-            name: plan.package_ref.clone(),
             package: plan.package.clone(),
             source: plan.source_root.clone(),
             target: plan.target_root.clone(),
@@ -534,7 +511,7 @@ fn apply(plan: &PackagePlan, profiles: &mut ProfileSet, log: &mut Vec<Undo>) -> 
             .cloned()
             .ok_or_else(|| Error::Profile(ProfileError::NotFound(edit.profile.clone())))?;
         let mut updated = original.clone();
-        updated.packages.push(edit.package_ref.clone());
+        updated.packages.push(edit.package.clone());
         profiles.save(updated)?;
         log.push(Undo::Profile(original));
     }
@@ -666,7 +643,7 @@ mod tests {
             profiles
                 .create(Profile {
                     name: "base".into(),
-                    packages: vec!["other/pkg".into()],
+                    packages: vec!["pkg".into()],
                     ..Profile::default()
                 })
                 .unwrap();
@@ -681,7 +658,6 @@ mod tests {
 
         fn req(&self, package: &str) -> NewPackage {
             NewPackage {
-                package_ref: format!("home/{package}"),
                 source_root: self.source.clone(),
                 target_root: self.target.clone(),
                 package: package.into(),
@@ -872,8 +848,8 @@ mod tests {
         assert!(!plan.profile_edits[0].already_member);
         execute_package(&plan, &mut fx.profiles).unwrap();
         let saved = fx.profiles.get("base").unwrap();
-        assert_eq!(saved.packages, vec!["other/pkg", "home/shell"]);
-        assert!(fx.profile_file("base").contains("home/shell"));
+        assert_eq!(saved.packages, vec!["pkg", "shell"]);
+        assert!(fx.profile_file("base").contains("shell"));
 
         req.allow_existing = true;
         let again = plan_package(&req, &fx.profiles).unwrap();
@@ -883,32 +859,20 @@ mod tests {
     }
 
     #[test]
-    fn flat_package_ref_is_the_profile_ref() {
+    fn profile_ref_is_the_package_name() {
         let mut fx = Fixture::new();
         let rc = fx.live(".bashrc", "rc");
         let mut req = fx.req("shell");
-        req.package_ref = "shell".into();
         req.files = vec![rc.clone()];
         req.profiles = vec!["base".into()];
         let plan = plan_package(&req, &fx.profiles).unwrap();
-        assert_eq!(plan.profile_edits[0].package_ref, "shell");
+        assert_eq!(plan.profile_edits[0].package, "shell");
         execute_package(&plan, &mut fx.profiles).unwrap();
         assert_eq!(
             fx.profiles.get("base").unwrap().packages,
-            vec!["other/pkg", "shell"]
+            vec!["pkg", "shell"]
         );
         assert!(rc.is_symlink());
-    }
-
-    #[test]
-    fn valid_package_ref_is_a_name_or_one_group_then_the_name() {
-        assert!(valid_package_ref("nvim", "nvim"));
-        assert!(valid_package_ref("home/nvim", "nvim"));
-        assert!(!valid_package_ref("", "nvim"));
-        assert!(!valid_package_ref("/nvim", "nvim"));
-        assert!(!valid_package_ref("a/b/nvim", "nvim"));
-        assert!(!valid_package_ref("home/git", "nvim"));
-        assert!(!valid_package_ref("nvim", "git"));
     }
 
     #[test]
@@ -942,7 +906,6 @@ mod tests {
                 "bad name",
                 NewPackage {
                     package: "a/b".into(),
-                    package_ref: "home/a/b".into(),
                     ..fx.req("x")
                 },
             ),
@@ -950,7 +913,6 @@ mod tests {
                 "taken",
                 NewPackage {
                     package: "taken".into(),
-                    package_ref: "home/taken".into(),
                     ..fx.req("x")
                 },
             ),
@@ -958,7 +920,6 @@ mod tests {
                 "file path",
                 NewPackage {
                     package: "taken-file".into(),
-                    package_ref: "home/taken-file".into(),
                     ..fx.req("x")
                 },
             ),
@@ -1007,20 +968,6 @@ mod tests {
                     ..fx.req("p")
                 },
             ),
-            (
-                "bad package ref",
-                NewPackage {
-                    package_ref: "a/b/p".into(),
-                    ..fx.req("p")
-                },
-            ),
-            (
-                "ref not ending in the package",
-                NewPackage {
-                    package_ref: "home/other".into(),
-                    ..fx.req("p")
-                },
-            ),
         ];
         for (label, req) in cases {
             assert!(
@@ -1041,7 +988,6 @@ mod tests {
         let profiles = ProfileSet::new(tmp.path().join("profiles"));
         // The target folder contains the packages folder, so the file is under both.
         let req = NewPackage {
-            package_ref: "home/new".into(),
             source_root: source.clone(),
             target_root: packages,
             package: "new".into(),
@@ -1127,7 +1073,7 @@ mod tests {
                 profile_before,
                 "step {fail_at}: profile file not restored"
             );
-            assert_eq!(fx.profiles.get("base").unwrap().packages, vec!["other/pkg"]);
+            assert_eq!(fx.profiles.get("base").unwrap().packages, vec!["pkg"]);
             assert!(rc.is_file() && !rc.is_symlink(), "step {fail_at}");
         }
         assert!(

@@ -238,7 +238,7 @@ pub fn package_detail(
         file_links(
             &entry.source,
             &entry.target,
-            &entry.folder_name(),
+            &entry.name,
             &entry.ignores,
             Some(&global),
         )

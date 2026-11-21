@@ -93,7 +93,7 @@ Borrow seams from mature TUIs (e.g. herdr / ratatui event-driven templates), not
 1. **State ≠ runtime ≠ render** — pure data and mutations stay testable without a real terminal; async/PTY/process handles live outside paint.
 2. **Do not mutate during paint** — layout/viewport/scroll bookkeeping happens in update/prepare; `render` should draw from a snapshot (`&` state) where practical.
 3. **App-level feedback** — toasts and similar chrome live on `AppContext` / `App`, not buried in one screen (see toast overlay + `tick_toast`).
-4. **Keep custom domain widgets** — `FileBrowserWidget`, `GroupListWidget`, themed chrome stay ours; prefer core ratatui widgets (`Clear`, `Gauge`, `List`, …) for generic UI.
+4. **Keep custom domain widgets** — `FileBrowserWidget`, `PackageList`, themed chrome stay ours; prefer core ratatui widgets (`Clear`, `Gauge`, `List`, …) for generic UI.
 
 ### Ratatui references
 
@@ -168,7 +168,7 @@ All screens implement `Component` trait (`components/mod.rs`). Navigation via `T
 App-level `AppContext::toast` + `show_toast` / `tick_toast`. Rendered with ratatui `Clear` + bordered `Paragraph` in `ui/toast.rs` after footer. Does **not** capture input. Newer toast replaces older. Wired from non-modal success paths (e.g. config save).
 
 ### Popup Pattern
-Modal dialogs stored as `Option<SomeState>` fields on the component. Rendered as overlays in `render()`. `handle_key()` checks popup state first (returns early if active). Examples: `PickerState`, `GroupDialog`.
+Modal dialogs stored as `Option<SomeState>` fields on the component. Rendered as overlays in `render()`. `handle_key()` checks popup state first (returns early if active). Examples: `PickerState`, `Membership`.
 
 ### Config Editing Pattern
 `PendingSettings` snapshot created on first entry → mutations go to pending → `save_config()` applies to `ctx.core` + persists to disk. Global keys (`t`/`v`/`d`/`n`/`a`/`o`) intercepted via `Transition::Handled` to prevent bypassing the snapshot.
@@ -177,7 +177,7 @@ Modal dialogs stored as `Option<SomeState>` fields on the component. Rendered as
 Components with text input or modal popups override `fn input_mode(&self) -> InputMode` (default: `Normal`). `App::component_dispatch` skips global shortcuts when mode is `Modal` or `TextInput`. Example: `AdoptNamePromptComponent` → `TextInput`, `SettingsComponent` → dynamic based on `picker`/`dialog` state.
 
 ### Path Resolution
-Always via `resolve_path(path, config_dir, home_dir)` from `andre-core/src/path.rs`. Source/target existence checked by `get_group_source()` / `get_group_target()` in config.
+Always via `resolve_path(path, config_dir, home_dir)` from `andre-core/src/path.rs`, called by the `Config` methods: `packages_dir()` (the packages folder), `target_dir()` (where links go) and `package(name)` / `package_entries()` (one package or all of them, with `source`, `target` and `ignores`). Screens get them through `AppContext::package_entries()` / `package(name)`, never `resolve_path` directly. Existence is checked by `validate_sources()`.
 
 ### Theme Colors
 `ThemeColors::from_theme(theme)` → 13 field color struct: `bg`, `border`, `accent`, `on_accent`, `ok`, `warn`, `err`, `text`, `text_dim`, `value`, `key`, `selection`, and `banner: [Color; 5]`. Roles name purpose, not importance: `text` is body text, `text_dim` is secondary text that must still be read, `accent` is brand and focus, `value` is user data, `key` is hotkey letters, `ok`/`warn`/`err` are status only. `on_accent` is the text on an `accent` fill (the action pill). 8 themes cycled with `t`.
@@ -207,8 +207,8 @@ this:
 1. **`HOME` injection via `App::with_home`.** Config-discovery and persistence
    tests must call `App::with_home` (or `make_test_app`) so the test's `$HOME`
    is the hermetic `TempDir`, never the developer's real home. The original fix
-   (`test_add_group_then_save_persists` was failing on minimal Linux CI images
-   with empty `/root`) was caused by this leak.
+   (a save-then-reload test was failing on minimal Linux CI images with empty
+   `/root`) was caused by this leak.
 2. **No process-global `HOME`/`PATH` mutation under nextest parallelism.**
    nextest and `cargo test` run multiple test binaries in parallel, but tests
    within a single binary can also run in parallel threads. Tests that mutate
@@ -268,7 +268,7 @@ PYEOF
 |------|------|
 | Component trait + Transition + InputMode | `andre/src/components/mod.rs` |
 | App entry, dispatch, global keys | `andre/src/app.rs` |
-| Settings component + group dialogs | `andre/src/components/settings/mod.rs` |
+| Settings component + dialogs | `andre/src/components/settings/mod.rs` |
 | Settings rendering + popups | `andre/src/ui/settings.rs` |
 | Config loading + path resolution | `andre-core/src/config.rs` |
 | Stow command building | `andre-core/src/stow.rs` |

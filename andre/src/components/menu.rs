@@ -270,12 +270,6 @@ impl MainMenuComponent {
         ctx.config_path.hash(&mut hasher);
         ctx.core.config.packages.hash(&mut hasher);
         ctx.core.config.target.hash(&mut hasher);
-        // Interim: a config with groups still yields entries until G10 removes groups.
-        for (name, group) in &ctx.core.config.groups {
-            name.hash(&mut hasher);
-            group.source.hash(&mut hasher);
-            group.target.hash(&mut hasher);
-        }
         for profile in ctx.core.profiles.iter() {
             profile.name.hash(&mut hasher);
             profile.includes.hash(&mut hasher);
@@ -649,10 +643,6 @@ mod tests {
         assert_eq!(fact(&detail, "packages"), "2");
         assert_eq!(fact(&detail, "stowed"), "\u{2013}", "nothing cached yet");
         assert_eq!(fact(&detail, "links to"), "~");
-        assert!(
-            detail.facts.iter().all(|(label, _)| *label != "groups"),
-            "no groups fact"
-        );
     }
 
     #[test]
@@ -747,21 +737,6 @@ mod tests {
         menu.update(&mut ctx);
         assert_eq!(menu.items().first(), Some(&MenuItem::Setup));
         assert_eq!(menu.item_count(), MenuItem::ALL.len() + 1);
-    }
-
-    #[test]
-    fn test_grouped_package_holding_the_config_folder_offers_set_up() {
-        let (dir, mut ctx) = flat_bootstrap_ctx();
-        let mut config = Config::default_empty();
-        config.add_group(
-            "dotfiles".into(),
-            dir.path().join("dotfiles").display().to_string(),
-            ctx.home_dir.display().to_string(),
-        );
-        ctx.core.config = config;
-        let mut menu = MainMenuComponent::default();
-        menu.update(&mut ctx);
-        assert_eq!(menu.items().first(), Some(&MenuItem::Setup));
     }
 
     #[test]

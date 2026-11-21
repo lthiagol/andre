@@ -345,7 +345,7 @@ fn strip_comment(line: &str) -> &str {
     line
 }
 
-/// One regex for all patterns of one kind. Each pattern is its own group, so a
+/// One regex for all patterns of one kind. Each pattern is wrapped on its own, so a
 /// pattern cannot change how the others parse.
 fn compile(patterns: &[String], wrap: impl Fn(&str) -> String) -> Result<Option<Regex>> {
     if patterns.is_empty() {

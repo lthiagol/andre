@@ -62,7 +62,7 @@ pub fn spawn_execution(
                 Err(_elapsed) => Some("Operation timed out after 60s".to_string()),
             };
             let exec_result = ExecutionResult {
-                name: op.name.clone(),
+                name: op.package.clone(),
                 success: error_message.is_none(),
                 error_message,
             };
@@ -107,8 +107,7 @@ pub fn build_execution_results(
                 skipped.push(skip("target directory not found"))
             }
             Some(entry) => ops.push(LinkOp {
-                name: entry.name.clone(),
-                package: entry.folder_name(),
+                package: entry.name.clone(),
                 source: entry.source.clone(),
                 target: entry.target.clone(),
                 flags: *flags,
@@ -183,7 +182,7 @@ mod tests {
 
         assert!(skipped.is_empty());
         assert_eq!(ops.len(), 1);
-        assert_eq!(ops[0].name, "test-pkg");
+        assert_eq!(ops[0].package, "test-pkg");
         assert_eq!(ops[0].package, "test-pkg");
         assert_eq!(ops[0].source, packages);
     }
@@ -229,7 +228,7 @@ mod tests {
             &StowFlags::default(),
         );
 
-        let names: Vec<&str> = ops.iter().map(|op| op.name.as_str()).collect();
+        let names: Vec<&str> = ops.iter().map(|op| op.package.as_str()).collect();
         assert_eq!(names, ["gamma", "alpha"]);
     }
 }

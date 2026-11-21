@@ -16,9 +16,7 @@ use crate::stow::{execute_stow, linkable_files};
 /// A single package link operation. All fields the engines need to plan/apply.
 #[derive(Debug, Clone)]
 pub struct LinkOp {
-    /// The package's name as the UI and logs show it: `nvim` (interim: `home/nvim` for a
-    /// `groups:` config).
-    pub name: String,
+    /// The package folder name, as `stow` takes it: `nvim`.
     pub package: String,
     pub source: PathBuf,
     pub target: PathBuf,
@@ -323,7 +321,6 @@ mod tests {
 
     fn op(source: PathBuf, target: PathBuf, action: StowAction) -> LinkOp {
         LinkOp {
-            name: "home".into(),
             package: "bash-env".into(),
             source,
             target,
@@ -534,7 +531,6 @@ mod tests {
         // Stow A so target/.bashrc → pkg-a.
         engine
             .apply(&LinkOp {
-                name: "home".into(),
                 package: "pkg-a".into(),
                 source: source.clone(),
                 target: target.clone(),
@@ -557,7 +553,6 @@ mod tests {
         // Unstow B must NOT remove A's link (ownership).
         engine
             .apply(&LinkOp {
-                name: "home".into(),
                 package: "pkg-b".into(),
                 source: source.clone(),
                 target: target.clone(),
@@ -582,7 +577,6 @@ mod tests {
         // Stow B over A's link must conflict, not steal.
         let err = engine
             .apply(&LinkOp {
-                name: "home".into(),
                 package: "pkg-b".into(),
                 source,
                 target,
@@ -638,7 +632,6 @@ mod tests {
 
     fn stow_op(source: PathBuf, target: PathBuf) -> LinkOp {
         LinkOp {
-            name: "home".into(),
             package: "bash-env".into(),
             source,
             target,

@@ -1,4 +1,4 @@
-//! The flat package list: one row per package, in name order, with no groups. A row has an
+//! The flat package list: one row per package, in name order. A row has an
 //! optional checkbox, a status glyph, the name and right-hand text. [`PackageList`] owns the
 //! rows and their marks and holds no terminal state; [`package_line`] paints one row.
 

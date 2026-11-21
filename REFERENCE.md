@@ -87,8 +87,8 @@ centred; the bottom bar shows the current screen's keys, the active theme
 <a name="features"></a>
 ## ✨ Features
 
-- **Multi-group config** — Define multiple stow targets (e.g., `~`, `~/.config`) each with its own source directory
-- **Interactive package selection** — Browse packages per group, select/unselect with Space, smart pre-selection based on action
+- **One packages folder** — Every subfolder is a package; `target:` says where links go (default: your home folder)
+- **Interactive package selection** — Browse the packages in one list, select/unselect with Space (`*` for all), smart pre-selection based on action
 - **Live settings toggles** — Toggle dry-run, verbosity, adopt, no-folding on the fly from any screen
 - **Config editor built-in** — Edit `andre.yml` from within the TUI: pick the packages folder, change global defaults and the global ignore list
 - **Headless mode (`--yolo`)** — Auto-stow all packages without interaction, for scripts and automation
@@ -226,7 +226,7 @@ the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 | **set up this machine** | set up / `⌂` | Only while the set-up offer applies: links this config folder into `~/.config/andre` (`0`) |
 | **profiles** | profiles / `◈` | Named sets of packages; run the current action on one (see Profiles) |
 | **packages** | link / `⇢` | Select packages, then run the current action (stow, restow or unstow) |
-| **new package** | new package / `+` | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
+| **new package** | new package / `+` | Create a package: empty, or from files that already sit in the target; sets its ignore files and profiles |
 | **unstow** | unlink / `≠` | Mark the links to remove in the target folder, then review and remove them together |
 | **verify status** | check / `✓` | View stow status of every package |
 | **settings** | gear / `≡` | Edit the packages folder, theme, icons and global options |
@@ -270,6 +270,9 @@ target: "~"                # optional: where every package links (default: your 
   `no packages folder: set \`packages:\` in andre.yml`.
 - **Missing folder**: a `packages:` folder that is not on disk stops startup with
   `Packages folder not found: <path>`.
+- **Old `groups:` files**: a file with a `groups:` key does not load. The error names
+  `packages:` and `target:` as its replacement, and a profile ref like `home/nvim` is a
+  load issue: refs are plain package names (`nvim`).
 
 <a name="fresh-machine"></a>
 ### Fresh Machine
@@ -288,6 +291,15 @@ action `stow`, whatever the global action is; the global action is not changed. 
 
 ```bash
 andre --config-folder ~/src/dotfiles/config/andre/.config/andre   # then pick set up this machine
+```
+
+When the repo root is the packages folder, the config inside the `andre` package points
+back up to it. Relative paths start at the folder that holds `andre.yml`, so the same
+file works through the `~/.config/andre` link:
+
+```yaml
+# ~/src/dotfiles/andre/.config/andre/andre.yml
+packages: ../../..   # the repo root: every folder in it is a package (.git is skipped)
 ```
 
 ### Profiles
@@ -324,7 +336,7 @@ packages:                                   # optional: package names
   for that profile. The message names the cycle path or the missing profile.
 - **Missing packages**: a ref to a package that does not exist is kept and shown as
   `missing`, with a warning at startup. It is not fatal.
-- Renaming a package or group through andre rewrites the refs in every profile;
+- Renaming a package through andre rewrites its refs in every profile;
   deleting a package removes its refs. Deleting a profile removes the includes that
   name it.
 - Each profile file is written whole, through a temp file in the same folder. If a
@@ -517,8 +529,8 @@ show as missing. In a pattern list, `+` adds, `Enter` edits, `x` deletes. Picker
 move, `Enter` keeps, `Esc` reverts. The folder picker: `→` opens, `←` goes up, `Enter`
 chooses the highlighted folder, `Esc` cancels.
 
-`w` refuses to write a config that would not load: a `groups:` config (the interim, until
-groups are removed) cannot also take a `packages:` folder.
+`w` refuses to write a config that would not load, such as a `target:` inside the packages
+folder. A file still written with `groups:` does not load at all (see [Packages Folder](#packages-folder)).
 
 ### Dialogs
 
@@ -585,7 +597,7 @@ Test individual functions in isolation.
 
 | Module | What's tested |
 |--------|---------------|
-| `config.rs` | Load, save, defaults, groups, validation |
+| `config.rs` | Load, save, defaults, validation |
 | `stow.rs` | Argument building, status checks, symlink unlinking |
 | `adopt.rs` | Target folder listing for the file picker and unstow browse |
 | `state.rs` | Theme cycling, action strings, state defaults |
@@ -611,7 +623,7 @@ Located at `tests/e2e/<NN>-<name>/`. Each contains `andre.yml`, optionally `pack
 | # | Scenario | What it Verifies |
 |---|----------|------------------|
 | 01 | basic-stow | Basic symlink creation |
-| 02 | multi-package-one-group | Batch stow of several packages |
+| 02 | multi-package | Batch stow of several packages |
 | 03 | two-profiles | `--yolo --profile` links only that profile's packages |
 | 04 | nested-directories | Directory structure preservation |
 | 05 | hidden-dotfiles | Dotfile handling |
@@ -664,7 +676,7 @@ and the change applies once you save the config.
 | **nerd** | Nerd Font glyphs | Your terminal font is a [Nerd Font](https://www.nerdfonts.com/) |
 | **unicode** | `✓` / `✗` | Any other font. Common symbols, one column wide each |
 
-The set also draws the checkboxes on the group, package and file lists (`■` / `□`
+The set also draws the checkboxes on the package and file lists (`■` / `□`
 in unicode) and the package status glyphs (`✓` stowed, `→` unstowed, `◐` partial,
 `✗` conflict, `?` missing, `∅` empty in unicode; `!` invalid in both sets).
 

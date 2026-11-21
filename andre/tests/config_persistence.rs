@@ -148,9 +148,6 @@ fn test_packages_folder_chosen_then_save_writes_packages_and_no_groups() {
 
     let config = read_config(&app);
     assert_eq!(config.packages.as_deref(), Some(pick.to_str().unwrap()));
-    assert!(config.groups.is_empty());
-    let on_disk = std::fs::read_to_string(&app.ctx.config_path).unwrap();
-    assert!(!on_disk.contains("groups"), "no groups key: {on_disk}");
 }
 
 /// Puts the top folder picker's cursor on the folder called `name`.

@@ -13,7 +13,7 @@ use crate::config::Config;
 /// The package to stow so that plain `andre` finds the loaded config folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bootstrap {
-    /// The package's name as the UI shows it: `andre` (interim: `config/andre`).
+    /// The package's name as the UI shows it: `andre`.
     pub package: String,
     /// `~/.config/andre` under the home directory: the path the package links to.
     pub link: PathBuf,
