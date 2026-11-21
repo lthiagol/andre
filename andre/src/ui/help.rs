@@ -85,21 +85,16 @@ fn items(colors: &ThemeColors) -> Vec<ListItem<'static>> {
         ListItem::new(Line::from(vec![h("Workflow", colors)])),
         ListItem::new(Line::from(vec![
             Span::raw("  1.  "),
-            k("Select Groups", colors),
-            Span::raw("    \u{2192}  choose which groups to stow"),
+            k("Packages", colors),
+            Span::raw("         \u{2192}  mark groups and packages to run"),
         ])),
         ListItem::new(Line::from(vec![
             Span::raw("  2.  "),
-            k("Select Packages", colors),
-            Span::raw("  \u{2192}  review and toggle packages"),
-        ])),
-        ListItem::new(Line::from(vec![
-            Span::raw("  3.  "),
             k("Confirm", colors),
             Span::raw("          \u{2192}  review stow commands"),
         ])),
         ListItem::new(Line::from(vec![
-            Span::raw("  4.  "),
+            Span::raw("  3.  "),
             k("Execute", colors),
             Span::raw("          \u{2192}  run stow and see results"),
         ])),

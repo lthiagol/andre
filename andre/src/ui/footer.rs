@@ -199,12 +199,7 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
             Hint::new("1\u{2013}8", "jump", PRIO_JUMP),
             enter("select"),
         ],
-        "GroupSelect" | "PackageSelect" => vec![
-            arrows("navigate"),
-            space("toggle"),
-            enter("confirm"),
-            esc("cancel"),
-        ],
+        "Packages" => vec![arrows("navigate"), space("mark"), enter("run"), esc("back")],
         "Status" | "Execute" => vec![enter("continue")],
         "Help" => vec![esc("back")],
         "Settings" => vec![arrows("navigate"), enter("group menu"), esc("back")],
@@ -302,6 +297,36 @@ pub fn leave_dialog_hints() -> Vec<Hint> {
     ]
 }
 
+/// Hints for the packages browser. `run` is the Enter label (`stow 3`), or `None` when Enter
+/// does nothing. `on_row` says there is a row to mark and fold; `on_package` that the cursor
+/// is on a package, which has profiles to edit.
+pub fn packages_hints(run: Option<String>, on_row: bool, on_package: bool) -> Vec<Hint> {
+    let mut hints = Vec::new();
+    if let Some(label) = run {
+        hints.push(Hint::new("Enter", label, PRIO_PRIMARY));
+    }
+    if on_row {
+        hints.push(Hint::new("Space", "mark", PRIO_VERB));
+    }
+    if on_package {
+        hints.push(Hint::new("p", "profiles", PRIO_VERB));
+    }
+    if on_row {
+        hints.push(Hint::new("\u{2190}\u{2192}", "fold", PRIO_VERB));
+    }
+    hints.push(Hint::new("Esc", "back", PRIO_BACK));
+    hints
+}
+
+/// Hints for the profile membership dialog.
+pub fn membership_dialog_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("Space", "toggle", PRIO_VERB),
+        Hint::new("Enter", "save", PRIO_PRIMARY),
+        Hint::new("Esc", "cancel", PRIO_BACK),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -319,10 +344,9 @@ mod tests {
     /// Inner width at the 80-column minimum: border and margin take four.
     const INNER_WIDTH: usize = 76;
 
-    const SCREENS: [&str; 16] = [
+    const SCREENS: [&str; 15] = [
         "MainMenu",
-        "GroupSelect",
-        "PackageSelect",
+        "Packages",
         "Settings",
         "Status",
         "Execute",

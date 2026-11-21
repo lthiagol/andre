@@ -1,14 +1,12 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 use ratatui::Terminal;
 
 use andre::app::App;
 use andre::theme::{contrast_ratio, ThemeColors};
 use andre::ui::icons::{Icons, NERD, UNICODE};
-use andre::ui::packages::{align_columns, render_package_select, FlatItem};
 use andre::ui::status_style::{status_color, status_word};
 use andre_core::{IconSet, StowAction, StowStatus, Theme};
 
@@ -100,19 +98,12 @@ fn push_screen(app: &mut App, name: &str) {
         "Settings" => app.component_stack.push(Box::new(
             andre::components::settings::SettingsComponent::default(),
         )),
-        "GroupSelect" => app.component_stack.push(Box::new(
-            andre::components::stow::GroupSelectComponent::default(),
+        "Packages" => app.component_stack.push(Box::new(
+            andre::components::packages::PackagesComponent::default(),
         )),
         "Profiles" => app.component_stack.push(Box::new(
             andre::components::profiles::ProfilesComponent::default(),
         )),
-        "PackageSelect" => {
-            // Skip the one-second scanning splash so the package rows are drawn.
-            let mut packages =
-                andre::components::stow::PackageSelectComponent::new(vec!["home".to_string()]);
-            packages.entered_at = None;
-            app.component_stack.push(Box::new(packages));
-        }
         "Status" => app.component_stack.push(Box::new(
             andre::components::status::StatusComponent::default(),
         )),
@@ -164,7 +155,7 @@ fn screen_names() -> Vec<&'static str> {
     vec![
         "MainMenu",
         "Profiles",
-        "GroupSelect",
+        "Packages",
         "Settings",
         "Status",
         "Help",
@@ -785,14 +776,13 @@ fn test_footer_context_hints_per_screen_family() {
     // (screen push name or "" for MainMenu, distinctive footer fragment)
     let cases: &[(&str, &str)] = &[
         ("", "navigate"),                 // MainMenu
-        ("GroupSelect", "toggle"),        // multi-select family
+        ("Packages", "mark"),             // packages browser
         ("Settings", "group menu"),       // settings
         ("Help", "back"),                 // help
         ("Confirm", "confirm"),           // confirm y/n
         ("Execute", "continue"),          // status/execute family
         ("AdoptTargetSelect", "select"),  // adopt target family
         ("UnstowTargetSelect", "select"), // unstow target family
-        ("PackageSelect", "toggle"),      // package multi-select family
     ];
 
     for (name, fragment) in cases {
@@ -800,7 +790,7 @@ fn test_footer_context_hints_per_screen_family() {
         if !name.is_empty() {
             push_screen(&mut app, name);
         }
-        let buf = render_app(&mut app, 120, 24);
+        let buf = render_updated(&mut app, 120, 24);
         assert!(
             line_contains(&buf, fragment),
             "footer hint missing for {name:?}: expected fragment {fragment:?}"
@@ -1376,10 +1366,10 @@ fn test_main_menu_keeps_the_big_banner_and_other_screens_get_one_row() {
 #[test]
 fn test_compact_title_shows_the_breadcrumb() {
     let (mut app, _) = make_test_app();
-    push_screen(&mut app, "GroupSelect");
+    push_screen(&mut app, "Packages");
     let buf = render_app(&mut app, 80, 24);
     assert!(
-        row_text(&buf, 1).contains("andre  Main > Groups"),
+        row_text(&buf, 1).contains("andre  Main > Packages"),
         "compact title lost the breadcrumb: {:?}",
         row_text(&buf, 1)
     );
@@ -1489,9 +1479,8 @@ fn test_detail_text_is_inset_from_the_panel_border() {
 
 /// Every screen the render tests can draw, with the cursor row that `push_screen`
 /// leaves selected. Each one is checked for the shared cursor style.
-const CURSOR_SCREENS: [&str; 7] = [
-    "GroupSelect",
-    "PackageSelect",
+const CURSOR_SCREENS: [&str; 6] = [
+    "Packages",
     "Settings",
     "AdoptTargetSelect",
     "UnstowTargetSelect",
@@ -1625,8 +1614,7 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
     // (screen, lowercase title, the title-case title it replaced). Help and Settings
     // have no old panel title to check: the banner draws their breadcrumb.
     let cases = [
-        ("GroupSelect", "select groups", "Select Groups"),
-        ("PackageSelect", "select packages", "Select Packages"),
+        ("Packages", "packages 1", "Select Packages"),
         ("Status", "stow status", "Stow Status"),
         ("Settings", "settings", ""),
         ("Help", "help", ""),
@@ -1665,7 +1653,7 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
     }
 
     // Legends are titled like every other panel and have no header row.
-    for screen in ["PackageSelect", "Status", "UnstowBrowse"] {
+    for screen in ["Status", "UnstowBrowse"] {
         let (mut app, tmp) = make_test_app();
         add_status_fixtures(tmp.path());
         push_screen(&mut app, screen);
@@ -1686,25 +1674,26 @@ fn test_group_checkboxes_follow_the_icon_set() {
         (IconSet::Unicode, UNICODE.checkbox_on, UNICODE.checkbox_off),
     ];
     for (icons, on, off) in cases {
-        for (selected, glyph, other) in [(vec!["home".to_string()], on, off), (Vec::new(), off, on)]
-        {
+        // The group row is marked when all its packages are, and off when none are.
+        for (marked, glyph, other) in [(true, on, off), (false, off, on)] {
             let (mut app, _tmp) = make_test_app();
             app.ctx.core.icons = icons;
-            let mut groups = andre::components::stow::GroupSelectComponent::default();
-            groups.selected = selected;
-            app.component_stack.push(Box::new(groups));
+            push_screen(&mut app, "Packages");
+            app.update_components();
+            if marked {
+                app.component_dispatch(space_key());
+            }
             let buf = render_updated(&mut app, 80, 24);
-            let row = row_containing(&buf, "home").expect("group row missing");
+            let border = list_border(&buf, "packages 1");
+            let row = (0..buf.area().height)
+                .map(|y| list_text(&buf, y, border))
+                .find(|text| text.contains("home"))
+                .expect("group row missing");
             assert!(
                 row.contains(glyph),
                 "{icons:?}: checkbox {glyph:?} missing: {row:?}"
             );
             assert!(!row.contains(other), "{icons:?}: wrong checkbox in {row:?}");
-            let text = buffer_text(&buf);
-            assert!(
-                !text.contains("[x]") && !text.contains("[ ]"),
-                "text checkboxes are back"
-            );
         }
     }
 }
@@ -1714,11 +1703,15 @@ fn test_package_status_glyphs_follow_the_icon_set() {
     for icons in [IconSet::Nerd, IconSet::Unicode] {
         let (mut app, _tmp) = make_test_app();
         app.ctx.core.icons = icons;
-        push_screen(&mut app, "PackageSelect");
+        push_screen(&mut app, "Packages");
         let buf = render_updated(&mut app, 80, 24);
         // The fixture package is not linked yet, so it reads as unstowed.
         let glyph = Icons::for_set(icons).status(StowStatus::Unstowed);
-        let row = row_containing(&buf, "test  home").expect("package row missing");
+        let border = list_border(&buf, "packages 1");
+        let row = (0..buf.area().height)
+            .map(|y| list_text(&buf, y, border))
+            .find(|text| text.contains("test"))
+            .expect("package row missing");
         assert!(
             row.contains(glyph),
             "{icons:?}: status glyph {glyph:?} missing: {row:?}"
@@ -1795,8 +1788,8 @@ fn glyph_on_row(buf: &Buffer, y: u16, glyph: &str) -> Option<(u16, Color)> {
         .map(|x| (x, buf[(x, y)].fg))
 }
 
-/// The package status vocabulary is the same on the package select and the status
-/// screens: one glyph, one colour and one lowercase word per status.
+/// The package status vocabulary is the same on the packages browser and the status screens:
+/// one glyph, one colour and one lowercase word per status.
 #[test]
 fn test_package_and_status_screens_share_glyph_colour_and_word() {
     for set in [IconSet::Nerd, IconSet::Unicode] {
@@ -1806,11 +1799,12 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
         add_status_fixtures(tmp.path());
         packages_app.ctx.core.icons = set;
         let colors = ThemeColors::from_theme(packages_app.ctx.core.theme);
-        push_screen(&mut packages_app, "PackageSelect");
+        push_screen(&mut packages_app, "Packages");
         let packages = render_updated(&mut packages_app, 80, 25);
         // The cursor row keeps its status glyph only where the colour reads at 3:1, so
         // its colour is checked by the cursor-row test instead.
         let cursor_row = find_accent(&packages).map(|(_, y)| y);
+        let border = list_border(&packages, "packages 6");
 
         let (mut status_app, tmp) = make_test_app();
         add_status_fixtures(tmp.path());
@@ -1824,24 +1818,24 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
             let word = status_word(state);
             let colour = status_color(&colors, state);
 
-            let package_row = (0..packages.area().height).find(|&y| {
-                let text = row_text(&packages, y);
-                text.contains(name) && text.contains("home")
-            });
-            let status_row = (0..status.area().height)
-                .find(|&y| row_text(&status, y).contains(&format!("{name}  {word}")));
-            let package_y = package_row.unwrap_or_else(|| panic!("{set:?}: {name} row missing"));
-            let status_y =
-                status_row.unwrap_or_else(|| panic!("{set:?}: {name} status row missing"));
+            let package_y = (0..packages.area().height)
+                .find(|&y| list_text(&packages, y, border).contains(name))
+                .unwrap_or_else(|| panic!("{set:?}: {name} row missing"));
+            let status_y = (0..status.area().height)
+                .find(|&y| row_text(&status, y).contains(&format!("{name}  {word}")))
+                .unwrap_or_else(|| panic!("{set:?}: {name} status row missing"));
 
             let (_, status_fg) = glyph_on_row(&status, status_y, glyph)
                 .unwrap_or_else(|| panic!("{set:?}: {name}: status glyph {glyph:?} missing"));
             assert_eq!(status_fg, colour, "{set:?}: {name} on the status screen");
 
             if Some(package_y) != cursor_row {
-                let (_, package_fg) = glyph_on_row(&packages, package_y, glyph)
+                let (_, package_fg) = list_glyph_on_row(&packages, package_y, border, glyph)
                     .unwrap_or_else(|| panic!("{set:?}: {name}: glyph {glyph:?} missing"));
-                assert_eq!(package_fg, colour, "{set:?}: {name} on the package select");
+                assert_eq!(
+                    package_fg, colour,
+                    "{set:?}: {name} on the packages browser"
+                );
                 checked += 1;
             }
         }
@@ -1850,6 +1844,14 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
             "{set:?}: only {checked} package rows were checked"
         );
     }
+}
+
+/// The first cell left of `border` on row `y` drawn with `glyph`, as (column, foreground).
+/// Only the list pane is searched, so a glyph in the detail beside it is not taken.
+fn list_glyph_on_row(buf: &Buffer, y: u16, border: u16, glyph: &str) -> Option<(u16, Color)> {
+    (0..border)
+        .find(|&x| buf[(x, y)].symbol() == glyph)
+        .map(|x| (x, buf[(x, y)].fg))
 }
 
 /// A package whose name is 60 columns wide, so the package column has to be cut.
@@ -1866,8 +1868,8 @@ fn write_package(source: &std::path::Path, package: &str, file: &str) {
     std::fs::write(dir.join(file), "x").unwrap();
 }
 
-/// Two groups, so the group column has two names. `home` holds the status fixtures and
-/// the 60-column package. `workstation` holds `deploy` and the CJK package.
+/// Two groups. `home` holds the status fixtures and the 60-column package. `workstation`
+/// holds `deploy` and the CJK package.
 fn make_two_group_app() -> (App, tempfile::TempDir) {
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("andre.yml");
@@ -1901,129 +1903,70 @@ groups:
     (app, tmp)
 }
 
-fn push_packages(app: &mut App, groups: &[&str]) {
-    let groups = groups.iter().map(|group| group.to_string()).collect();
-    let mut packages = andre::components::stow::PackageSelectComponent::new(groups);
-    packages.entered_at = None;
-    app.component_stack.push(Box::new(packages));
+/// The text of row `y` left of column `border`: the list pane, without the detail beside it.
+fn list_text(buf: &Buffer, y: u16, border: u16) -> String {
+    (0..border).map(|x| buf[(x, y)].symbol()).collect()
 }
 
-/// Each package row of `make_two_group_app`: the text that finds it, its group, its
-/// status, and whether it has files to show as detail.
-fn two_group_rows() -> Vec<(String, &'static str, StowStatus, bool)> {
-    let mut rows: Vec<_> = STATUS_FIXTURES
-        .iter()
-        .map(|&(name, state)| (name.to_string(), "home", state, name != "hollow"))
-        .collect();
-    // The long name is cut to 32 columns: 31 characters and `…`.
-    rows.push((
-        format!("{}…", "a".repeat(31)),
-        "home",
-        StowStatus::Unstowed,
-        true,
-    ));
-    rows.push((
-        "deploy".to_string(),
-        "workstation",
-        StowStatus::Unstowed,
-        true,
-    ));
-    rows.push(("漢".to_string(), "workstation", StowStatus::Unstowed, true));
-    rows
-}
-
-/// The first row where `locator` is drawn, matched cell by cell so that a wide character
-/// counts as two columns.
-fn package_row(buf: &Buffer, locator: &str) -> u16 {
-    (0..buf.area().height)
-        .find(|&y| column_of(buf, y, locator).is_some())
-        .unwrap_or_else(|| panic!("{locator} row missing"))
-}
-
-/// On the package select, the group, status word and detail columns line up on every
-/// package row, including the rows with a 60-column name and a CJK name.
-#[test]
-fn test_package_rows_align_group_status_and_detail_columns() {
-    let (mut app, _tmp) = make_two_group_app();
-    push_packages(&mut app, &["home", "workstation"]);
-    // At 80x24 only six package rows fit beside the legend, so this needs more height.
-    let buf = render_updated(&mut app, 80, 30);
-
-    let mut group_cols = Vec::new();
-    let mut word_cols = Vec::new();
-    let mut detail_cols = Vec::new();
-    for (locator, group, state, has_detail) in two_group_rows() {
-        let y = package_row(&buf, &locator);
-        group_cols
-            .push(column_of(&buf, y, group).unwrap_or_else(|| panic!("{locator}: group missing")));
-        let word = status_word(state);
-        word_cols
-            .push(column_of(&buf, y, &word).unwrap_or_else(|| panic!("{locator}: {word} missing")));
-        if has_detail {
-            detail_cols
-                .push(column_of(&buf, y, "(").unwrap_or_else(|| panic!("{locator}: no detail")));
-        }
-    }
-    assert!(
-        group_cols.windows(2).all(|pair| pair[0] == pair[1]),
-        "group names start at different columns: {group_cols:?}"
-    );
-    assert!(
-        word_cols.windows(2).all(|pair| pair[0] == pair[1]),
-        "status words start at different columns: {word_cols:?}"
-    );
-    assert!(
-        detail_cols.windows(2).all(|pair| pair[0] == pair[1]),
-        "detail columns start at different columns: {detail_cols:?}"
-    );
-}
-
-/// A 60-column package name is cut with `…`, and no row loses its status word at 80x25.
-#[test]
-fn test_long_package_name_is_cut_and_every_status_word_stays_visible() {
-    let (mut app, _tmp) = make_two_group_app();
-    push_packages(&mut app, &["home"]);
-    // The six `home` packages fill the 80x25 list exactly, so every row is on screen.
-    let buf = render_updated(&mut app, 80, 25);
-
-    let long_row = package_row(&buf, &format!("{}…", "a".repeat(31)));
-    assert!(
-        column_of(&buf, long_row, &long_package()).is_none(),
-        "the full 60-column name is drawn"
-    );
-    for (locator, group, state, _) in two_group_rows() {
-        if group != "home" {
-            continue;
-        }
-        let y = package_row(&buf, &locator);
-        let word = status_word(state);
-        assert!(
-            column_of(&buf, y, &word).is_some(),
-            "{locator}: status word {word} cut off"
+/// A config with one group `home` that holds `count` packages, each with one file.
+fn make_package_count_app(count: usize) -> (App, tempfile::TempDir) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("andre.yml");
+    std::fs::write(
+        &path,
+        "global:\n  stow:\n    verbosity: 0\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
+    )
+    .unwrap();
+    for i in 0..count {
+        write_package(
+            &tmp.path().join("dotfiles/home"),
+            &format!("pkg{i:02}"),
+            ".rc",
         );
     }
+    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
+    (app, tmp)
 }
 
-/// A CJK package name is padded by its display width, so its group column matches the
-/// ASCII row in the same group.
+/// Each package row keeps its status glyph in one column, whatever its name is. The 60-column
+/// name is cut inside the list, and the CJK name is two columns wide per character.
 #[test]
-fn test_cjk_package_name_keeps_the_group_column_in_line() {
+fn test_long_and_cjk_package_names_keep_the_list_columns_in_line() {
     let (mut app, _tmp) = make_two_group_app();
-    push_packages(&mut app, &["home", "workstation"]);
-    let buf = render_updated(&mut app, 80, 30);
+    app.ctx.core.icons = IconSet::Unicode;
+    push_screen(&mut app, "Packages");
+    let buf = render_updated(&mut app, 80, 24);
+    let border = list_border(&buf, "packages 8");
+    let glyph = Icons::for_set(IconSet::Unicode).status(StowStatus::Unstowed);
 
-    let cjk = package_row(&buf, "漢");
-    let ascii = package_row(&buf, "deploy");
-    assert_eq!(
-        column_of(&buf, cjk, "workstation"),
-        column_of(&buf, ascii, "workstation"),
-        "the CJK row's group column differs from the ASCII row's"
+    let row_of = |locator: &str| {
+        (0..buf.area().height)
+            .find(|&y| list_text(&buf, y, border).contains(locator))
+            .unwrap_or_else(|| panic!("{locator} row missing"))
+    };
+    let glyph_column = |y: u16| {
+        (0..border)
+            .find(|&x| buf[(x, y)].symbol() == glyph)
+            .unwrap_or_else(|| panic!("status glyph missing on row {y}"))
+    };
+
+    let long = row_of("aaaa");
+    assert!(
+        list_text(&buf, long, border).contains('\u{2026}'),
+        "the long name is not cut"
     );
-    assert!(column_of(&buf, cjk, &status_word(StowStatus::Unstowed)).is_some());
+    assert_eq!(
+        buf[(border, long)].symbol(),
+        "\u{2502}",
+        "the long name runs past the border"
+    );
+    assert_eq!(
+        glyph_column(row_of("deploy")),
+        glyph_column(row_of("漢")),
+        "the CJK name moves the status column"
+    );
 }
 
-/// The column of the top-right corner of the panel whose top border shows `title`:
-/// the panel's right border.
 fn panel_right_column(buf: &Buffer, title: &str) -> u16 {
     let y = (0..buf.area().height)
         .find(|&y| row_text(buf, y).contains(title))
@@ -2046,64 +1989,62 @@ fn panel_rows(buf: &Buffer, title: &str) -> std::ops::Range<u16> {
     top + 1..bottom
 }
 
+/// The column of a two-pane screen's list border: the first top-right corner after `title`
+/// on its row. `panel_right_column` takes the rightmost corner, which is the detail's.
+fn list_border(buf: &Buffer, title: &str) -> u16 {
+    let y = (0..buf.area().height)
+        .find(|&y| row_text(buf, y).contains(title))
+        .unwrap_or_else(|| panic!("{title} panel missing"));
+    let start = column_of(buf, y, title).unwrap_or(0);
+    (start..buf.area().width)
+        .find(|&x| buf[(x, y)].symbol() == "\u{256e}")
+        .unwrap_or_else(|| panic!("{title} panel has no top-right corner"))
+}
+
+/// The rows between the top border of the panel titled `title` and the bottom border at
+/// `column`.
+fn panel_rows_at(buf: &Buffer, title: &str, column: u16) -> std::ops::Range<u16> {
+    let top = (0..buf.area().height)
+        .find(|&y| row_text(buf, y).contains(title))
+        .unwrap_or_else(|| panic!("{title} panel missing"));
+    let bottom = (top + 1..buf.area().height)
+        .find(|&y| buf[(column, y)].symbol() == "\u{256f}")
+        .unwrap_or_else(|| panic!("{title} panel has no bottom-right corner"));
+    top + 1..bottom
+}
+
 /// The rows in `rows` whose cell in `column` is drawn in `colour`.
 fn rows_with_fg(buf: &Buffer, column: u16, rows: std::ops::Range<u16>, colour: Color) -> Vec<u16> {
     rows.filter(|&y| buf[(column, y)].fg == colour).collect()
 }
 
-/// The top border title of the package list panel.
-const PACKAGES_TITLE: &str = " select packages ";
-
 #[test]
 fn test_package_list_draws_its_scrollbar_thumb_when_rows_overflow() {
-    let (mut app, _tmp) = make_two_group_app();
-    push_packages(&mut app, &["home", "workstation"]);
+    let (mut app, _tmp) = make_package_count_app(30);
+    push_screen(&mut app, "Packages");
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
-    assert_ne!(colors.accent, colors.border, "thumb and track must differ");
     let buf = render_updated(&mut app, 80, 24);
 
-    let column = panel_right_column(&buf, PACKAGES_TITLE);
-    let rows = panel_rows(&buf, PACKAGES_TITLE);
-    let thumb = rows_with_fg(&buf, column, rows.clone(), colors.accent);
-    assert!(!thumb.is_empty(), "no scrollbar thumb on the right border");
-    assert!(thumb.len() < rows.len(), "the thumb fills the whole track");
-    for y in rows.filter(|y| !thumb.contains(y)) {
-        assert_eq!(
-            buf[(column, y)].fg,
-            colors.border,
-            "track cell at row {y} is not in the border colour"
-        );
-    }
+    let title = "packages 30";
+    let column = list_border(&buf, title);
+    let rows = panel_rows_at(&buf, title, column);
+    assert!(
+        !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
+        "no scrollbar thumb on the package list's right border"
+    );
 }
 
 #[test]
 fn test_package_list_draws_no_scrollbar_when_every_row_fits() {
-    let (mut app, _tmp) = make_two_group_app();
-    push_packages(&mut app, &["home"]);
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Packages");
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
-    // Six packages need 80x25 beside the legend; at 80x24 they overflow.
-    let buf = render_updated(&mut app, 80, 25);
-
-    let column = panel_right_column(&buf, PACKAGES_TITLE);
-    let rows = panel_rows(&buf, PACKAGES_TITLE);
-    assert!(rows_with_fg(&buf, column, rows.clone(), colors.accent).is_empty());
-    assert!(
-        rows.clone()
-            .all(|y| buf[(column, y)].symbol() == "\u{2502}"),
-        "the right border is not drawn on every row"
-    );
-}
-
-#[test]
-fn test_package_list_right_border_lines_up_with_the_legend() {
-    let (mut app, _tmp) = make_two_group_app();
-    push_packages(&mut app, &["home", "workstation"]);
     let buf = render_updated(&mut app, 80, 24);
-    assert_eq!(
-        panel_right_column(&buf, PACKAGES_TITLE),
-        panel_right_column(&buf, " legend "),
-        "the package list's right border is not in the legend's column"
-    );
+
+    let title = "packages 1";
+    let column = list_border(&buf, title);
+    let rows = panel_rows_at(&buf, title, column);
+    assert!(rows_with_fg(&buf, column, rows, colors.accent).is_empty());
 }
 
 /// A config with `count` groups and no packages: enough groups to overflow the list.
@@ -2125,13 +2066,14 @@ fn make_many_group_app(count: usize) -> (App, tempfile::TempDir) {
 #[test]
 fn test_group_list_draws_its_scrollbar_thumb_when_groups_overflow() {
     let (mut app, _tmp) = make_many_group_app(30);
-    push_screen(&mut app, "GroupSelect");
+    push_screen(&mut app, "Packages");
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
     let buf = render_updated(&mut app, 80, 24);
 
-    let title = " select groups ";
-    let column = panel_right_column(&buf, title);
-    let rows = panel_rows(&buf, title);
+    // Thirty groups and no packages: the title counts packages, and the rows are the groups.
+    let title = "packages 0";
+    let column = list_border(&buf, title);
+    let rows = panel_rows_at(&buf, title, column);
     assert!(
         !rows_with_fg(&buf, column, rows, colors.accent).is_empty(),
         "no scrollbar thumb on the group list's right border"
@@ -2266,23 +2208,33 @@ groups:
             &format!(".wide_{name}_configuration_file_rc"),
         );
     }
+    write_package(
+        &source,
+        "wide",
+        ".wide_configuration_file_with_a_name_long_enough_to_cut_rc",
+    );
     write_package(&source, "plain", ".plain_rc");
     let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
     (app, tmp)
 }
 
 #[test]
-fn test_package_detail_is_cut_with_an_ellipsis_inside_the_border() {
+fn test_package_detail_cuts_a_long_file_name_with_an_ellipsis() {
     let (mut app, _tmp) = make_long_detail_app();
-    push_packages(&mut app, &["home"]);
+    push_screen(&mut app, "Packages");
+    // Rows: the group, then its packages in name order (`plain`, `wide`).
+    app.update_components();
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
     let buf = render_updated(&mut app, 80, 24);
 
-    let y = package_row(&buf, "wide");
-    let border = panel_right_column(&buf, PACKAGES_TITLE);
-    assert_eq!(
-        buf[(border - 1, y)].symbol(),
-        "\u{2026}",
-        "the detail is not cut with an ellipsis at the panel edge"
+    let y = (0..buf.area().height)
+        .find(|&y| row_text(&buf, y).contains(".wide_configuration_file_with"))
+        .expect("long file name row missing");
+    let border = panel_right_column(&buf, "home/wide");
+    assert!(
+        row_text(&buf, y).contains('\u{2026}'),
+        "the long file name is not cut with an ellipsis"
     );
     assert_eq!(
         buf[(border, y)].symbol(),
@@ -2292,65 +2244,209 @@ fn test_package_detail_is_cut_with_an_ellipsis_inside_the_border() {
 }
 
 #[test]
-fn test_short_package_detail_keeps_its_closing_paren() {
+fn test_short_file_names_are_drawn_whole_in_the_detail() {
     let (mut app, _tmp) = make_long_detail_app();
-    push_packages(&mut app, &["home"]);
+    push_screen(&mut app, "Packages");
+    app.update_components();
+    app.component_dispatch(down_key()); // plain
     let buf = render_updated(&mut app, 80, 24);
-
-    let y = package_row(&buf, "plain");
     assert!(
-        row_text(&buf, y).contains("(.plain_rc)"),
-        "a short detail lost its closing paren"
+        row_containing(&buf, ".plain_rc").is_some(),
+        "a short file name is missing from the detail"
     );
 }
 
 #[test]
-fn test_package_detail_needs_two_columns_of_room() {
-    let colors = ThemeColors::from_theme(Theme::Default);
-    let mut items = vec![FlatItem {
-        group_name: "home".into(),
-        package_name: "wide".into(),
-        selected: false,
-        status: StowStatus::Unstowed,
-        preview: vec![".wide_alpha_configuration_file_rc".into()],
-        package_display: String::new(),
-        group_display: String::new(),
-        package_pad: 0,
-        group_pad: 0,
-    }];
-    align_columns(&mut items);
+fn test_packages_screen_has_no_legend_and_counts_the_marks() {
+    let (mut app, _tmp) = make_two_group_app();
+    push_screen(&mut app, "Packages");
+    app.update_components();
+    app.component_dispatch(space_key()); // marks every package of `home`
+    let buf = render_updated(&mut app, 80, 24);
 
-    // A 30-column panel leaves one column for the detail: too little, so it is dropped.
-    // A 31-column panel leaves two: the detail opens with `(` and is cut with `…`.
-    for (width, detail) in [(30, None), (31, Some("(\u{2026}"))] {
-        let backend = TestBackend::new(width, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| {
-                render_package_select(
-                    f,
-                    Rect::new(0, 0, width, 12),
-                    &colors,
-                    Icons::for_set(IconSet::Unicode),
-                    PACKAGES_TITLE,
-                    &items,
-                    0,
-                    None,
-                    0,
-                );
-            })
-            .unwrap();
-        let text = buffer_text(terminal.backend().buffer());
-        match detail {
-            Some(fragment) => assert!(
-                text.contains(fragment),
-                "width {width}: the detail is missing"
-            ),
-            None => assert!(
-                !text.contains('('),
-                "width {width}: the detail is drawn with no room for it"
-            ),
-        }
+    assert!(
+        !buffer_text(&buf).contains(" legend "),
+        "the legend is back"
+    );
+    let border = list_border(&buf, "packages 6 of 8");
+    let group = (0..buf.area().height)
+        .find(|&y| list_text(&buf, y, border).contains("home"))
+        .expect("group row missing");
+    assert!(
+        list_text(&buf, group, border).contains("6/6"),
+        "the group row does not count its marks"
+    );
+    assert!(
+        line_contains(&buf, "Enter stow 6"),
+        "the footer does not follow the marks"
+    );
+}
+
+#[test]
+fn test_partly_marked_group_shows_the_some_box_and_its_count() {
+    let (mut app, _tmp) = make_two_group_app();
+    app.ctx.core.icons = IconSet::Unicode;
+    push_screen(&mut app, "Packages");
+    app.update_components();
+    app.component_dispatch(down_key()); // the first package of `home`
+    app.component_dispatch(space_key());
+    let buf = render_updated(&mut app, 80, 24);
+
+    let icons = Icons::for_set(IconSet::Unicode);
+    let border = list_border(&buf, "packages 1 of 8");
+    let group = (0..buf.area().height)
+        .map(|y| list_text(&buf, y, border))
+        .find(|text| text.contains("home"))
+        .expect("group row missing");
+    assert!(group.contains(icons.fold_open), "{group:?}: no open fold");
+    assert!(
+        group.contains(icons.checkbox_some),
+        "{group:?}: no partial box"
+    );
+    assert!(group.contains("1/6"), "{group:?}: the count is not 1/6");
+}
+
+#[test]
+fn test_footer_run_verb_follows_the_action_and_the_marks() {
+    let (mut app, _tmp) = make_two_group_app();
+    app.ctx.core.flags.action = StowAction::Restow;
+    push_screen(&mut app, "Packages");
+    app.update_components();
+    app.component_dispatch(down_key());
+    app.component_dispatch(space_key());
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "Enter restow 1"),
+        "the footer does not follow the action"
+    );
+}
+
+/// The membership dialog keeps the cursor's profile on screen when the list is longer than
+/// the dialog, and draws the `Space toggle` key line above the buttons.
+#[test]
+fn test_membership_dialog_scrolls_a_long_profile_list_to_the_cursor() {
+    let names: Vec<String> = (0..20).map(|i| format!("p{i:02}")).collect();
+    let yamls: Vec<(&str, &str)> = names
+        .iter()
+        .map(|name| (name.as_str(), "packages: []\n"))
+        .collect();
+    let (mut app, _tmp) = make_profiles_app(&yamls);
+    push_screen(&mut app, "Packages");
+    app.update_components();
+    app.component_dispatch(down_key()); // home/test
+    app.component_dispatch(key_char('p'));
+
+    let top = render_updated(&mut app, 80, 24);
+    assert!(
+        line_contains(&top, "p00"),
+        "the cursor's profile is missing"
+    );
+    assert!(!line_contains(&top, "p19"), "all 20 profiles fit at 80x24");
+
+    for _ in 0..19 {
+        app.component_dispatch(down_key());
+    }
+    let last = render_updated(&mut app, 80, 24);
+    let row = (0..last.area().height)
+        .find(|&y| row_text(&last, y).contains("p19"))
+        .expect("the last profile is not drawn");
+    assert!(
+        row_text(&last, row).contains('\u{258c}'),
+        "the cursor's accent bar is not on p19"
+    );
+    assert!(!line_contains(&last, "p00"), "the window did not move");
+    assert!(
+        (0..last.area().height).any(|y| {
+            let text = row_text(&last, y);
+            text.contains("Space toggle") && !text.contains("q quit")
+        }),
+        "the Space toggle line is missing above the buttons"
+    );
+}
+
+#[test]
+fn test_p_profiles_shows_on_a_package_row_only() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Packages");
+    let on_group = render_updated(&mut app, 120, 24);
+    assert!(
+        !line_contains(&on_group, "p profiles"),
+        "group row offers p"
+    );
+
+    app.component_dispatch(down_key());
+    let on_package = render_updated(&mut app, 120, 24);
+    assert!(
+        line_contains(&on_package, "p profiles"),
+        "package row lacks p"
+    );
+}
+
+/// A package whose group target does not exist cannot be read, so it shows the unknown dot
+/// rather than a status, and nothing is drawn in its place.
+#[test]
+fn test_package_whose_target_is_missing_shows_the_unknown_dot() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("andre.yml");
+    std::fs::write(
+        &path,
+        "global: {}\ngroups:\n  lost:\n    source: dotfiles/lost\n    target: \"missing-target\"\n",
+    )
+    .unwrap();
+    write_package(&tmp.path().join("dotfiles/lost"), "pkg", ".rc");
+    let mut app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
+    push_screen(&mut app, "Packages");
+    let buf = render_updated(&mut app, 80, 24);
+
+    let border = list_border(&buf, "packages 1");
+    let row = (0..buf.area().height)
+        .map(|y| list_text(&buf, y, border))
+        .find(|text| text.contains("pkg"))
+        .expect("package row missing");
+    let unknown = Icons::for_set(app.ctx.core.icons).unknown;
+    assert!(
+        row.contains(unknown),
+        "no unknown dot on the package row: {row:?}"
+    );
+}
+
+#[test]
+fn test_membership_dialog_names_the_package_and_offers_cancel_and_save() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Packages");
+    app.update_components();
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('p'));
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(
+        line_contains(&buf, "home/test in profiles"),
+        "dialog title missing"
+    );
+    assert!(
+        line_contains(&buf, "No profiles yet"),
+        "empty profile list is not explained"
+    );
+    assert!(
+        line_contains(&buf, "[ Esc cancel ]"),
+        "cancel button missing"
+    );
+    assert!(line_contains(&buf, "[ Enter save ]"), "save button missing");
+}
+
+#[test]
+fn test_packages_render_at_120x40_and_200x50_with_the_dialog_open() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_test_app();
+        push_screen(&mut app, "Packages");
+        app.update_components();
+        app.component_dispatch(down_key());
+        app.component_dispatch(key_char('p'));
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            line_contains(&buf, "in profiles"),
+            "{width}x{height}: the membership dialog is missing"
+        );
     }
 }
 
@@ -2361,7 +2457,7 @@ fn test_touched_screens_render_at_120x40_and_200x50_without_panic() {
     let screens = [
         "MainMenu",
         "Profiles",
-        "GroupSelect",
+        "Packages",
         "Settings",
         "Status",
         "Help",

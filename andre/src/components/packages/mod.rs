@@ -1,0 +1,455 @@
+//! The packages browser. Groups are rows with their packages folded under them. Space marks
+//! packages to run, and Enter runs the marks, or else the cursor's package or group, through
+//! the confirm screen. `p` opens the profile membership dialog for the cursor's package.
+
+mod view;
+
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::hash::{Hash, Hasher};
+
+use andre_core::discover_packages;
+use andre_core::ignore::global_ignore_in;
+use andre_core::profile::ProfileSet;
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{layout::Rect, text::Line, Frame};
+
+use crate::components::confirm::ConfirmComponent;
+use crate::components::{AppContext, Component, InputMode, Transition};
+use crate::input::Input;
+use crate::theme::ThemeColors;
+use crate::ui::detail::{render_detail, Detail};
+use crate::ui::footer::{membership_dialog_hints, packages_hints, Hint};
+use crate::ui::icons::Icons;
+use crate::ui::layout::{screen_rects, Shape};
+use crate::ui::list_panel::{self, render_list_panel, Empty, ListView};
+use crate::ui::plural;
+use crate::ui::tree::{tree_line, Mark, Toggle, Tree, TreeGroup, TreePackage, TreeRow};
+
+/// The profile membership dialog open over the browser.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Membership {
+    /// `group/package`.
+    pub package: String,
+    /// Every profile, in name order.
+    pub profiles: Vec<MemberRow>,
+    pub cursor: usize,
+}
+
+/// One profile in the membership dialog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberRow {
+    pub name: String,
+    /// Whether the profile lists the package when the dialog opened.
+    pub was: bool,
+    /// Whether it lists the package now. Save writes the profiles where this differs from `was`.
+    pub now: bool,
+}
+
+impl Membership {
+    fn open(package: String, profiles: &ProfileSet) -> Self {
+        let profiles = profiles
+            .iter()
+            .map(|profile| {
+                let listed = profile.packages.contains(&package);
+                MemberRow {
+                    name: profile.name.clone(),
+                    was: listed,
+                    now: listed,
+                }
+            })
+            .collect();
+        Self {
+            package,
+            profiles,
+            cursor: 0,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct PackagesComponent {
+    /// The cursor and the window over the rows.
+    pub list: ListView,
+    /// Groups, folds and marks. Built by `rebuild`.
+    tree: Tree,
+    /// The tree's visible rows, as of the last change to the tree.
+    rows: Vec<TreeRow>,
+    /// Every package in each configured group, in name order. Enter on a group row runs these.
+    listing: BTreeMap<String, Vec<String>>,
+    /// The cursor row's facts. Built by `rebuild`.
+    detail: Detail,
+    /// What `rows` and `detail` were built from. `None` until the first update.
+    detail_key: Option<u64>,
+    popup: Option<Membership>,
+}
+
+impl Component for PackagesComponent {
+    fn id(&self) -> &'static str {
+        "Packages"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn input_mode(&self) -> InputMode {
+        match self.popup {
+            Some(_) => InputMode::Modal,
+            None => InputMode::Normal,
+        }
+    }
+
+    fn handle_key(&mut self, key: KeyEvent, ctx: &mut AppContext) -> Transition {
+        // Keys can arrive before the next update, so the rows are brought up to date first.
+        self.sync(ctx);
+        if let Some(mut membership) = self.popup.take() {
+            if membership_key(&mut membership, key, ctx) {
+                self.popup = Some(membership);
+            }
+            return Transition::Handled;
+        }
+        if Input::handle_list_navigation(&key, &mut self.list.cursor, self.rows.len()) {
+            return Transition::Handled;
+        }
+        match key.code {
+            KeyCode::Char(' ') => {
+                if let Toggle::Changed = self.tree.toggle_mark(self.list.cursor) {
+                    self.rows = self.tree.rows();
+                }
+            }
+            KeyCode::Left => {
+                // On a package, Left moves to its group's header. On a header, it folds the group.
+                let header = self.group_header(self.list.cursor);
+                if header != self.list.cursor {
+                    self.list.cursor = header;
+                } else {
+                    self.tree.fold(header, true);
+                    self.rows = self.tree.rows();
+                }
+            }
+            KeyCode::Right => {
+                self.tree.fold(self.list.cursor, false);
+                self.rows = self.tree.rows();
+            }
+            KeyCode::Char('p') => {
+                if let Some((group, package)) = self.selected_package() {
+                    let package = format!("{group}/{package}");
+                    self.popup = Some(Membership::open(package, &ctx.core.profiles));
+                }
+            }
+            KeyCode::Enter => return self.run(ctx),
+            KeyCode::Esc => return Transition::Pop,
+            _ => return Transition::None,
+        }
+        Transition::Handled
+    }
+
+    fn update(&mut self, ctx: &mut AppContext) -> Transition {
+        self.sync(ctx);
+        Transition::None
+    }
+
+    fn hints(&self, ctx: &AppContext) -> Vec<Hint> {
+        match self.popup {
+            Some(_) => membership_dialog_hints(),
+            None => {
+                let count = self.selection_pairs().len();
+                let run =
+                    (count > 0).then(|| format!("{} {count}", ctx.core.flags.action.as_str()));
+                packages_hints(
+                    run,
+                    !self.rows.is_empty(),
+                    self.selected_package().is_some(),
+                )
+            }
+        }
+    }
+
+    fn prepare(&mut self, area: Rect) {
+        let rects = screen_rects(area, Shape::TwoPane);
+        self.list.prepare(rects.list, self.rows.len());
+    }
+
+    fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &AppContext) {
+        let colors = ThemeColors::from_theme(ctx.core.theme);
+        let icons = Icons::for_set(ctx.core.icons);
+        let rects = screen_rects(area, Shape::TwoPane);
+
+        let width = list_panel::inner(rects.list).width;
+        let lines: Vec<Line> = self
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| tree_line(row, i == self.list.cursor, icons, &colors, width))
+            .collect();
+        let total: usize = self.listing.values().map(Vec::len).sum();
+        let title = view::packages_title(self.tree.marked().len(), total);
+        let empty = Empty {
+            message: "no groups in andre.yml",
+            hint: None,
+        };
+        render_list_panel(
+            frame,
+            rects.list,
+            &colors,
+            &title,
+            lines,
+            &self.list,
+            Some(empty),
+        );
+
+        render_detail(
+            frame,
+            rects.detail,
+            &colors,
+            &self.detail_title(),
+            &self.detail,
+        );
+
+        if let Some(membership) = &self.popup {
+            view::render_membership(frame, area, &colors, icons, membership);
+        }
+    }
+}
+
+impl PackagesComponent {
+    /// The profile membership dialog open over the browser, if any.
+    pub fn popup(&self) -> Option<&Membership> {
+        self.popup.as_ref()
+    }
+
+    /// The `(group, package)` pairs marked by the user, in config order.
+    pub fn marked(&self) -> Vec<(String, String)> {
+        self.tree.marked()
+    }
+
+    /// The rows as drawn: each group, then its packages unless it is folded.
+    pub fn rows(&self) -> &[TreeRow] {
+        &self.rows
+    }
+
+    /// The package under the cursor, as `(group, package)`. `None` on a group row.
+    fn selected_package(&self) -> Option<(String, String)> {
+        match self.rows.get(self.list.cursor) {
+            Some(TreeRow::Package { group, name, .. }) => Some((group.clone(), name.clone())),
+            _ => None,
+        }
+    }
+
+    /// The row of the group header that `row` sits under, or `row` when it is a header.
+    fn group_header(&self, row: usize) -> usize {
+        self.rows
+            .iter()
+            .take(row + 1)
+            .rposition(|r| matches!(r, TreeRow::Group { .. }))
+            .unwrap_or(row)
+    }
+
+    /// The packages Enter runs, as `(group, package)`: the marked ones, else the cursor's
+    /// package, else every package of the cursor's group.
+    fn selection_pairs(&self) -> Vec<(String, String)> {
+        let marked = self.tree.marked();
+        if !marked.is_empty() {
+            return marked;
+        }
+        match self.rows.get(self.list.cursor) {
+            Some(TreeRow::Package { group, name, .. }) => vec![(group.clone(), name.clone())],
+            Some(TreeRow::Group { name, .. }) => self
+                .listing
+                .get(name)
+                .into_iter()
+                .flatten()
+                .map(|package| (name.clone(), package.clone()))
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Runs the selection through the confirm screen. A group with no packages says so.
+    fn run(&self, ctx: &mut AppContext) -> Transition {
+        let pairs = self.selection_pairs();
+        if pairs.is_empty() {
+            if let Some(TreeRow::Group { name, .. }) = self.rows.get(self.list.cursor) {
+                ctx.show_error_toast(format!("{name} has no packages"));
+            }
+            return Transition::Handled;
+        }
+        let mut selected: HashMap<String, Vec<String>> = HashMap::new();
+        for (group, package) in pairs {
+            selected.entry(group).or_default().push(package);
+        }
+        Transition::Push(Box::new(ConfirmComponent::new(selected, ctx)))
+    }
+
+    /// The detail title: `group/package` for a package, the group's name for a group.
+    fn detail_title(&self) -> String {
+        match self.rows.get(self.list.cursor) {
+            Some(TreeRow::Package { group, name, .. }) => format!("{group}/{name}"),
+            Some(TreeRow::Group { name, .. }) => name.clone(),
+            None => "packages".to_string(),
+        }
+    }
+
+    /// Rebuilds the rows and the detail if anything they depend on has changed.
+    fn sync(&mut self, ctx: &AppContext) {
+        let key = self.fingerprint(ctx);
+        if self.detail_key != Some(key) {
+            self.rebuild(ctx);
+            // Reading the statuses changes the cache, so the key is taken again afterwards.
+            self.detail_key = Some(self.fingerprint(ctx));
+        }
+    }
+
+    /// Hash of everything the rows and the detail depend on. A change in any of these
+    /// means they are rebuilt on the next update.
+    fn fingerprint(&self, ctx: &AppContext) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.list.cursor.hash(&mut hasher);
+        self.tree.marked().hash(&mut hasher);
+        ctx.status_cache.borrow().generation().hash(&mut hasher);
+        for (name, group) in &ctx.core.config.groups {
+            name.hash(&mut hasher);
+            group.source.hash(&mut hasher);
+            group.target.hash(&mut hasher);
+            group.ignore.hash(&mut hasher);
+        }
+        for profile in ctx.core.profiles.iter() {
+            profile.name.hash(&mut hasher);
+            profile.packages.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// Rescans the groups, keeping the marks and folds, then builds the rows and the detail.
+    /// Statuses are read through the cache, which fills in what it has not seen.
+    fn rebuild(&mut self, ctx: &AppContext) {
+        let marked: BTreeSet<(String, String)> = self.tree.marked().into_iter().collect();
+        let global = global_ignore_in(&ctx.home_dir);
+        let mut groups = Vec::new();
+        let mut listing = BTreeMap::new();
+        for name in ctx.core.config.groups.keys() {
+            let source = ctx
+                .core
+                .config
+                .get_group_source(name, &ctx.config_dir, &ctx.home_dir);
+            let target = ctx
+                .core
+                .config
+                .get_group_target(name, &ctx.config_dir, &ctx.home_dir);
+            let names = source.as_deref().map(discover_packages).unwrap_or_default();
+            if let (Some(source), Some(target)) = (&source, &target) {
+                ctx.status_cache.borrow_mut().prefetch_group(
+                    source,
+                    target,
+                    name,
+                    &names,
+                    Some(&global),
+                );
+            }
+            let packages = names
+                .iter()
+                .map(|package| TreePackage {
+                    name: package.clone(),
+                    status: ctx.status_cache.borrow().get(name, package),
+                    mark: Some(if marked.contains(&(name.clone(), package.clone())) {
+                        Mark::On
+                    } else {
+                        Mark::Off
+                    }),
+                    meta: String::new(),
+                })
+                .collect();
+            groups.push(TreeGroup {
+                name: name.clone(),
+                packages,
+            });
+            listing.insert(name.clone(), names);
+        }
+
+        self.tree.replace_groups(groups);
+        self.listing = listing;
+        self.rows = self.tree.rows();
+        self.list.cursor = self.list.cursor.min(self.rows.len().saturating_sub(1));
+        self.detail = self.build_detail(ctx);
+    }
+
+    /// The detail of the cursor's row: the package's facts, or the group's summary.
+    fn build_detail(&self, ctx: &AppContext) -> Detail {
+        match self.rows.get(self.list.cursor) {
+            Some(TreeRow::Package {
+                group,
+                name,
+                status,
+                ..
+            }) => view::package_detail(ctx, group, name, *status),
+            Some(TreeRow::Group { name, .. }) => {
+                let statuses: Vec<_> = self
+                    .listing
+                    .get(name)
+                    .into_iter()
+                    .flatten()
+                    .map(|package| ctx.status_cache.borrow().get(name, package))
+                    .collect();
+                let marked = self.tree.marked().iter().filter(|(g, _)| g == name).count();
+                view::group_detail(ctx, name, &statuses, marked)
+            }
+            None => view::empty_detail(ctx),
+        }
+    }
+}
+
+/// Applies a key to the membership dialog. Returns whether the dialog stays open. Enter
+/// writes the profiles whose membership changed.
+fn membership_key(membership: &mut Membership, key: KeyEvent, ctx: &mut AppContext) -> bool {
+    if Input::handle_list_navigation(&key, &mut membership.cursor, membership.profiles.len()) {
+        return true;
+    }
+    match key.code {
+        KeyCode::Char(' ') => {
+            if let Some(row) = membership.profiles.get_mut(membership.cursor) {
+                row.now = !row.now;
+            }
+            true
+        }
+        KeyCode::Enter => {
+            save_membership(membership, ctx);
+            false
+        }
+        KeyCode::Esc => false,
+        _ => true,
+    }
+}
+
+/// Writes every profile whose membership changed, adding the package at the end of its list
+/// or removing it. Each file is written on its own. The first failure is shown and the
+/// profiles after it are left as they were.
+fn save_membership(membership: &Membership, ctx: &mut AppContext) {
+    let package = &membership.package;
+    let mut changed = 0;
+    for row in membership.profiles.iter().filter(|row| row.now != row.was) {
+        let Some(mut profile) = ctx.core.profiles.get(&row.name).cloned() else {
+            continue;
+        };
+        if row.now {
+            profile.packages.push(package.clone());
+        } else {
+            profile.packages.retain(|listed| listed != package);
+        }
+        if let Err(err) = ctx.core.profiles.save(profile) {
+            ctx.show_error_toast(err.to_string());
+            return;
+        }
+        changed += 1;
+    }
+    if changed > 0 {
+        ctx.show_toast(format!(
+            "updated {package} in {changed} {}",
+            plural(changed, "profile", "profiles")
+        ));
+    }
+}

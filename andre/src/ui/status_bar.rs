@@ -33,8 +33,7 @@ enum Labels {
 pub fn breadcrumb_label(id: &str) -> &str {
     match id {
         "MainMenu" => "Main",
-        "GroupSelect" => "Groups",
-        "PackageSelect" => "Packages",
+        "Packages" => "Packages",
         "Settings" => "Settings",
         "Status" => "Status",
         "Help" => "Help",

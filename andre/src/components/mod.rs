@@ -48,10 +48,10 @@ pub mod confirm;
 pub mod execute;
 pub mod help;
 pub mod menu;
+pub mod packages;
 pub mod profiles;
 pub mod settings;
 pub mod status;
-pub mod stow;
 pub mod target_select;
 pub mod unstow;
 

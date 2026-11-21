@@ -1,12 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use andre::app::App;
 use andre::components::confirm::ConfirmComponent;
+use andre::components::packages::PackagesComponent;
 use andre::components::profiles::edit::ProfileEditComponent;
 use andre::components::profiles::{NameCheck, Popup, ProfilesComponent};
 use andre::components::settings::rows::*;
 use andre::components::status::StatusComponent;
-use andre::components::stow::GroupSelectComponent;
 use andre::components::InputMode;
 use andre_core::profile::ProfileSet;
 use andre_core::StowAction;
@@ -25,7 +25,7 @@ fn menu(app: &App) -> &andre::components::MainMenuComponent {
         .unwrap()
 }
 
-fn groups(app: &App) -> &GroupSelectComponent {
+fn packages(app: &App) -> &PackagesComponent {
     app.component_stack
         .last()
         .unwrap()
@@ -95,11 +95,11 @@ fn test_enter_on_profiles_goes_to_profiles() {
 }
 
 #[test]
-fn test_enter_on_packages_goes_to_group_select() {
+fn test_enter_on_packages_goes_to_packages() {
     let (mut app, _) = make_test_app();
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
-    assert_eq!(component_id(&app), "GroupSelect");
+    assert_eq!(component_id(&app), "Packages");
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn test_digit_key_jumps_and_activates() {
     // `test_enter_on_*` block above but exercises the digit-key path.
     let cases: [(char, &str); 8] = [
         ('1', "Profiles"),
-        ('2', "GroupSelect"),
+        ('2', "Packages"),
         ('3', "AdoptTargetSelect"),
         ('4', "UnstowTargetSelect"),
         ('5', "Status"),
@@ -227,9 +227,9 @@ fn test_digit_key_updates_highlight_for_next_enter() {
 // --- Esc Back-Navigation ---
 
 #[test]
-fn test_esc_group_select_to_main_menu() {
+fn test_esc_packages_to_main_menu() {
     let (mut app, _) = make_test_app();
-    push_component(&mut app, "GroupSelect");
+    push_component(&mut app, "Packages");
     app.component_dispatch(esc_key());
     assert_eq!(component_id(&app), "MainMenu");
 }
@@ -237,7 +237,7 @@ fn test_esc_group_select_to_main_menu() {
 #[test]
 fn test_esc_from_screens_goes_back() {
     let (mut app, _) = make_test_app();
-    push_component(&mut app, "GroupSelect");
+    push_component(&mut app, "Packages");
     app.component_dispatch(esc_key());
     assert_eq!(component_id(&app), "MainMenu");
 
@@ -345,30 +345,277 @@ fn test_t_cycles_all_eight_themes_and_wraps() {
     assert_eq!(app.ctx.core.theme, start);
 }
 
-// --- Group Selection ---
+// --- Packages browser ---
 
-#[test]
-fn test_space_toggles_group_selection() {
-    let (mut app, _) = make_two_group_app();
-    push_component(&mut app, "GroupSelect");
-    // GroupSelectComponent sorts groups alphabetically — "config" < "home"
-    let first_group = "config".to_string();
-    assert!(groups(&app).selected.is_empty());
-    app.component_dispatch(space_key());
-    assert!(groups(&app).selected.contains(&first_group));
-    app.component_dispatch(space_key());
-    assert!(!groups(&app).selected.contains(&first_group));
+/// Opens the packages browser from the menu and runs one update, as the main loop does.
+fn open_packages(app: &mut App) {
+    app.component_dispatch(key_char('2'));
+    app.update_components();
+}
+
+fn key_left() -> KeyEvent {
+    KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)
+}
+
+fn key_right() -> KeyEvent {
+    KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)
+}
+
+/// One group with no packages: its source folder exists and is empty.
+fn make_app_with_empty_group() -> (App, tempfile::TempDir) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("andre.yml");
+    std::fs::write(
+        &path,
+        "global: {}\ngroups:\n  empty:\n    source: dotfiles/empty\n    target: \"~\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("dotfiles/empty")).unwrap();
+    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
+    (app, tmp)
 }
 
 #[test]
-fn test_group_navigation_does_not_wrap() {
-    let (mut app, _) = make_two_group_app();
-    push_component(&mut app, "GroupSelect");
+fn test_space_on_a_group_header_marks_its_packages_and_again_unmarks_them() {
+    let (mut app, _tmp) = make_two_group_app();
+    open_packages(&mut app);
+    // Groups sort by name, so `config` is the first row, and the cursor starts on it.
+    assert!(packages(&app).marked().is_empty());
+    app.component_dispatch(space_key());
+    assert_eq!(
+        packages(&app).marked(),
+        vec![("config".to_string(), "nvim".to_string())]
+    );
+    app.component_dispatch(space_key());
+    assert!(packages(&app).marked().is_empty());
+}
+
+#[test]
+fn test_space_on_a_package_marks_only_that_package() {
+    let (mut app, _tmp) = make_two_group_app();
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // config/nvim
+    app.component_dispatch(space_key());
+    assert_eq!(
+        packages(&app).marked(),
+        vec![("config".to_string(), "nvim".to_string())]
+    );
+    app.component_dispatch(down_key()); // home header
+    app.component_dispatch(down_key()); // home/bash-env
+    app.component_dispatch(space_key());
+    assert_eq!(packages(&app).marked().len(), 2);
+}
+
+#[test]
+fn test_navigation_wraps_through_the_rows() {
+    let (mut app, _tmp) = make_two_group_app();
+    open_packages(&mut app);
+    for _ in 0..packages(&app).rows().len() {
+        app.component_dispatch(down_key());
+    }
+    assert_eq!(packages(&app).list.cursor, 0);
+    app.component_dispatch(up_key());
+    assert_eq!(packages(&app).list.cursor, packages(&app).rows().len() - 1);
+}
+
+/// Two groups. `config` holds two packages, so a group run and a package run differ, and
+/// `home` holds one, so "the whole group" and "everything" differ too.
+fn make_app_with_a_two_package_group() -> (App, tempfile::TempDir) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("andre.yml");
+    std::fs::write(
+        &path,
+        "global: {}\ngroups:\n  config:\n    source: dotfiles/config\n    target: \"~\"\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
+    )
+    .unwrap();
+    for package in [
+        "dotfiles/config/nvim",
+        "dotfiles/config/tmux",
+        "dotfiles/home/bash-env",
+    ] {
+        std::fs::create_dir_all(tmp.path().join(package)).unwrap();
+        std::fs::write(tmp.path().join(package).join(".rc"), "x").unwrap();
+    }
+    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
+    (app, tmp)
+}
+
+/// The packages the confirm screen runs, by group, each group's packages sorted.
+fn confirmed(app: &App) -> BTreeMap<String, Vec<String>> {
+    let review: &ConfirmComponent = top_component(app);
+    review
+        .selected_packages
+        .iter()
+        .map(|(group, packages)| {
+            let mut packages = packages.clone();
+            packages.sort();
+            (group.clone(), packages)
+        })
+        .collect()
+}
+
+#[test]
+fn test_enter_runs_the_marked_packages_through_the_confirm_screen() {
+    let (mut app, _tmp) = make_app_with_a_two_package_group();
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // config/nvim
+    app.component_dispatch(space_key());
+    app.component_dispatch(down_key()); // config/tmux, unmarked: the cursor does not pick what runs
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Confirm");
+    assert_eq!(
+        confirmed(&app),
+        BTreeMap::from([("config".to_string(), vec!["nvim".to_string()])])
+    );
+    // Esc returns to the browser, with the mark still there.
+    app.component_dispatch(esc_key());
+    assert_eq!(component_id(&app), "Packages");
+    assert_eq!(packages(&app).marked().len(), 1);
+}
+
+#[test]
+fn test_enter_on_a_package_with_no_marks_runs_that_package() {
+    let (mut app, _tmp) = make_app_with_a_two_package_group();
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // config/nvim
+    app.component_dispatch(down_key()); // config/tmux
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Confirm");
+    assert_eq!(
+        confirmed(&app),
+        BTreeMap::from([("config".to_string(), vec!["tmux".to_string()])])
+    );
+}
+
+#[test]
+fn test_enter_on_a_group_header_with_no_marks_runs_the_whole_group() {
+    let (mut app, _tmp) = make_app_with_a_two_package_group();
+    open_packages(&mut app);
+    app.component_dispatch(enter_key()); // the config header
+    assert_eq!(component_id(&app), "Confirm");
+    assert_eq!(
+        confirmed(&app),
+        BTreeMap::from([(
+            "config".to_string(),
+            vec!["nvim".to_string(), "tmux".to_string()]
+        )])
+    );
+}
+
+#[test]
+fn test_enter_on_a_group_with_no_packages_says_so_and_stays() {
+    let (mut app, _tmp) = make_app_with_empty_group();
+    open_packages(&mut app);
+    app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Packages");
+    let toast = app.ctx.toast.as_ref().map(|t| t.message.as_str());
+    assert_eq!(toast, Some("empty has no packages"));
+}
+
+#[test]
+fn test_left_on_a_package_moves_to_its_header_and_a_second_left_folds_the_group() {
+    let (mut app, _tmp) = make_two_group_app();
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // config/nvim
+    app.component_dispatch(key_left());
+    assert_eq!(
+        packages(&app).list.cursor,
+        0,
+        "the cursor moves to the header"
+    );
+    assert_eq!(packages(&app).rows().len(), 4, "the group stays open");
+    app.component_dispatch(key_left());
+    assert_eq!(packages(&app).list.cursor, 0);
+    assert_eq!(
+        packages(&app).rows().len(),
+        3,
+        "config folds its one package away"
+    );
+    app.component_dispatch(key_right());
+    assert_eq!(packages(&app).list.cursor, 0);
+    assert_eq!(packages(&app).rows().len(), 4);
+}
+
+#[test]
+fn test_p_opens_the_membership_dialog_and_enter_saves_the_profile_file() {
+    let (mut app, tmp) = make_app_with_profiles(&[
+        ("base", "description: Shared by every machine\n"),
+        ("work", "packages: [home/test]\n"),
+    ]);
+    open_packages(&mut app);
+    app.component_dispatch(down_key()); // home/test
+    app.component_dispatch(key_char('p'));
+
+    let popup = packages(&app).popup().expect("the dialog is open");
+    assert_eq!(popup.package, "home/test");
+    let listed: Vec<(&str, bool)> = popup
+        .profiles
+        .iter()
+        .map(|row| (row.name.as_str(), row.now))
+        .collect();
+    assert_eq!(listed, vec![("base", false), ("work", true)]);
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::Modal
+    );
+
+    app.component_dispatch(space_key()); // base is the cursor's row
+    app.component_dispatch(enter_key());
+    assert!(packages(&app).popup().is_none());
+    assert_eq!(stored_packages(&tmp, "base"), vec!["home/test".to_string()]);
+    assert_eq!(stored_packages(&tmp, "work"), vec!["home/test".to_string()]);
+}
+
+#[test]
+fn test_esc_in_the_membership_dialog_keeps_the_profile_files() {
+    let (mut app, tmp) = make_app_with_profiles(&[("work", "packages: [home/test]\n")]);
+    open_packages(&mut app);
     app.component_dispatch(down_key());
-    assert_eq!(groups(&app).cursor, 1);
+    app.component_dispatch(key_char('p'));
+    app.component_dispatch(space_key()); // now off in the dialog
+    app.component_dispatch(esc_key());
+    assert!(packages(&app).popup().is_none());
+    assert_eq!(stored_packages(&tmp, "work"), vec!["home/test".to_string()]);
+}
+
+#[test]
+fn test_enter_in_the_membership_dialog_removes_the_package_when_unticked() {
+    let (mut app, tmp) = make_app_with_profiles(&[("work", "packages: [home/test]\n")]);
+    open_packages(&mut app);
     app.component_dispatch(down_key());
-    // Should not wrap past the last item
-    assert_eq!(groups(&app).cursor, 1);
+    app.component_dispatch(key_char('p'));
+    app.component_dispatch(space_key());
+    app.component_dispatch(enter_key());
+    assert!(stored_packages(&tmp, "work").is_empty());
+}
+
+#[test]
+fn test_p_on_a_group_header_does_nothing_and_the_dialog_is_modal() {
+    let (mut app, _tmp) = make_app_with_profiles(&[("work", "packages: []\n")]);
+    open_packages(&mut app);
+    app.component_dispatch(key_char('p'));
+    assert!(packages(&app).popup().is_none());
+
+    app.component_dispatch(down_key());
+    app.component_dispatch(key_char('p'));
+    let verbosity = app.ctx.core.flags.verbosity;
+    app.component_dispatch(key_char('v'));
+    assert_eq!(
+        app.ctx.core.flags.verbosity, verbosity,
+        "dialog blocks globals"
+    );
+}
+
+#[test]
+fn test_global_keys_still_work_on_the_packages_screen() {
+    let (mut app, _tmp) = make_two_group_app();
+    open_packages(&mut app);
+    let initial_verbosity = app.ctx.core.flags.verbosity;
+    app.component_dispatch(key_char('v'));
+    assert_ne!(
+        app.ctx.core.flags.verbosity, initial_verbosity,
+        "global v should toggle verbosity on the packages screen"
+    );
 }
 
 // --- Global Quit ---
@@ -392,11 +639,12 @@ fn test_ctrl_c_quits() {
 #[test]
 fn test_empty_groups_handled_gracefully() {
     let (mut app, _) = make_empty_app();
-    push_component(&mut app, "GroupSelect");
+    push_component(&mut app, "Packages");
     app.component_dispatch(up_key());
     app.component_dispatch(down_key());
     app.component_dispatch(space_key());
     app.component_dispatch(enter_key());
+    assert_eq!(component_id(&app), "Packages");
 }
 
 #[test]
@@ -599,7 +847,7 @@ fn test_input_mode_audit_normal_components() {
     use andre::components::InputMode;
 
     // All list/menu screens should be Normal
-    for name in &["MainMenu", "GroupSelect", "Status", "Help"] {
+    for name in &["MainMenu", "Packages", "Status", "Help"] {
         push_component(&mut app, name);
         let mode = app.component_stack.last().unwrap().input_mode();
         assert_eq!(mode, InputMode::Normal, "{} should be Normal", name);
@@ -676,24 +924,6 @@ fn test_settings_text_input_blocks_globals() {
     assert_eq!(
         app.ctx.core.theme, initial_theme,
         "theme should not change while AddName text input is active"
-    );
-}
-
-#[test]
-fn test_package_select_still_allows_global_v() {
-    let (mut app, _) = make_two_group_app();
-    push_component(&mut app, "GroupSelect");
-    // Select a group
-    app.component_dispatch(space_key());
-    // Navigate into packages
-    app.component_dispatch(enter_key());
-    assert_eq!(component_id(&app), "PackageSelect");
-    let initial_verbosity = app.ctx.core.flags.verbosity;
-    // Global v should still work on PackageSelect (Normal mode)
-    app.component_dispatch(key_char('v'));
-    assert_ne!(
-        app.ctx.core.flags.verbosity, initial_verbosity,
-        "global v should toggle verbosity on PackageSelect"
     );
 }
 

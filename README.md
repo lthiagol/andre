@@ -28,7 +28,7 @@
 
 **GNU Stow** is a CLI symlink farm manager. It creates symlinks from a source directory to a target directory — most commonly used to keep dotfiles in a version-controlled repo while making them appear in your home directory.
 
-**andre** implements the same model, with a terminal UI on top. Instead of remembering CLI flags and running stow manually per package group, you get a visual interface to select groups, pick packages, toggle options, and execute with live feedback. It runs on its own **native** engine by default, so no external binary is required; set `global.engine: stow` if you want it to drive GNU Stow itself.
+**andre** implements the same model, with a terminal UI on top. Instead of remembering CLI flags and running stow manually per package group, you get a visual interface to mark groups and packages, toggle options, and execute with live feedback. It runs on its own **native** engine by default, so no external binary is required; set `global.engine: stow` if you want it to drive GNU Stow itself.
 
 See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configuration reference.
 
@@ -49,8 +49,6 @@ See [REFERENCE.md](REFERENCE.md) for a detailed walkthrough and full configurati
 | Screen | Preview |
 |--------|---------|
 | *Main Menu* | ![Main Menu](docs/screenshots/main-menu.png) |
-| *Group Selection* | ![Group Selection](docs/screenshots/group-select.png) |
-| *Package Selection* | ![Package Selection](docs/screenshots/package-select.png) |
 | *Settings* | ![Settings](docs/screenshots/settings.png) |
 | *Status* | ![Status](docs/screenshots/status.png) |
 | *Execute* | ![Execute](docs/screenshots/execute.png) |
@@ -125,7 +123,7 @@ Launch without arguments:
 andre
 ```
 
-Select your group, pick packages, and stow them.
+Mark the packages you want (`Space`), then press `Enter` to stow them.
 
 <a name="main-menu"></a>
 ## 🗺️ Main Menu

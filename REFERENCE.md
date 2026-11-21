@@ -64,11 +64,15 @@ andre
 ### Navigation Flow
 
 1. **Main Menu** — Choose an action (profiles, packages, new package, unstow, verify status, etc.)
-2. **Group Selection** — Pick which config groups to operate on
-3. **Package Selection** — Pick individual packages within each group
-4. **Confirmation** — Review the stow commands before execution
-5. **Execution** — See live output with progress feedback
-6. **Status** — View results after execution
+2. **Packages** — Mark groups and packages (`Space`) and press `Enter` to run them
+3. **Confirmation** — Review the stow commands before execution
+4. **Execution** — See live output with progress feedback
+5. **Status** — View results after execution
+
+On the packages screen, `Space` marks a package (on a group row, every package of the group),
+`Enter` runs the marks, or the cursor's package or group, `←` on a package moves to its group's header, `←` on a header folds the group, `→` unfolds it, and `p` opens
+the profile membership dialog for the cursor's package. In that dialog `Space` ticks a profile
+and `Enter` saves; `Esc` cancels.
 
 Global shortcuts (`v`/`d`/`t`/`n`/`a`/`o`/`Ctrl+C`) work from any screen. The
 top bar shows their state (a green mark when on, a red one when off; verbosity

@@ -80,7 +80,7 @@ run:
 
 screenshots:
 	@echo 'Launching demo fixture — capture frames into docs/screenshots/'
-	@echo 'Expected names: main-menu.png group-select.png package-select.png settings.png status.png execute.png'
+	@echo 'Expected names: main-menu.png packages.png settings.png status.png execute.png'
 	@mkdir -p demo/target
 	cargo run -p andre -- -c demo/andre.yml
 

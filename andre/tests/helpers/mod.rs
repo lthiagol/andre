@@ -91,7 +91,7 @@ pub fn push_component(app: &mut App, name: &str) {
     use andre::components::*;
     app.component_stack.push(match name {
         "MainMenu" => Box::new(MainMenuComponent::default()),
-        "GroupSelect" => Box::new(stow::GroupSelectComponent::default()),
+        "Packages" => Box::new(packages::PackagesComponent::default()),
         "Settings" => Box::new(settings::SettingsComponent::default()),
         "Status" => Box::new(status::StatusComponent::default()),
         "Help" => Box::new(help::HelpComponent::default()),

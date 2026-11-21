@@ -11,6 +11,10 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- **Profile membership (`p`).** On the packages screen, `p` opens a dialog listing every
+  profile with a checkbox for the cursor's package. `Space` toggles one, `Enter` writes
+  the profile files that changed (a package is added at the end of the list, or removed),
+  and `Esc` leaves every file as it was. A long profile list scrolls with the cursor.
 - **Profiles screen.** Main menu `1 profiles`: the profiles on the left
   (name and resolved package count), the selected profile on the right (description,
   includes, packages with `via <profile>` for included ones, and the status summary
@@ -84,6 +88,15 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **Packages is one browser.** Main menu `2 packages` opens a single grouped list in place
+  of the group picker and the package picker (both removed, with `ui/packages.rs`). Groups
+  are rows with their packages folded under them. `Space` marks a package, or every package
+  of a group on its row. `Enter` runs the marks, or else the cursor's package or group,
+  through the confirm screen; `Esc` there returns to the browser with its marks. `←` on a
+  package moves to its group's header, `←` on a header folds the group, `→` unfolds. The
+  detail shows a package's status, its group's source and target, its file count and the
+  profiles that list it. The legend and the scanning splash are gone; a status not yet
+  known shows `·`. Marking does not reread statuses. The help workflow lists the new steps.
 - **Main menu has eight items.** `1 profiles`, `2 packages` (the old
   stow flow, now labelled `packages` without the action name: the top bar pill shows
   the action), `3 new package` (still the adopt flow until F4), `4 unstow`,

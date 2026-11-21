@@ -14,10 +14,10 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::components::help::HelpComponent;
+use crate::components::packages::PackagesComponent;
 use crate::components::profiles::ProfilesComponent;
 use crate::components::settings::SettingsComponent;
 use crate::components::status::StatusComponent;
-use crate::components::stow::GroupSelectComponent;
 use crate::components::target_select::TargetSelectComponent;
 use crate::components::{AppContext, Component, Transition};
 use crate::input;
@@ -216,7 +216,7 @@ impl MainMenuComponent {
     fn activate(item: MenuItem) -> Transition {
         match item {
             MenuItem::Profiles => Transition::Push(Box::new(ProfilesComponent::default())),
-            MenuItem::Stow => Transition::Push(Box::new(GroupSelectComponent::default())),
+            MenuItem::Stow => Transition::Push(Box::new(PackagesComponent::default())),
             MenuItem::NewPackage => Transition::Push(Box::new(TargetSelectComponent::adopt())),
             MenuItem::Unstow => Transition::Push(Box::new(TargetSelectComponent::unstow())),
             MenuItem::Status => Transition::Push(Box::new(StatusComponent::default())),

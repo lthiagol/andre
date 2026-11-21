@@ -7,8 +7,11 @@ use andre::components::MainMenuComponent;
 use andre::execute::ExecutionUpdate;
 
 #[test]
-fn test_status_cache_populated_after_entering_package_select() {
-    // Skipped: PackageSelect flow requires async setup
+fn test_status_cache_populated_after_entering_packages() {
+    let (mut app, _tmp) = make_test_app();
+    app.component_dispatch(key_char('2'));
+    app.update_components();
+    assert!(app.ctx.status_cache.borrow().get("home", "test").is_some());
 }
 
 #[test]
@@ -24,16 +27,20 @@ fn test_status_cache_cleared_on_execution_complete() {
 }
 
 #[test]
-fn test_status_cache_cleared_on_group_change() {
+fn test_marking_a_group_keeps_the_status_cache() {
     let (mut app, _tmp) = make_test_app();
-    push_component(&mut app, "GroupSelect");
+    push_component(&mut app, "Packages");
+    app.update_components();
     app.ctx.status_cache.borrow_mut().insert(
         ("home".into(), "test".into()),
         andre_core::StowStatus::Stowed,
     );
-    assert!(!app.ctx.status_cache.borrow().is_empty());
+    // Marking is a UI action: the cached status is kept, not read again from disk.
     app.component_dispatch(space_key());
-    assert!(app.ctx.status_cache.borrow().is_empty());
+    assert_eq!(
+        app.ctx.status_cache.borrow().get("home", "test"),
+        Some(andre_core::StowStatus::Stowed)
+    );
 }
 
 /// The stowed count shown on the main menu, read from its detail facts.
