@@ -404,7 +404,7 @@ impl PackagesComponent {
         ctx.status_cache.borrow().generation().hash(&mut hasher);
         ctx.core.config.packages.hash(&mut hasher);
         ctx.core.config.target.hash(&mut hasher);
-        // Interim: a `groups:` config still yields entries until G10 removes groups.
+        // Interim: a config with groups still yields entries until G10 removes groups.
         for (name, group) in &ctx.core.config.groups {
             name.hash(&mut hasher);
             group.source.hash(&mut hasher);

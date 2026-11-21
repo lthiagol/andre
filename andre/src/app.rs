@@ -247,7 +247,7 @@ mod tests {
 
     fn empty_config(dir: &std::path::Path) -> PathBuf {
         let path = dir.join("andre.yml");
-        std::fs::write(&path, "global: {}\ngroups: {}\n").unwrap();
+        std::fs::write(&path, "global: {}\n").unwrap();
         path
     }
 
@@ -265,11 +265,11 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let profiles = tmp.path().join("profiles");
         std::fs::create_dir_all(&profiles).unwrap();
-        std::fs::write(profiles.join("work.yml"), "packages: [home/git]\n").unwrap();
+        std::fs::write(profiles.join("work.yml"), "packages: [git]\n").unwrap();
 
         let app = App::with_home(empty_config(tmp.path()), tmp.path().to_path_buf()).unwrap();
         let work = app.ctx.core.profiles.get("work").expect("profile loaded");
-        assert_eq!(work.packages, ["home/git"]);
+        assert_eq!(work.packages, ["git"]);
         assert!(app.ctx.core.profiles.issues().is_empty());
     }
 

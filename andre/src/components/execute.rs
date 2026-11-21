@@ -323,7 +323,7 @@ mod tests {
 
     fn result(package: &str, success: bool) -> ExecutionResult {
         ExecutionResult {
-            name: format!("home/{package}"),
+            name: package.to_string(),
             success,
             error_message: (!success).then(|| "boom".to_string()),
         }
@@ -401,14 +401,14 @@ mod tests {
     fn the_package_in_flight_is_the_next_planned_one_after_the_skips() {
         let (_tx, rx) = tokio::sync::mpsc::channel(1);
         let skipped = vec![ExecutionResult {
-            name: "home/gone".into(),
+            name: "gone".into(),
             success: false,
             error_message: Some("Skipped: source directory not found".into()),
         }];
         // The skip is not planned: only the packages the engine runs are.
-        let comp = ExecuteComponent::new(rx, 3, skipped)
-            .for_run("stow", vec!["home/a".into(), "home/b".into()]);
-        assert_eq!(comp.in_flight_label().as_deref(), Some("home/a"));
+        let comp =
+            ExecuteComponent::new(rx, 3, skipped).for_run("stow", vec!["a".into(), "b".into()]);
+        assert_eq!(comp.in_flight_label().as_deref(), Some("a"));
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -422,7 +422,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         ExecutionResult {
-            name: "home/shell".into(),
+            name: "shell".into(),
             success: false,
             error_message: Some(message),
         }

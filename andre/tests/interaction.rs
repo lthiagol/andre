@@ -103,7 +103,7 @@ fn test_enter_on_packages_goes_to_packages() {
 
 #[test]
 fn test_enter_on_new_package_opens_the_wizard() {
-    let (mut app, _) = make_two_group_app();
+    let (mut app, _) = make_flat_packages_app(&["bash-env", "nvim"]);
     app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
@@ -112,7 +112,7 @@ fn test_enter_on_new_package_opens_the_wizard() {
 
 #[test]
 fn test_enter_on_unstow_opens_the_browse_screen_at_the_target() {
-    let (mut app, tmp) = make_flat_test_app();
+    let (mut app, tmp) = make_test_app();
     for _ in 0..3 {
         app.component_dispatch(down_key());
     }
@@ -528,21 +528,9 @@ fn test_i_opens_the_ignore_editor_on_the_cursor_package() {
     assert_eq!(component_id(&app), "IgnoreEdit");
 }
 
-/// A flat app with the package `test`, and the profile files written.
-fn make_flat_app_with_profiles(profiles: &[(&str, &str)]) -> (App, tempfile::TempDir) {
-    let (mut app, tmp) = make_flat_packages_app(&["test"]);
-    let dir = tmp.path().join("profiles");
-    std::fs::create_dir_all(&dir).unwrap();
-    for (name, yaml) in profiles {
-        std::fs::write(dir.join(format!("{name}.yml")), yaml).unwrap();
-    }
-    app.ctx.core.profiles = ProfileSet::load(&dir).unwrap();
-    (app, tmp)
-}
-
 #[test]
 fn test_p_opens_the_membership_dialog_and_enter_saves_the_profile_file() {
-    let (mut app, tmp) = make_flat_app_with_profiles(&[
+    let (mut app, tmp) = make_app_with_profiles(&[
         ("base", "description: Shared by every machine\n"),
         ("work", "packages: [test]\n"),
     ]);
@@ -571,7 +559,7 @@ fn test_p_opens_the_membership_dialog_and_enter_saves_the_profile_file() {
 
 #[test]
 fn test_esc_in_the_membership_dialog_keeps_the_profile_files() {
-    let (mut app, tmp) = make_flat_app_with_profiles(&[("work", "packages: [test]\n")]);
+    let (mut app, tmp) = make_app_with_profiles(&[("work", "packages: [test]\n")]);
     open_packages(&mut app);
     app.component_dispatch(key_char('p'));
     app.component_dispatch(space_key()); // now off in the dialog
@@ -582,7 +570,7 @@ fn test_esc_in_the_membership_dialog_keeps_the_profile_files() {
 
 #[test]
 fn test_enter_in_the_membership_dialog_removes_the_package_when_unticked() {
-    let (mut app, tmp) = make_flat_app_with_profiles(&[("work", "packages: [test]\n")]);
+    let (mut app, tmp) = make_app_with_profiles(&[("work", "packages: [test]\n")]);
     open_packages(&mut app);
     app.component_dispatch(key_char('p'));
     app.component_dispatch(space_key());
@@ -600,7 +588,7 @@ fn test_p_with_no_package_does_nothing() {
 
 #[test]
 fn test_the_membership_dialog_is_modal() {
-    let (mut app, _tmp) = make_flat_app_with_profiles(&[("work", "packages: []\n")]);
+    let (mut app, _tmp) = make_app_with_profiles(&[("work", "packages: []\n")]);
     open_packages(&mut app);
     app.component_dispatch(key_char('p'));
     assert!(packages(&app).popup().is_some());
@@ -643,7 +631,7 @@ fn test_ctrl_c_quits() {
 // --- Edge Cases ---
 
 #[test]
-fn test_empty_groups_handled_gracefully() {
+fn test_no_packages_folder_handled_gracefully() {
     let (mut app, _) = make_empty_app();
     push_component(&mut app, "Packages");
     app.component_dispatch(up_key());
@@ -1035,8 +1023,8 @@ fn test_esc_back_to_the_name_step_keeps_the_name_and_asks_before_leaving() {
 }
 
 #[test]
-fn test_new_package_second_group_row_opens_its_name_step() {
-    let (mut app, _) = make_two_group_app();
+fn test_new_package_second_row_opens_its_name_step() {
+    let (mut app, _) = make_flat_packages_app(&["bash-env", "nvim"]);
     app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
@@ -1071,7 +1059,7 @@ fn test_review_stow_preview_follows_dry_run_toggle() {
     // must rebuild the stow command preview before the next paint.
     let (mut app, _tmp) = make_test_app();
     app.ctx.core.config.global.engine = Some("stow".into());
-    let selected = vec!["home/test".to_string()];
+    let selected = vec!["test".to_string()];
     app.component_stack
         .push(Box::new(ConfirmComponent::new(selected, &app.ctx)));
     app.update_components();
@@ -1133,10 +1121,7 @@ fn profile_file(tmp: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
     tmp.path().join("profiles").join(format!("{name}.yml"))
 }
 
-const BASE: &str = "description: Shared by every machine\npackages: [home/test]\n";
-
-/// `BASE` for the flat packages folder the editor tests use.
-const FLAT_BASE: &str = "description: Shared by every machine\npackages: [test]\n";
+const BASE: &str = "description: Shared by every machine\npackages: [test]\n";
 
 #[test]
 fn test_s_cycles_the_action_stow_restow_unstow() {
@@ -1212,7 +1197,7 @@ fn test_esc_closes_the_dialog_and_keeps_the_screen() {
 #[test]
 fn test_rename_moves_the_file_and_repoints_includes() {
     let (mut app, tmp) = make_app_with_profiles(&[
-        ("agent", "includes: [base]\npackages: [home/test]\n"),
+        ("agent", "includes: [base]\npackages: [test]\n"),
         ("base", BASE),
     ]);
     open_profiles(&mut app);
@@ -1236,7 +1221,7 @@ fn test_rename_moves_the_file_and_repoints_includes() {
 #[test]
 fn test_delete_removes_the_profile_and_the_includes_that_name_it() {
     let (mut app, tmp) = make_app_with_profiles(&[
-        ("agent", "includes: [base]\npackages: [home/test]\n"),
+        ("agent", "includes: [base]\npackages: [test]\n"),
         ("base", BASE),
     ]);
     open_profiles(&mut app);
@@ -1265,7 +1250,7 @@ fn test_delete_removes_the_profile_and_the_includes_that_name_it() {
 #[test]
 fn test_n_keeps_an_included_profile() {
     let (mut app, tmp) = make_app_with_profiles(&[
-        ("agent", "includes: [base]\npackages: [home/test]\n"),
+        ("agent", "includes: [base]\npackages: [test]\n"),
         ("base", BASE),
     ]);
     open_profiles(&mut app);
@@ -1383,7 +1368,7 @@ fn stored_packages(tmp: &tempfile::TempDir, name: &str) -> Vec<String> {
 
 #[test]
 fn test_e_opens_the_editor_on_the_selected_profile() {
-    let (mut app, _tmp) = make_editor_app(&[("base", FLAT_BASE)]);
+    let (mut app, _tmp) = make_editor_app(&[("base", BASE)]);
     open_editor(&mut app, "base");
     assert_eq!(component_id(&app), "ProfileEdit");
     assert_eq!(editor(&app).draft().name, "base");
@@ -1567,7 +1552,7 @@ fn test_esc_then_esc_stays_and_y_saves_then_leaves() {
 
 #[test]
 fn test_esc_without_edits_leaves_at_once() {
-    let (mut app, _tmp) = make_editor_app(&[("base", FLAT_BASE)]);
+    let (mut app, _tmp) = make_editor_app(&[("base", BASE)]);
     open_editor(&mut app, "base");
     app.component_dispatch(esc_key());
     assert_eq!(component_id(&app), "Profiles");
@@ -1575,7 +1560,7 @@ fn test_esc_without_edits_leaves_at_once() {
 
 #[test]
 fn test_a_cycle_through_an_include_is_refused_with_a_toast() {
-    let (mut app, tmp) = make_editor_app(&[("base", FLAT_BASE), ("agent", "includes: [base]\n")]);
+    let (mut app, tmp) = make_editor_app(&[("base", BASE), ("agent", "includes: [base]\n")]);
     // Editing base: its only other profile is agent, which already includes base.
     open_editor(&mut app, "base");
     app.component_dispatch(tab_key());
@@ -1710,13 +1695,10 @@ fn test_x_then_y_deletes_an_unincluded_profile_file() {
 #[test]
 fn test_enter_runs_the_own_and_included_packages_and_skips_the_missing_ones() {
     let (mut app, tmp) = make_app_with_profiles(&[
-        (
-            "agent",
-            "includes: [base]\npackages: [home/own, home/ghost]\n",
-        ),
+        ("agent", "includes: [base]\npackages: [own, ghost]\n"),
         ("base", BASE),
     ]);
-    std::fs::create_dir_all(tmp.path().join("dotfiles/home/own")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("dotfiles/own")).unwrap();
     open_profiles(&mut app);
     // `agent` sorts first, so Enter runs it.
     app.component_dispatch(enter_key());
@@ -1726,14 +1708,14 @@ fn test_enter_runs_the_own_and_included_packages_and_skips_the_missing_ones() {
     packages.sort();
     assert_eq!(
         packages,
-        ["home/own", "home/test"],
-        "own and included packages run; home/ghost names no package and does not"
+        ["own", "test"],
+        "own and included packages run; ghost names no package and does not"
     );
 }
 
 #[test]
 fn test_s_on_settings_waits_for_save_like_the_other_settings() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_component(&mut app, "Settings");
     app.component_dispatch(key_char('s'));
     assert_eq!(
@@ -1785,7 +1767,7 @@ fn ignore_editor(app: &App) -> &andre::components::ignore::IgnoreEditComponent {
         .unwrap()
 }
 
-/// Opens the ignore editor on `home/test`, the package in `make_test_app`.
+/// Opens the ignore editor on `test`, the package in `make_test_app`.
 fn open_ignore_on_test_package(app: &mut App) {
     open_packages(app);
     app.component_dispatch(down_key());
@@ -1793,7 +1775,7 @@ fn open_ignore_on_test_package(app: &mut App) {
 }
 
 fn package_file(tmp: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
-    tmp.path().join("dotfiles/home/test").join(name)
+    tmp.path().join("dotfiles/test").join(name)
 }
 
 #[test]
@@ -2000,18 +1982,18 @@ fn test_saving_the_ignore_files_invalidates_the_status_cache() {
     app.ctx
         .status_cache
         .borrow_mut()
-        .insert("home/test".to_string(), andre_core::StowStatus::Stowed);
+        .insert("test".to_string(), andre_core::StowStatus::Stowed);
     app.component_dispatch(key_char('+'));
     type_text(&mut app, "*.env");
     app.component_dispatch(enter_key());
     assert!(
-        app.ctx.status_cache.borrow().get("home/test").is_some(),
+        app.ctx.status_cache.borrow().get("test").is_some(),
         "the cache is untouched until a save"
     );
 
     app.component_dispatch(key_char('w'));
     assert!(
-        app.ctx.status_cache.borrow().get("home/test").is_none(),
+        app.ctx.status_cache.borrow().get("test").is_none(),
         "a save makes the packages screen read statuses again"
     );
 }
@@ -2032,6 +2014,7 @@ fn test_zero_opens_the_set_up_review_and_digits_keep_their_items() {
     let (mut app, _tmp) = make_bootstrap_app();
     app.update_components();
     assert_eq!(menu(&app).items().len(), 9);
+    assert_eq!(menu(&app).items().first(), Some(&MenuItem::Setup));
     app.component_dispatch(key_char('1'));
     assert_eq!(
         app.component_stack.last().unwrap().id(),
@@ -2048,28 +2031,12 @@ fn test_zero_opens_the_set_up_review_and_digits_keep_their_items() {
         .as_any()
         .downcast_ref::<ConfirmComponent>()
         .expect("0 opens the review");
-    assert_eq!(confirm.selected_packages, ["config/andre"]);
-}
-
-#[test]
-fn test_zero_on_a_flat_config_reviews_the_package_holding_the_config_folder() {
-    let (mut app, _tmp) = make_flat_bootstrap_app();
-    app.update_components();
-    assert_eq!(menu(&app).items().first(), Some(&MenuItem::Setup));
-    app.component_dispatch(key_char('0'));
-    let confirm = app
-        .component_stack
-        .last()
-        .unwrap()
-        .as_any()
-        .downcast_ref::<ConfirmComponent>()
-        .expect("0 opens the review");
     assert_eq!(confirm.selected_packages, ["andre"]);
 }
 
 #[test]
-fn test_enter_on_the_set_up_item_of_a_flat_config_reviews_its_package() {
-    let (mut app, _tmp) = make_flat_bootstrap_app();
+fn test_enter_on_the_set_up_item_reviews_its_package() {
+    let (mut app, _tmp) = make_bootstrap_app();
     app.update_components();
     app.component_dispatch(enter_key());
     let confirm = app
@@ -2088,7 +2055,7 @@ fn test_profiles_opened_at_puts_the_cursor_on_the_named_profile() {
     let dir = tmp.path().join("profiles");
     std::fs::create_dir_all(&dir).unwrap();
     for name in ["alpha", "beta", "gamma"] {
-        std::fs::write(dir.join(format!("{name}.yml")), "packages: [home/test]\n").unwrap();
+        std::fs::write(dir.join(format!("{name}.yml")), "packages: [test]\n").unwrap();
     }
     app.ctx.core.profiles = ProfileSet::load(&dir).unwrap();
     app.component_stack
@@ -2233,7 +2200,7 @@ fn select_setting(app: &mut App, label: &str) {
 fn test_settings_picker_is_modal_and_blocks_global_keys() {
     use andre::components::InputMode;
 
-    let (mut app, _) = make_flat_test_app();
+    let (mut app, _) = make_test_app();
     open_settings(&mut app);
     select_setting(&mut app, "action");
     app.component_dispatch(enter_key());
@@ -2256,7 +2223,7 @@ fn test_settings_ignore_line_is_text_input_and_blocks_globals() {
     use andre::components::settings::Overlay;
     use andre::components::InputMode;
 
-    let (mut app, _) = make_flat_test_app();
+    let (mut app, _) = make_test_app();
     open_settings(&mut app);
     select_setting(&mut app, "global ignore");
     app.component_dispatch(enter_key());
@@ -2286,7 +2253,7 @@ fn test_settings_ignore_line_is_text_input_and_blocks_globals() {
 fn test_config_save_failure_error_toast_keeps_dirty() {
     use andre::components::ToastKind;
 
-    let (mut app, tmp) = make_flat_test_app();
+    let (mut app, tmp) = make_test_app();
     open_settings(&mut app);
     select_setting(&mut app, "verbose");
     app.component_dispatch(enter_key());
@@ -2310,7 +2277,7 @@ fn test_config_save_failure_error_toast_keeps_dirty() {
 
 #[test]
 fn test_discard_save_y_stays_on_failure() {
-    let (mut app, tmp) = make_flat_test_app();
+    let (mut app, tmp) = make_test_app();
     open_settings(&mut app);
     select_setting(&mut app, "verbose");
     app.component_dispatch(enter_key());

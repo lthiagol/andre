@@ -13,8 +13,7 @@ use andre_core::{IconSet, StowAction, StowStatus, Theme};
 mod helpers;
 use helpers::{
     browse_cursor_to, down_key, enter_key, esc_key, key_char, make_bootstrap_app, make_empty_app,
-    make_flat_bootstrap_app, make_flat_packages_app, make_flat_test_app, make_test_app,
-    make_unstow_app, push_browse, space_key, up_key,
+    make_flat_packages_app, make_test_app, make_unstow_app, push_browse, space_key, up_key,
 };
 
 fn render_app(app: &mut App, width: u16, height: u16) -> Buffer {
@@ -344,7 +343,7 @@ fn test_empty_app_renders() {
 
 #[test]
 fn test_config_screen_renders() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_updated(&mut app, 80, 24);
     assert!(
@@ -423,7 +422,7 @@ fn test_help_screen_has_key_info() {
 
 #[test]
 fn test_config_screen_shows_verbosity() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_app(&mut app, 80, 24);
     assert!(line_contains(&buf, "verbose"), "verbose row not visible");
@@ -453,12 +452,12 @@ fn test_execute_gauge_ratio_matches_completed_total() {
         5,
         vec![
             ExecutionResult {
-                name: "home/bash".into(),
+                name: "bash".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                name: "home/vim".into(),
+                name: "vim".into(),
                 success: false,
                 error_message: Some("conflict".into()),
             },
@@ -486,12 +485,12 @@ fn test_execute_rows_show_icon_name_under_gauge() {
         2,
         vec![
             ExecutionResult {
-                name: "home/bash".into(),
+                name: "bash".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                name: "work/git".into(),
+                name: "git".into(),
                 success: false,
                 error_message: Some("fail".into()),
             },
@@ -501,15 +500,11 @@ fn test_execute_rows_show_icon_name_under_gauge() {
     let buf = render_app(&mut app, 80, 24);
     assert!(line_contains(&buf, "2/2"), "gauge label missing");
     assert!(
-        line_contains(&buf, "\u{2713}")
-            && line_contains(&buf, "home")
-            && line_contains(&buf, "bash"),
+        line_contains(&buf, "\u{2713}") && line_contains(&buf, "bash"),
         "success row icon/name missing under gauge"
     );
     assert!(
-        line_contains(&buf, "\u{2717}")
-            && line_contains(&buf, "work")
-            && line_contains(&buf, "git"),
+        line_contains(&buf, "\u{2717}") && line_contains(&buf, "git"),
         "fail row icon/name missing under gauge"
     );
 }
@@ -522,7 +517,7 @@ fn test_execute_progress_preserves_total_with_skips() {
     let (mut app, _tmp) = make_test_app();
     let (tx, rx) = tokio::sync::mpsc::channel(4);
     let skipped = vec![ExecutionResult {
-        name: "home/missing".into(),
+        name: "missing".into(),
         success: false,
         error_message: Some("Skipped".into()),
     }];
@@ -557,12 +552,12 @@ fn test_execute_spinner_clamps_in_flight_to_total() {
         2,
         vec![
             ExecutionResult {
-                name: "home/a".into(),
+                name: "a".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                name: "home/b".into(),
+                name: "b".into(),
                 success: true,
                 error_message: None,
             },
@@ -592,12 +587,12 @@ fn test_execute_completion_summary_on_finished() {
         2,
         vec![
             ExecutionResult {
-                name: "home/bash".into(),
+                name: "bash".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                name: "home/vim".into(),
+                name: "vim".into(),
                 success: false,
                 error_message: Some("conflict".into()),
             },
@@ -629,12 +624,12 @@ fn test_execute_completion_summary_distinguishes_skips() {
         2,
         vec![
             ExecutionResult {
-                name: "home/bash".into(),
+                name: "bash".into(),
                 success: true,
                 error_message: None,
             },
             ExecutionResult {
-                name: "home/gone".into(),
+                name: "gone".into(),
                 success: false,
                 error_message: Some("Skipped: source directory not found".into()),
             },
@@ -663,7 +658,7 @@ fn test_execute_completed_list_scrolls() {
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results: Vec<_> = (0..20)
         .map(|i| ExecutionResult {
-            name: format!("home/pkg{i}"),
+            name: format!("pkg{i}"),
             success: true,
             error_message: None,
         })
@@ -692,7 +687,7 @@ fn test_execute_completed_list_scrolls() {
 /// Unstow opens the browse screen at the target: there is no group list.
 #[test]
 fn test_unstow_opens_the_browse_screen_at_the_target() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     app.component_dispatch(key_char('4'));
     let buf = render_updated(&mut app, 80, 24);
     assert!(
@@ -1286,7 +1281,7 @@ fn test_chrome_degrades_on_minimum_supported_width() {
 fn test_settings_icons_row_shows_pending_set_after_enter() {
     use helpers::enter_key;
 
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     select_setting(&mut app, "icons");
 
@@ -1350,7 +1345,7 @@ fn test_confirm_preview_is_engine_aware_native_default() {
     // `stow ...` command preview (that would mislead users into thinking GNU
     // stow runs). It should show a native preview instead.
     let (mut app, _tmp) = make_test_app();
-    let selected = vec!["home/test".to_string()];
+    let selected = vec!["test".to_string()];
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
             selected, &app.ctx,
@@ -1583,7 +1578,7 @@ fn test_detail_facts_are_built_in_update_not_render() {
     app.ctx
         .status_cache
         .borrow_mut()
-        .insert("home/test".to_string(), StowStatus::Stowed);
+        .insert("test".to_string(), StowStatus::Stowed);
 
     // Render alone does not read the cache again.
     let buf = render_app(&mut app, 120, 24);
@@ -1698,7 +1693,7 @@ fn select_setting(app: &mut App, label: &str) {
 /// The settings screen on a flat config (`dotfiles` holds the package `test`), its cursor on
 /// `packages`.
 fn flat_settings_on_packages() -> (App, tempfile::TempDir) {
-    let (mut app, tmp) = make_flat_test_app();
+    let (mut app, tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     select_setting(&mut app, "packages");
     (app, tmp)
@@ -1706,7 +1701,7 @@ fn flat_settings_on_packages() -> (App, tempfile::TempDir) {
 
 #[test]
 fn test_settings_at_80x24_lists_the_packages_folder_and_no_groups() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_updated(&mut app, 80, 24);
 
@@ -1886,14 +1881,14 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
     }
 
     // The unstow browse screen has no legend: its detail says what a link is.
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     push_screen(&mut app, "UnstowBrowse");
     let text = buffer_text(&render_updated(&mut app, 80, 24));
     assert!(!text.contains(" legend "), "UnstowBrowse: legend is back");
     assert!(!text.contains("Path:"), "UnstowBrowse: path line is back");
 
     // The status screen has no legend: its counts sit in the chip row instead.
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     push_screen(&mut app, "Status");
     let text = buffer_text(&render_updated(&mut app, 80, 24));
     assert!(!text.contains(" legend "), "Status: legend is back");
@@ -1908,7 +1903,7 @@ fn test_package_checkboxes_follow_the_icon_set() {
     for (icons, on, off) in cases {
         // The package row is marked when it is, and off when it is not.
         for (marked, glyph, other) in [(true, on, off), (false, off, on)] {
-            let (mut app, _tmp) = make_flat_test_app();
+            let (mut app, _tmp) = make_test_app();
             app.ctx.core.icons = icons;
             push_screen(&mut app, "Packages");
             app.update_components();
@@ -1933,7 +1928,7 @@ fn test_package_checkboxes_follow_the_icon_set() {
 #[test]
 fn test_package_status_glyphs_follow_the_icon_set() {
     for icons in [IconSet::Nerd, IconSet::Unicode] {
-        let (mut app, _tmp) = make_flat_test_app();
+        let (mut app, _tmp) = make_test_app();
         app.ctx.core.icons = icons;
         push_screen(&mut app, "Packages");
         let buf = render_updated(&mut app, 80, 24);
@@ -1957,8 +1952,8 @@ fn test_package_status_glyphs_follow_the_icon_set() {
 fn test_package_with_a_broken_ignore_list_shows_invalid() {
     for set in [IconSet::Nerd, IconSet::Unicode] {
         let icons = Icons::for_set(set);
-        let (mut app, tmp) = make_flat_status_app();
-        let broken = tmp.path().join("dotfiles/home/broken");
+        let (mut app, tmp) = make_status_app();
+        let broken = tmp.path().join("dotfiles/broken");
         std::fs::create_dir_all(&broken).unwrap();
         std::fs::write(broken.join(".broken_rc"), "x").unwrap();
         // Look-around is rejected by the regex engine, so the list does not compile.
@@ -1995,23 +1990,23 @@ const STATUS_FIXTURES: [(&str, StowStatus); 5] = [
 
 /// Writes the packages in `STATUS_FIXTURES` under the test home and links them, or
 /// blocks them, as their status needs.
-/// A flat app whose packages folder is `dotfiles/home`, so the status fixtures are its
+/// A flat app whose packages folder is `dotfiles`, so the status fixtures are its
 /// packages (`add_status_fixtures`), with the package `test` among them. Links go to HOME.
-fn make_flat_home_app() -> (App, tempfile::TempDir) {
+fn make_home_app() -> (App, tempfile::TempDir) {
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("andre.yml");
     std::fs::write(
         &path,
-        "global:\n  stow:\n    verbosity: 0\npackages: dotfiles/home\n",
+        "global:\n  stow:\n    verbosity: 0\npackages: dotfiles\n",
     )
     .unwrap();
-    write_package(&tmp.path().join("dotfiles/home"), "test", ".bashrc");
+    write_package(&tmp.path().join("dotfiles"), "test", ".bashrc");
     let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
     (app, tmp)
 }
 
 fn add_status_fixtures(home: &std::path::Path) {
-    let source = home.join("dotfiles/home");
+    let source = home.join("dotfiles");
     let write = |package: &str, file: &str| {
         let dir = source.join(package);
         std::fs::create_dir_all(&dir).unwrap();
@@ -2028,10 +2023,10 @@ fn add_status_fixtures(home: &std::path::Path) {
     std::fs::create_dir_all(source.join("hollow")).unwrap();
 }
 
-/// A flat app whose packages folder `dotfiles/home` holds the status fixtures and `test`.
+/// A flat app whose packages folder `dotfiles` holds the status fixtures and `test`.
 /// HOME is the target, so the fixtures' links and blocks sit in the test home.
-fn make_flat_status_app() -> (App, tempfile::TempDir) {
-    let (app, tmp) = make_flat_home_app();
+fn make_status_app() -> (App, tempfile::TempDir) {
+    let (app, tmp) = make_home_app();
     add_status_fixtures(tmp.path());
     (app, tmp)
 }
@@ -2043,7 +2038,7 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
     for set in [IconSet::Nerd, IconSet::Unicode] {
         let icons = Icons::for_set(set);
 
-        let (mut packages_app, tmp) = make_flat_home_app();
+        let (mut packages_app, tmp) = make_home_app();
         add_status_fixtures(tmp.path());
         packages_app.ctx.core.icons = set;
         let colors = ThemeColors::from_theme(packages_app.ctx.core.theme);
@@ -2054,7 +2049,7 @@ fn test_package_and_status_screens_share_glyph_colour_and_word() {
         let cursor_row = find_accent(&packages).map(|(_, y)| y);
         let border = list_border(&packages, "packages 6");
 
-        let (mut status_app, _tmp) = make_flat_status_app();
+        let (mut status_app, _tmp) = make_status_app();
         status_app.ctx.core.icons = set;
         push_screen(&mut status_app, "Status");
         let status = render_updated(&mut status_app, 80, 25);
@@ -2132,21 +2127,17 @@ fn list_text(buf: &Buffer, y: u16, border: u16) -> String {
     (0..border).map(|x| buf[(x, y)].symbol()).collect()
 }
 
-/// A config with one group `home` that holds `count` packages, each with one file.
+/// A config with one packages folder that holds `count` packages, each with one file.
 fn make_package_count_app(count: usize) -> (App, tempfile::TempDir) {
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("andre.yml");
     std::fs::write(
         &path,
-        "global:\n  stow:\n    verbosity: 0\npackages: dotfiles/home\n",
+        "global:\n  stow:\n    verbosity: 0\npackages: dotfiles\n",
     )
     .unwrap();
     for i in 0..count {
-        write_package(
-            &tmp.path().join("dotfiles/home"),
-            &format!("pkg{i:02}"),
-            ".rc",
-        );
+        write_package(&tmp.path().join("dotfiles"), &format!("pkg{i:02}"), ".rc");
     }
     let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
     (app, tmp)
@@ -2156,8 +2147,8 @@ fn make_package_count_app(count: usize) -> (App, tempfile::TempDir) {
 /// name is cut inside the list, and the CJK name is two columns wide per character.
 #[test]
 fn test_long_and_cjk_package_names_keep_the_list_columns_in_line() {
-    let (mut app, tmp) = make_flat_home_app();
-    let home = tmp.path().join("dotfiles/home");
+    let (mut app, tmp) = make_home_app();
+    let home = tmp.path().join("dotfiles");
     write_package(&home, &long_package(), ".long_rc");
     write_package(&home, "deploy", ".deploy_rc");
     write_package(&home, CJK_PACKAGE, ".kanji_rc");
@@ -2252,7 +2243,7 @@ fn test_package_list_draws_its_scrollbar_thumb_when_rows_overflow() {
 
 #[test]
 fn test_package_list_draws_no_scrollbar_when_every_row_fits() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Packages");
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
     let buf = render_updated(&mut app, 80, 24);
@@ -2272,7 +2263,7 @@ fn test_execute_highlighted_row_is_text_on_selection() {
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results = vec![ExecutionResult {
-        name: "home/pkg0".into(),
+        name: "pkg0".into(),
         success: false,
         error_message: Some("boom".into()),
     }];
@@ -2283,12 +2274,12 @@ fn test_execute_highlighted_row_is_text_on_selection() {
     // Row 0 is the failed package. Its error is in the detail, not the row.
     let buf = render_app(&mut app, 80, 24);
     let y = (0..buf.area().height)
-        .find(|&y| row_text(&buf, y).contains("\u{2717} home/pkg0"))
+        .find(|&y| row_text(&buf, y).contains("\u{2717} pkg0"))
         .expect("failed row is drawn");
     // The name takes the label colour on the cursor row. The failure mark keeps its own
     // colour when that reads on the fill, so only the name is checked here.
-    let text_x = column_of(&buf, y, "home/pkg0").expect("name is drawn");
-    for x in text_x..text_x + "home/pkg0".len() as u16 {
+    let text_x = column_of(&buf, y, "pkg0").expect("name is drawn");
+    for x in text_x..text_x + "pkg0".len() as u16 {
         let cell = &buf[(x, y)];
         assert_eq!(cell.fg, colors.text, "highlighted row text at column {x}");
         assert_eq!(
@@ -2308,7 +2299,7 @@ fn test_execute_list_draws_its_scrollbar_thumb_on_the_panel_border() {
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results: Vec<_> = (0..20)
         .map(|i| ExecutionResult {
-            name: format!("home/pkg{i}"),
+            name: format!("pkg{i}"),
             success: true,
             error_message: None,
         })
@@ -2332,14 +2323,10 @@ const STATUS_TITLE: &str = " packages ";
 
 #[test]
 fn test_status_list_draws_its_scrollbar_thumb_when_rows_overflow() {
-    let (mut app, tmp) = make_flat_status_app();
+    let (mut app, tmp) = make_status_app();
     // Eight more packages make 14 rows, more than the 13 that fit.
     for i in 0..8 {
-        write_package(
-            &tmp.path().join("dotfiles/home"),
-            &format!("extra{i}"),
-            ".x_rc",
-        );
+        write_package(&tmp.path().join("dotfiles"), &format!("extra{i}"), ".x_rc");
     }
     push_screen(&mut app, "Status");
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
@@ -2362,7 +2349,7 @@ fn test_status_list_draws_its_scrollbar_thumb_when_rows_overflow() {
 /// packages, and `f` opens the dropdown with every package first and the profile under the bar.
 #[test]
 fn test_status_profile_chip_title_and_dropdown_follow_the_filter() {
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     app.ctx
         .core
@@ -2404,7 +2391,7 @@ fn test_status_profile_chip_title_and_dropdown_follow_the_filter() {
 /// The filtered status screen with its profile dropdown open draws at the large sizes too.
 #[test]
 fn test_status_filter_dropdown_renders_at_120x40_and_200x50_without_panic() {
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     app.ctx
         .core
         .profiles
@@ -2427,7 +2414,7 @@ fn test_status_filter_dropdown_renders_at_120x40_and_200x50_without_panic() {
 /// they line up across profiles: 25 columns after `profile`, as in the 80x24 mockup.
 #[test]
 fn test_status_chip_row_names_all_and_puts_the_counts_at_a_fixed_column() {
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     push_screen(&mut app, "Status");
 
@@ -2443,7 +2430,7 @@ fn test_status_chip_row_names_all_and_puts_the_counts_at_a_fixed_column() {
 /// A chip too long to leave room keeps three spaces before the counts.
 #[test]
 fn test_status_chip_row_keeps_three_columns_before_the_counts_after_a_long_profile() {
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     app.ctx
         .core
@@ -2506,7 +2493,7 @@ fn test_status_package_with_no_target_reads_unknown() {
 /// and the list draws no group header above them.
 #[test]
 fn test_status_rows_start_with_their_glyph_and_draw_no_group_header() {
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     push_screen(&mut app, "Status");
     let buf = render_updated(&mut app, 80, 24);
@@ -2547,7 +2534,7 @@ fn test_status_rows_start_with_their_glyph_and_draw_no_group_header() {
 /// A conflict's detail names the file in the way, as `real file`, and the fix.
 #[test]
 fn test_status_conflict_detail_names_the_real_file_in_the_way() {
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     app.ctx.core.icons = IconSet::Unicode;
     push_screen(&mut app, "Status");
     // Packages sort by name, so `clash` is the first row.
@@ -2601,7 +2588,7 @@ fn test_status_list_draws_no_scrollbar_when_every_row_fits() {
     );
 }
 
-/// One group. `wide` has three long file names, so its detail is longer than a row;
+/// One package. `wide` has three long file names, so its detail is longer than a row;
 /// `plain` has one short name.
 fn make_long_detail_app() -> (App, tempfile::TempDir) {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -2612,11 +2599,11 @@ fn make_long_detail_app() -> (App, tempfile::TempDir) {
 global:
   stow:
     verbosity: 0
-packages: dotfiles/home
+packages: dotfiles
 "#,
     )
     .unwrap();
-    let source = tmp.path().join("dotfiles/home");
+    let source = tmp.path().join("dotfiles");
     for name in ["alpha", "beta", "gamma"] {
         write_package(
             &source,
@@ -2875,7 +2862,7 @@ fn test_marked_partial_package_under_the_cursor_reads_bar_box_status_then_name()
 
 #[test]
 fn test_menu_packages_facts_name_the_folder_and_the_target_and_no_group() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     menu_mut(&mut app).list.cursor = 1;
     let buf = render_updated(&mut app, 80, 24);
     assert!(
@@ -2899,7 +2886,7 @@ fn test_menu_packages_facts_name_the_folder_and_the_target_and_no_group() {
 /// Every menu item's row and detail, one cursor position at a time, avoid the word group.
 #[test]
 fn test_no_menu_item_says_group_at_any_cursor() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     for item in 0..menu_mut(&mut app).item_count() {
         menu_mut(&mut app).list.cursor = item;
         let buf = render_updated(&mut app, 80, 24);
@@ -2913,7 +2900,7 @@ fn test_no_menu_item_says_group_at_any_cursor() {
 #[test]
 fn test_packages_screens_render_at_120x40_and_200x50_without_panic() {
     for (width, height) in [(120, 40), (200, 50)] {
-        let (mut app, _tmp) = make_flat_test_app();
+        let (mut app, _tmp) = make_test_app();
         push_screen(&mut app, "Packages");
         app.update_components();
         render_updated(&mut app, width, height);
@@ -2930,14 +2917,14 @@ fn test_packages_screens_render_at_120x40_and_200x50_without_panic() {
         push_screen(&mut app, "Packages");
         render_updated(&mut app, width, height);
 
-        let (mut app, _tmp) = make_flat_test_app();
+        let (mut app, _tmp) = make_test_app();
         render_updated(&mut app, width, height);
     }
 }
 
 #[test]
 fn test_help_packages_topic_describes_marks_and_the_packages_folder() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Help");
     for _ in 0..4 {
         app.component_dispatch(down_key());
@@ -3006,7 +2993,7 @@ fn test_package_whose_target_is_missing_shows_the_unknown_dot() {
 
 #[test]
 fn test_membership_dialog_names_the_package_and_offers_cancel_and_save() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Packages");
     app.update_components();
     app.component_dispatch(key_char('p'));
@@ -3030,7 +3017,7 @@ fn test_membership_dialog_names_the_package_and_offers_cancel_and_save() {
 #[test]
 fn test_packages_render_at_120x40_and_200x50_with_the_dialog_open() {
     for (width, height) in [(120, 40), (200, 50)] {
-        let (mut app, _tmp) = make_flat_test_app();
+        let (mut app, _tmp) = make_test_app();
         push_screen(&mut app, "Packages");
         app.update_components();
         app.component_dispatch(key_char('p'));
@@ -3613,7 +3600,7 @@ fn test_profiles_render_at_120x40_and_200x50_with_a_dialog_open() {
     }
 }
 
-/// The ignore editor for `home/test`, opened from the packages screen with `i`.
+/// The ignore editor for `test`, opened from the packages screen with `i`.
 fn open_ignore_render(app: &mut App) {
     app.component_dispatch(key_char('2'));
     app.update_components();
@@ -3622,9 +3609,9 @@ fn open_ignore_render(app: &mut App) {
     app.update_components();
 }
 
-/// Writes one of the package's ignore files, `home/test`, before the editor opens.
+/// Writes one of the package's ignore files, `test`, before the editor opens.
 fn write_package_ignore(app: &App, name: &str, text: &str) {
-    let dir = app.ctx.home_dir.join("dotfiles/home/test");
+    let dir = app.ctx.home_dir.join("dotfiles/test");
     std::fs::write(dir.join(name), text).unwrap();
 }
 
@@ -3641,7 +3628,7 @@ fn test_ignore_editor_at_80x24_shows_the_file_tabs_the_lines_and_the_detail() {
         "missing file tab"
     );
     assert!(
-        line_contains(&buf, "main › packages › home/test › ignore"),
+        line_contains(&buf, "main › packages › test › ignore"),
         "the breadcrumb names the screen"
     );
     assert!(line_contains(&buf, "*.env"), "the lines are listed");
@@ -3715,7 +3702,7 @@ fn test_ignore_editor_leave_dialog_names_the_package() {
     let buf = render_updated(&mut app, 80, 24);
     assert!(line_contains(
         &buf,
-        "Save changes to the ignore files of home/test?"
+        "Save changes to the ignore files of test?"
     ));
     for label in ["stay", "discard", "save"] {
         assert!(line_contains(&buf, label), "{label} button");
@@ -4282,7 +4269,7 @@ fn test_new_package_nested_file_moves_into_its_folder_in_the_package_at_80x24() 
 
 #[test]
 fn test_help_new_package_topic_says_name_and_the_packages_folder_not_group() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Help");
     // The eighth topics, in order: keys, mouse, status glyphs, profiles, packages, new package.
     for _ in 0..5 {
@@ -4348,10 +4335,7 @@ fn test_setup_detail_names_the_package_the_link_and_the_source() {
     let (mut app, _tmp) = make_bootstrap_app();
     let buf = render_updated(&mut app, 120, 40);
     assert!(line_contains(&buf, "set up this machine"), "detail title");
-    assert!(
-        line_contains(&buf, "package   config/andre"),
-        "package fact"
-    );
+    assert!(line_contains(&buf, "package   andre"), "package fact");
     assert!(row_containing(&buf, "links")
         .unwrap()
         .contains("~/.config/andre"));
@@ -4378,7 +4362,7 @@ fn test_set_up_facts_elide_long_paths_to_one_row_each_at_80x24() {
     let from = row_containing(&buf, "from ").expect("from row");
     assert!(from.contains('\u{2026}'), "from value elided: {from:?}");
     assert!(
-        row_containing(&buf, "dotfiles/config").is_none(),
+        row_containing(&buf, "dotfiles/packages").is_none(),
         "the path does not wrap onto a row of its own"
     );
     let links = row_containing(&buf, "links").expect("links row");
@@ -4442,7 +4426,7 @@ fn test_zero_reviews_a_stow_of_the_package_whatever_the_global_action() {
     let buf = render_app(&mut app, 80, 24);
     assert!(line_contains(&buf, "stow 1 package"), "the review stows");
     assert!(
-        line_contains(&buf, "native: config/andre"),
+        line_contains(&buf, "native: andre"),
         "the review names the package"
     );
     assert_eq!(
@@ -4471,7 +4455,7 @@ fn test_set_up_flow_renders_at_120x40_and_200x50() {
 #[test]
 fn test_review_names_its_action_in_the_action_bar() {
     let (mut app, _tmp) = make_test_app();
-    let selected = vec!["home/test".to_string()];
+    let selected = vec!["test".to_string()];
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
             selected, &app.ctx,
@@ -4494,7 +4478,7 @@ fn test_review_names_its_action_in_the_action_bar() {
 #[test]
 fn test_review_action_bar_sits_on_the_last_content_row_at_80x24() {
     let (mut app, _tmp) = make_test_app();
-    let selected = vec!["home/test".to_string()];
+    let selected = vec!["test".to_string()];
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
             selected, &app.ctx,
@@ -4515,7 +4499,7 @@ fn test_review_action_bar_sits_on_the_last_content_row_at_80x24() {
 /// checkbox column. The status glyph sits in column one, after the cursor gutter.
 #[test]
 fn test_review_is_a_flat_list_at_80x24() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     app.ctx.core.icons = IconSet::Unicode;
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
@@ -4537,7 +4521,7 @@ fn test_review_is_a_flat_list_at_80x24() {
 /// Packages list in name order, whatever order the selection gives them in.
 #[test]
 fn test_review_lists_packages_in_name_order() {
-    let (mut app, tmp) = make_flat_test_app();
+    let (mut app, tmp) = make_test_app();
     std::fs::create_dir_all(tmp.path().join("dotfiles/shell")).unwrap();
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
@@ -4558,7 +4542,7 @@ fn test_review_lists_packages_in_name_order() {
 /// At 80x24 the detail pane is 39 columns, so the command must fit on one row there.
 #[test]
 fn test_review_detail_shows_the_stow_command_on_a_flat_fixture() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     app.ctx.core.config.global.engine = Some("stow".into());
     app.component_stack
         .push(Box::new(andre::components::confirm::ConfirmComponent::new(
@@ -4575,8 +4559,8 @@ fn test_review_detail_shows_the_stow_command_on_a_flat_fixture() {
 /// Set-up on a flat config: `0` reviews the package holding the config folder. Its row shows
 /// a known status, and the detail resolves the package to a native link.
 #[test]
-fn test_flat_set_up_review_resolves_its_package_at_80x24() {
-    let (mut app, _tmp) = make_flat_bootstrap_app();
+fn test_set_up_review_resolves_its_package_at_80x24() {
+    let (mut app, _tmp) = make_bootstrap_app();
     app.ctx.core.icons = IconSet::Unicode;
     render_updated(&mut app, 80, 24);
     app.component_dispatch(key_char('0'));
@@ -4597,9 +4581,9 @@ fn test_flat_set_up_review_resolves_its_package_at_80x24() {
 }
 
 #[test]
-fn test_flat_review_renders_at_120x40_and_200x50_without_panic() {
+fn test_review_renders_at_120x40_and_200x50_without_panic() {
     for (width, height) in [(120, 40), (200, 50)] {
-        let (mut app, _tmp) = make_flat_test_app();
+        let (mut app, _tmp) = make_test_app();
         app.component_stack
             .push(Box::new(andre::components::confirm::ConfirmComponent::new(
                 vec!["test".to_string()],
@@ -4624,7 +4608,7 @@ fn test_run_failure_keeps_each_line_of_the_engine_message() {
         rx,
         1,
         vec![ExecutionResult {
-            name: "home/shell".into(),
+            name: "shell".into(),
             success: false,
             error_message: Some(message.into()),
         }],
@@ -4657,7 +4641,7 @@ fn test_run_detail_pages_through_a_long_failure() {
         rx,
         1,
         vec![ExecutionResult {
-            name: "home/shell".into(),
+            name: "shell".into(),
             success: false,
             error_message: Some(message),
         }],
@@ -4695,8 +4679,7 @@ fn test_run_footer_says_running_until_it_finishes() {
 
     let (mut app, _tmp) = make_test_app();
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
-    let mut exec =
-        ExecuteComponent::new(rx, 2, Vec::new()).for_run("stow", vec!["home/shell".into()]);
+    let mut exec = ExecuteComponent::new(rx, 2, Vec::new()).for_run("stow", vec!["shell".into()]);
     exec.state = ExecutionState::Running;
     app.component_stack.push(Box::new(exec));
     let buf = render_updated(&mut app, 80, 24);
@@ -4709,7 +4692,7 @@ fn test_run_footer_says_running_until_it_finishes() {
     let (mut app, _tmp) = make_test_app();
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results = vec![ExecutionResult {
-        name: "home/shell".into(),
+        name: "shell".into(),
         success: true,
         error_message: None,
     }];
@@ -4740,7 +4723,7 @@ fn test_run_done_button_sits_on_the_last_content_row_at_80x24() {
         rx,
         1,
         vec![ExecutionResult {
-            name: "home/shell".into(),
+            name: "shell".into(),
             success: true,
             error_message: None,
         }],
@@ -4763,7 +4746,7 @@ fn test_run_detail_offers_a_fix_for_a_real_file_in_the_way() {
     let (mut app, _tmp) = make_test_app();
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let results = vec![ExecutionResult {
-        name: "home/shell".into(),
+        name: "shell".into(),
         success: false,
         error_message: Some("target already exists and is not a symlink: /home/u/.bashrc".into()),
     }];
@@ -4829,7 +4812,7 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
 
     for (width, height) in [(120, 40), (200, 50)] {
         let (mut app, tmp) = make_test_app();
-        let selected = vec!["home/test".to_string()];
+        let selected = vec!["test".to_string()];
         app.component_stack
             .push(Box::new(andre::components::confirm::ConfirmComponent::new(
                 selected, &app.ctx,
@@ -4843,12 +4826,12 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
             rx,
             2,
             vec![ExecutionResult {
-                name: "home/bash".into(),
+                name: "bash".into(),
                 success: true,
                 error_message: None,
             }],
         )
-        .for_run("stow", vec!["home/vim".into()]);
+        .for_run("stow", vec!["vim".into()]);
         exec.state = ExecutionState::Running;
         app.component_stack.push(Box::new(exec));
         render_updated(&mut app, width, height);
@@ -4867,7 +4850,7 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
 
 #[test]
 fn test_settings_list_shows_its_sections_and_no_save_status_text() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_updated(&mut app, 80, 24);
     for header in ["stow options", "appearance", "config"] {
@@ -4890,7 +4873,7 @@ fn test_settings_list_shows_its_sections_and_no_save_status_text() {
 
 #[test]
 fn test_settings_title_marks_unsaved_edits() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_updated(&mut app, 80, 24);
     assert!(!line_contains(&buf, "unsaved"));
@@ -4905,7 +4888,7 @@ fn test_settings_title_marks_unsaved_edits() {
 
 #[test]
 fn test_settings_skips_headers_when_the_cursor_moves() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     select_setting(&mut app, "icons");
     app.component_dispatch(down_key());
@@ -4974,7 +4957,7 @@ fn test_settings_dialogs_render_at_80x24_120x40_and_200x50() {
     ];
     for (name, open, title) in scenarios {
         for (width, height) in [(80, 24), (120, 40), (200, 50)] {
-            let (mut app, _tmp) = make_flat_test_app();
+            let (mut app, _tmp) = make_test_app();
             push_screen(&mut app, "Settings");
             app.update_components();
             open(&mut app);
@@ -4990,7 +4973,7 @@ fn test_settings_dialogs_render_at_80x24_120x40_and_200x50() {
 #[test]
 fn test_settings_list_renders_at_120x40_and_200x50() {
     for (width, height) in [(120, 40), (200, 50)] {
-        let (mut app, _tmp) = make_flat_test_app();
+        let (mut app, _tmp) = make_test_app();
         push_screen(&mut app, "Settings");
         let buf = render_updated(&mut app, width, height);
         assert!(
@@ -5006,7 +4989,7 @@ fn test_settings_list_renders_at_120x40_and_200x50() {
 
 #[test]
 fn test_settings_packages_footer_says_change_and_keeps_the_theme_chip_at_80x24() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     select_setting(&mut app, "packages");
     let buf = render_app(&mut app, 80, 24);
@@ -5023,7 +5006,7 @@ fn test_settings_packages_footer_says_change_and_keeps_the_theme_chip_at_80x24()
 
 #[test]
 fn test_settings_unsaved_dot_is_drawn_in_the_warn_colour() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     render_updated(&mut app, 80, 24);
     app.component_dispatch(key_char('v'));
@@ -5175,7 +5158,7 @@ fn test_profile_edit_lists_a_missing_ref_after_the_packages_as_missing() {
 /// 200x50 without panic and keeps the flat rows.
 #[test]
 fn test_status_of_every_package_renders_at_120x40_and_200x50() {
-    let (mut app, _tmp) = make_flat_status_app();
+    let (mut app, _tmp) = make_status_app();
     push_screen(&mut app, "Status");
     for (width, height) in [(120, 40), (200, 50)] {
         let buf = render_updated(&mut app, width, height);
@@ -5350,7 +5333,7 @@ fn test_review_and_run_title_rows_name_their_screen() {
 
 #[test]
 fn test_profile_edit_title_row_names_the_profile() {
-    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[("agent", "packages: [test]\n")]);
     open_editor_render(&mut app, "agent");
     let buf = render_updated(&mut app, 80, 24);
     assert!(
@@ -5363,7 +5346,7 @@ fn test_profile_edit_title_row_names_the_profile() {
 #[test]
 fn test_compact_title_drops_the_leftmost_crumbs_when_the_trail_is_too_wide() {
     let long = "a".repeat(60);
-    let (mut app, _tmp) = make_profiles_app(&[(long.as_str(), "packages: [home/test]\n")]);
+    let (mut app, _tmp) = make_profiles_app(&[(long.as_str(), "packages: [test]\n")]);
     open_editor_render(&mut app, &long);
     let buf = render_updated(&mut app, 80, 24);
     let title = row_text(&buf, 1);
@@ -5381,7 +5364,7 @@ fn test_ignore_editor_title_row_names_the_package_at_120x40_and_200x50() {
         open_ignore_render(&mut app);
         let buf = render_updated(&mut app, width, height);
         assert!(
-            row_text(&buf, 1).contains("andre  main › packages › home/test › ignore"),
+            row_text(&buf, 1).contains("andre  main › packages › test › ignore"),
             "{width}x{height}: title row {:?}",
             row_text(&buf, 1)
         );
@@ -5401,14 +5384,14 @@ fn test_run_rows_show_the_package_name_at_80x24() {
         rx,
         1,
         vec![ExecutionResult {
-            name: "home/shell".into(),
+            name: "shell".into(),
             success: true,
             error_message: None,
         }],
     )));
     let buf = render_updated(&mut app, 80, 24);
     assert!(
-        line_contains(&buf, "\u{2713} home/shell"),
+        line_contains(&buf, "\u{2713} shell"),
         "result row must show `name` after its mark"
     );
 }
@@ -5422,7 +5405,7 @@ fn test_run_screen_and_set_up_render_at_120x40_and_200x50() {
         let (mut app, _tmp) = make_bootstrap_app();
         let buf = render_updated(&mut app, width, height);
         assert!(
-            line_contains(&buf, "config/andre"),
+            line_contains(&buf, "package   andre"),
             "{width}x{height}: set-up detail must name the package"
         );
 
@@ -5431,15 +5414,46 @@ fn test_run_screen_and_set_up_render_at_120x40_and_200x50() {
             rx,
             2,
             vec![ExecutionResult {
-                name: "config/andre".into(),
+                name: "andre".into(),
                 success: false,
                 error_message: Some("Skipped: source directory not found".into()),
             }],
         )));
         let buf = render_updated(&mut app, width, height);
         assert!(
-            line_contains(&buf, "config/andre"),
+            line_contains(&buf, "\u{2205} andre"),
             "{width}x{height}: run row must name the package"
         );
+    }
+}
+
+#[test]
+fn flat_fixture_screens_render_without_panic_at_120x40_and_200x50() {
+    // The screens the flat fixtures reach: each menu row, the packages' ignore editor and the
+    // review of one package, and the set-up review of a bootstrap config.
+    for (width, height) in [(120, 40), (200, 50)] {
+        for digit in ['1', '2', '3', '4', '5', '6', '7', '8'] {
+            let (mut app, _tmp) = make_test_app();
+            app.component_dispatch(key_char(digit));
+            render_updated(&mut app, width, height);
+        }
+
+        let (mut app, _tmp) = make_test_app();
+        app.component_dispatch(key_char('2'));
+        app.component_dispatch(down_key());
+        app.component_dispatch(key_char('i'));
+        render_updated(&mut app, width, height);
+
+        let (mut app, _tmp) = make_test_app();
+        app.component_dispatch(key_char('2'));
+        app.component_dispatch(down_key());
+        app.component_dispatch(space_key());
+        app.component_dispatch(enter_key());
+        render_updated(&mut app, width, height);
+
+        let (mut app, _tmp) = make_bootstrap_app();
+        app.update_components();
+        app.component_dispatch(key_char('0'));
+        render_updated(&mut app, width, height);
     }
 }

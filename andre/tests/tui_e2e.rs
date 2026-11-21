@@ -13,7 +13,7 @@ use andre::components::wizard::NewPackageWizard;
 use andre::execute::ExecutionState;
 use andre_core::profile::ProfileSet;
 use andre_core::StowAction;
-use helpers::{make_bootstrap_app, make_flat_bootstrap_app};
+use helpers::make_bootstrap_app;
 
 fn binary_path() -> PathBuf {
     // Try llvm-cov target dir first, then default debug dir
@@ -47,10 +47,8 @@ fn make_tui_e2e_app() -> (App, TempDir) {
 global:
   stow:
     verbosity: 0
-groups:
-  home:
-    source: {}
-    target: {}
+packages: {}
+target: {}
 "#,
         source_base.display(),
         target.display()
@@ -101,8 +99,8 @@ fn pump_until_complete(app: &mut App, timeout_secs: u64) {
 }
 
 fn navigate_to_confirm(app: &mut App) {
-    // `2` opens packages from the main menu (row 1 is profiles). Space on the group's header
-    // marks its one package, and Enter runs the marks through the confirm screen.
+    // `2` opens packages from the main menu (row 1 is profiles). Space marks the one package,
+    // and Enter runs the marks through the confirm screen.
     app.component_dispatch(key(KeyCode::Char('2')));
     app.component_dispatch(key(KeyCode::Char(' ')));
     app.component_dispatch(key(KeyCode::Enter));
@@ -180,10 +178,8 @@ fn test_tui_missing_target_skips_execution() {
 global:
   stow:
     verbosity: 0
-groups:
-  home:
-    source: {}
-    target: {}
+packages: {}
+target: {}
 "#,
         source_base.display(),
         tmp.path().join("nonexistent-target").display()
@@ -244,7 +240,6 @@ fn test_unknown_config_field_rejected() {
 global:
   stow:
     nonexistent: true
-groups: {}
 "#,
     )
     .unwrap();
@@ -297,7 +292,7 @@ fn test_onboard_creates_config_file() {
     );
     let content = std::fs::read_to_string(&config_path).unwrap();
     assert!(
-        content.contains("global:") && !content.contains("groups:"),
+        content.contains("global:") && !content.contains("groups"),
         "config should contain global and no groups key: {content}"
     );
 }
@@ -305,7 +300,7 @@ fn test_onboard_creates_config_file() {
 // --- New-package wizard, end to end in a temp HOME ---
 
 /// Config folder at the temp root: the packages folder `dotfiles` holding `git`, HOME is
-/// `home/` (the target), and one profile `personal` holding `git`. Returns the app with the
+/// `homedir/` (the target), and one profile `personal` holding `git`. Returns the app with the
 /// wizard on top.
 fn wizard_app() -> (App, TempDir) {
     let tmp = TempDir::new().unwrap();
@@ -315,14 +310,14 @@ fn wizard_app() -> (App, TempDir) {
     )
     .unwrap();
     std::fs::create_dir_all(tmp.path().join("dotfiles/git")).unwrap();
-    std::fs::create_dir_all(tmp.path().join("home")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("homedir")).unwrap();
     std::fs::create_dir_all(tmp.path().join("profiles")).unwrap();
     std::fs::write(
         tmp.path().join("profiles/personal.yml"),
         "packages:\n  - git\n",
     )
     .unwrap();
-    let mut app = App::with_home(tmp.path().join("andre.yml"), tmp.path().join("home")).unwrap();
+    let mut app = App::with_home(tmp.path().join("andre.yml"), tmp.path().join("homedir")).unwrap();
     app.component_stack
         .push(Box::new(NewPackageWizard::default()));
     (app, tmp)
@@ -373,7 +368,7 @@ fn test_new_package_empty_creates_the_package_its_gitignore_and_the_profile_ref(
 #[test]
 fn test_new_package_from_live_files_moves_the_file_and_links_it_back() {
     let (mut app, tmp) = wizard_app();
-    let live = tmp.path().join("home/.bashrc");
+    let live = tmp.path().join("homedir/.bashrc");
     std::fs::write(&live, "alias l='ls -la'\n").unwrap();
     // name shell, create row, live files, the picker opens at the target.
     press_all(&mut app, &typed("shell"));
@@ -411,7 +406,7 @@ fn test_set_up_review_stows_its_package_when_the_global_action_is_unstow() {
     let (mut app, tmp) = make_bootstrap_app();
     app.ctx.core.flags.action = StowAction::Unstow;
     // Make `~/.config` exist, so the package's `andre` folder is linked inside it.
-    std::fs::create_dir_all(tmp.path().join("home/.config")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("homedir/.config")).unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
     let _guard = rt.enter();
 
@@ -424,7 +419,7 @@ fn test_set_up_review_stows_its_package_when_the_global_action_is_unstow() {
     rt.shutdown_timeout(Duration::from_secs(5));
 
     // The native engine links files, so the config file is the symlink, into the package.
-    let linked = tmp.path().join("home/.config/andre/andre.yml");
+    let linked = tmp.path().join("homedir/.config/andre/andre.yml");
     assert!(
         std::fs::symlink_metadata(&linked)
             .unwrap()
@@ -436,7 +431,7 @@ fn test_set_up_review_stows_its_package_when_the_global_action_is_unstow() {
         std::fs::canonicalize(&linked).unwrap(),
         std::fs::canonicalize(
             tmp.path()
-                .join("dotfiles/config/andre/.config/andre/andre.yml")
+                .join("dotfiles/packages/andre/.config/andre/andre.yml")
         )
         .unwrap(),
     );
@@ -444,34 +439,5 @@ fn test_set_up_review_stows_its_package_when_the_global_action_is_unstow() {
         app.ctx.core.flags.action,
         StowAction::Unstow,
         "the global action is not changed"
-    );
-}
-
-#[test]
-fn test_set_up_review_of_a_flat_config_links_its_config_folder() {
-    let (mut app, tmp) = make_flat_bootstrap_app();
-    app.ctx.core.flags.action = StowAction::Unstow;
-    // Make `~/.config` exist, so the package's `andre` folder is linked inside it.
-    std::fs::create_dir_all(tmp.path().join("home/.config")).unwrap();
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let _guard = rt.enter();
-
-    app.update_components();
-    app.component_dispatch(key(KeyCode::Char('0')));
-    app.component_dispatch(key(KeyCode::Char('y')));
-    pump_until_complete(&mut app, 10);
-    rt.shutdown_timeout(Duration::from_secs(5));
-
-    let linked = tmp.path().join("home/.config/andre/andre.yml");
-    assert!(
-        std::fs::symlink_metadata(&linked)
-            .unwrap()
-            .file_type()
-            .is_symlink(),
-        "the set-up review linked the config file"
-    );
-    assert_eq!(
-        std::fs::canonicalize(&linked).unwrap(),
-        std::fs::canonicalize(tmp.path().join("dotfiles/andre/.config/andre/andre.yml")).unwrap(),
     );
 }

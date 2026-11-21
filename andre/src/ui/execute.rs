@@ -200,7 +200,7 @@ mod tests {
 
     fn failed(message: &str) -> ExecutionResult {
         ExecutionResult {
-            name: "home/shell".into(),
+            name: "shell".into(),
             success: false,
             error_message: Some(message.into()),
         }
@@ -214,12 +214,12 @@ mod tests {
     fn test_result_row_shows_the_result_name() {
         let colors = ThemeColors::from_theme(andre_core::Theme::Default);
         let result = ExecutionResult {
-            name: "home/shell".into(),
+            name: "shell".into(),
             success: true,
             error_message: None,
         };
         let row = text(&result_row(&result, false, &colors, 60));
-        assert!(row.contains(" home/shell"), "{row:?}");
+        assert!(row.contains(" shell"), "{row:?}");
     }
 
     #[test]

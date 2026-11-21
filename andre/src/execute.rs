@@ -10,7 +10,7 @@ use andre_core::{Config, LinkEngine, LinkOp, PackageEntry, StowFlags};
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
-    /// The package's name as the rows show it: `shell` (interim: `home/shell`).
+    /// The package's name as the rows show it, such as `shell`.
     pub name: String,
     pub success: bool,
     pub error_message: Option<String>,

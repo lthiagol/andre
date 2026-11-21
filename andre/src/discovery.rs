@@ -90,7 +90,7 @@ mod tests {
     fn touch(dir: &Path, name: &str) -> PathBuf {
         fs::create_dir_all(dir).unwrap();
         let path = dir.join(name);
-        fs::write(&path, "global: {}\ngroups: {}\n").unwrap();
+        fs::write(&path, "global: {}\n").unwrap();
         path
     }
 

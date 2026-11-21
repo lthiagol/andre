@@ -24,8 +24,8 @@ use tempfile::TempDir;
 
 use helpers::{
     click, component_id, down_key, draw, enter_key, esc_key, find_text, key_char, make_empty_app,
-    make_flat_packages_app, make_flat_test_app, make_test_app, make_two_group_app, make_unstow_app,
-    push_browse, push_component, row_text, space_key, up_key, wheel,
+    make_flat_packages_app, make_test_app, make_unstow_app, push_browse, push_component, row_text,
+    space_key, up_key, wheel,
 };
 
 /// Pushes the named screen and brings it up to date, as the loop does before the first frame.
@@ -372,7 +372,7 @@ fn test_the_touched_screens_render_at_120x40_and_200x50() {
             "Settings",
             "NewPackage",
         ] {
-            let (mut app, _tmp): (App, TempDir) = make_two_group_app();
+            let (mut app, _tmp): (App, TempDir) = make_flat_packages_app(&["bash-env", "nvim"]);
             if name == "Profiles" {
                 app.component_stack
                     .push(Box::new(ProfilesComponent::default()));
@@ -423,7 +423,7 @@ fn settings_cursor_after_up() -> usize {
 
 #[test]
 fn test_wheel_over_settings_moves_to_the_next_selectable_row() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     open(&mut app, "Settings");
     let buf = draw(&mut app, 80, 24);
     let header = settings(&app).items()[0].label.clone();
@@ -445,7 +445,7 @@ fn test_wheel_over_settings_moves_to_the_next_selectable_row() {
 
 #[test]
 fn test_wheel_up_over_a_selectable_row_moves_as_up_does() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     open(&mut app, "Settings");
     let buf = draw(&mut app, 80, 24);
     let header = settings(&app).items()[0].label.clone();
@@ -471,7 +471,7 @@ fn test_wheel_up_over_a_selectable_row_moves_as_up_does() {
 
 #[test]
 fn test_click_on_a_settings_header_changes_nothing() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     open(&mut app, "Settings");
     let buf = draw(&mut app, 80, 24);
     let header = settings(&app).items()[0].label.clone();
@@ -483,11 +483,7 @@ fn test_click_on_a_settings_header_changes_nothing() {
 #[test]
 fn test_click_on_an_ignore_line_refreshes_the_detail_to_that_line() {
     let (mut app, tmp) = make_test_app();
-    std::fs::write(
-        tmp.path().join("dotfiles/home/test/.gitignore"),
-        "aaa\nbbb\n",
-    )
-    .unwrap();
+    std::fs::write(tmp.path().join("dotfiles/test/.gitignore"), "aaa\nbbb\n").unwrap();
     open(&mut app, "Packages");
     app.component_dispatch(down_key());
     app.component_dispatch(key_char('i'));
@@ -563,7 +559,7 @@ fn test_second_click_on_a_link_marks_it() {
 
 #[test]
 fn test_click_on_the_unstow_row_twice_opens_the_browse_at_the_target() {
-    let (mut app, tmp) = make_flat_test_app();
+    let (mut app, tmp) = make_test_app();
     let buf = draw(&mut app, 80, 24);
     let (x, y) = find_text(&buf, "unstow").expect("the unstow row");
     click(&mut app, x, y);
@@ -604,7 +600,7 @@ fn test_click_on_a_package_row_focuses_the_packages_then_a_second_click_toggles_
 
 #[test]
 fn test_a_file_checkbox_click_marks_the_file_and_a_link_cannot_be_marked() {
-    let (mut app, tmp) = make_flat_test_app();
+    let (mut app, tmp) = make_test_app();
     std::fs::write(tmp.path().join("notes.txt"), "hi").unwrap();
     std::os::unix::fs::symlink("dotfiles/test/.bashrc", tmp.path().join(".bashrc")).unwrap();
     let icons = Icons::for_set(app.ctx.core.icons);
@@ -713,7 +709,7 @@ fn test_click_on_the_create_button_makes_the_profile() {
 #[test]
 fn test_click_on_the_stow_local_ignore_tab_switches_the_file() {
     let (mut app, tmp) = make_test_app();
-    std::fs::write(tmp.path().join("dotfiles/home/test/.gitignore"), "aaa\n").unwrap();
+    std::fs::write(tmp.path().join("dotfiles/test/.gitignore"), "aaa\n").unwrap();
     open(&mut app, "Packages");
     app.component_dispatch(down_key());
     app.component_dispatch(key_char('i'));
@@ -727,7 +723,7 @@ fn test_click_on_the_stow_local_ignore_tab_switches_the_file() {
 #[test]
 fn test_click_on_the_discard_button_of_the_ignore_leave_dialog_leaves_the_editor() {
     let (mut app, tmp) = make_test_app();
-    std::fs::write(tmp.path().join("dotfiles/home/test/.gitignore"), "aaa\n").unwrap();
+    std::fs::write(tmp.path().join("dotfiles/test/.gitignore"), "aaa\n").unwrap();
     open(&mut app, "Packages");
     app.component_dispatch(down_key());
     app.component_dispatch(key_char('i'));
@@ -784,7 +780,7 @@ fn test_click_on_a_done_step_in_the_bar_goes_back_to_it() {
 
 #[test]
 fn test_click_on_the_cancel_button_of_a_review_goes_back() {
-    let (mut app, _tmp) = make_two_group_app();
+    let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim"]);
     open(&mut app, "Packages");
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
@@ -869,7 +865,7 @@ fn test_the_dialogs_and_bars_this_batch_touched_render_at_120x40_and_200x50() {
         open(&mut app, "Status");
         open_status_dropdown(&mut app, width, height);
 
-        let (mut app, _tmp) = make_two_group_app();
+        let (mut app, _tmp) = make_flat_packages_app(&["bash-env", "nvim"]);
         open(&mut app, "Packages");
         app.component_dispatch(down_key());
         app.component_dispatch(enter_key());
@@ -963,7 +959,7 @@ fn test_click_behind_the_theme_picker_changes_nothing() {
 
 #[test]
 fn test_click_on_the_discard_button_of_the_settings_leave_dialog_leaves_settings() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     open(&mut app, "Settings");
     app.component_dispatch(key_char('t'));
     app.component_dispatch(esc_key());
@@ -1135,7 +1131,7 @@ fn test_wheel_over_a_long_profile_detail_moves_its_sections() {
 
 #[test]
 fn test_click_on_the_cancel_button_of_the_packages_folder_picker_closes_it() {
-    let (mut app, _tmp) = make_flat_test_app();
+    let (mut app, _tmp) = make_test_app();
     open(&mut app, "Settings");
     let buf = draw(&mut app, 80, 24);
     // `packages ` with its padding: the detail of `action` also says "packages."

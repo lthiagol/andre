@@ -242,7 +242,7 @@ pub trait Component {
         screen_hints(self.id())
     }
 
-    /// The crumbs this screen adds to the title row, such as `packages` or `home/shell › ignore`.
+    /// The crumbs this screen adds to the title row, such as `packages` or `shell › ignore`.
     /// Defaults to the screen's own label; a screen about one entity names the entity, and a
     /// sub-screen adds its own crumb after that.
     fn crumbs(&self, _ctx: &AppContext) -> Vec<Cow<'static, str>> {

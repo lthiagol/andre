@@ -11,7 +11,7 @@ use tempfile::TempDir;
 use andre::app::App;
 use andre::discovery::ConfigSearch;
 
-const MINIMAL_CONFIG: &str = "global: {}\ngroups: {}\n";
+const MINIMAL_CONFIG: &str = "global: {}\n";
 
 fn write(path: &Path, body: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -47,11 +47,8 @@ fn config_folder_is_used_and_profiles_load_next_to_it() {
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().join("clone");
     write(&repo.join("andre.yml"), MINIMAL_CONFIG);
-    write(
-        &repo.join("profiles").join("work.yml"),
-        "packages: [home/git]\n",
-    );
-    let home = tmp.path().join("home");
+    write(&repo.join("profiles").join("work.yml"), "packages: [git]\n");
+    let home = tmp.path().join("homedir");
     fs::create_dir_all(&home).unwrap();
 
     let search = ConfigSearch {
@@ -70,7 +67,7 @@ fn config_folder_is_used_and_profiles_load_next_to_it() {
         .profiles
         .get("work")
         .expect("profile loaded from <config folder>/profiles");
-    assert_eq!(work.packages, ["home/git"]);
+    assert_eq!(work.packages, ["git"]);
     assert_eq!(
         app.ctx.core.profiles.dir(),
         fs::canonicalize(&repo).unwrap().join("profiles")
@@ -113,7 +110,7 @@ fn explicit_config_wins_over_xdg_and_never_falls_back() {
 #[test]
 fn legacy_locations_are_named_but_never_loaded() {
     let tmp = TempDir::new().unwrap();
-    let dotfiles = tmp.path().join("home").join("dotfiles");
+    let dotfiles = tmp.path().join("homedir").join("dotfiles");
     write(&dotfiles.join("andre.yml"), MINIMAL_CONFIG);
 
     let search = ConfigSearch {
@@ -154,7 +151,7 @@ impl Sandbox {
         let sandbox = Sandbox {
             _tmp: tmp,
             cwd: root.join("cwd"),
-            home: root.join("home"),
+            home: root.join("homedir"),
             xdg: root.join("xdg"),
         };
         fs::create_dir_all(&sandbox.cwd).unwrap();
@@ -370,20 +367,20 @@ fn demo_fixture_screens_render_without_panic_at_120x40_and_200x50() {
 
 // ---- headless --profile (F5) ----
 
-/// A config folder with two packages in group `home` and one profile, `work`, that lists
+/// A config folder with two packages and one profile, `work`, that lists
 /// only `git`.
 fn profile_repo(sb: &Sandbox) -> PathBuf {
     let repo = sb.cwd.join("repo");
     write(
         &repo.join("andre.yml"),
         &format!(
-            "global: {{}}\ngroups:\n  home:\n    source: packages\n    target: \"{}\"\n",
+            "global: {{}}\npackages: packages\ntarget: \"{}\"\n",
             sb.home.display()
         ),
     );
     write(&repo.join("packages/git/.gitconfig"), "[user]\n");
     write(&repo.join("packages/shell/.bashrc"), "alias l=ls\n");
-    write(&repo.join("profiles/work.yml"), "packages: [home/git]\n");
+    write(&repo.join("profiles/work.yml"), "packages: [git]\n");
     repo
 }
 

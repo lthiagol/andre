@@ -270,7 +270,7 @@ impl MainMenuComponent {
         ctx.config_path.hash(&mut hasher);
         ctx.core.config.packages.hash(&mut hasher);
         ctx.core.config.target.hash(&mut hasher);
-        // Interim: a `groups:` config still yields entries until G10 removes groups.
+        // Interim: a config with groups still yields entries until G10 removes groups.
         for (name, group) in &ctx.core.config.groups {
             name.hash(&mut hasher);
             group.source.hash(&mut hasher);
@@ -716,7 +716,7 @@ mod tests {
     fn test_help_names_zero_to_eight_while_set_up_is_offered() {
         let (_dir, ctx) = fixture(&[]);
         let found = Bootstrap {
-            package: "config/andre".into(),
+            package: "andre".into(),
             link: ctx.home_dir.join(".config").join("andre"),
         };
         let help = build_detail(MenuItem::Help, &ctx, Some(&found));
@@ -741,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    fn test_flat_package_holding_the_config_folder_offers_set_up() {
+    fn test_package_holding_the_config_folder_offers_set_up() {
         let (_dir, mut ctx) = flat_bootstrap_ctx();
         let mut menu = MainMenuComponent::default();
         menu.update(&mut ctx);

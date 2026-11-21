@@ -323,7 +323,7 @@ impl ProfilesComponent {
         ctx.core.theme.name().hash(&mut hasher);
         ctx.core.config.packages.hash(&mut hasher);
         ctx.core.config.target.hash(&mut hasher);
-        // Interim: a `groups:` config still yields entries until G10 removes groups.
+        // Interim: a config with groups still yields entries until G10 removes groups.
         for (name, group) in &ctx.core.config.groups {
             name.hash(&mut hasher);
             group.source.hash(&mut hasher);
@@ -568,7 +568,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let dir = tmp.path().join("profiles");
         std::fs::create_dir_all(&dir).unwrap();
-        let packages: Vec<String> = (0..14).map(|i| format!("home/pkg{i:02}")).collect();
+        let packages: Vec<String> = (0..14).map(|i| format!("pkg{i:02}")).collect();
         let yaml = format!("packages: [{}]\n", packages.join(", "));
         std::fs::write(dir.join("one.yml"), &yaml).unwrap();
         std::fs::write(dir.join("two.yml"), &yaml).unwrap();

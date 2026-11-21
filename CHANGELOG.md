@@ -193,7 +193,8 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 - **Demo and test fixtures use the flat model.** `demo/` and `tests/manual/` set
   `packages:` and `target:`, and the demo profiles name packages plainly (`nvim`). The e2e
   fixtures follow; `03-multi-group-config` is now `03-two-profiles`, where `--yolo --profile`
-  links only that profile's packages.
+  links only that profile's packages. The TUI tests use flat fixtures too: `make_test_app` is
+  the one-package app, and names are plain (`shell`, not `home/shell`).
 
 ### Changed
 

@@ -3,9 +3,8 @@ use std::path::Path;
 
 use andre_core::{check_stowed_status_with_ignores, PackageEntry, StowStatus};
 
-/// Cache for stow status results, keyed by package name (`shell`; `home/shell` for an
-/// interim grouped config). Writes (prefetch) should happen in `Component::update()`; reads
-/// in `render()` should never block on I/O.
+/// Cache for stow status results, keyed by package name (`shell`). Writes (prefetch) should
+/// happen in `Component::update()`; reads in `render()` should never block on I/O.
 pub struct StatusCache {
     inner: HashMap<String, StowStatus>,
     /// Bumped on every change, so readers can tell whether anything they built from the cache is stale.

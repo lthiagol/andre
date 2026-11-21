@@ -409,12 +409,16 @@ mod tests {
 
     #[test]
     fn test_fit_breadcrumb_drops_the_leftmost_crumbs_behind_an_ellipsis() {
-        let trail = crumbs(&["main", "packages", "home/shell"]);
+        let trail = crumbs(&["main", "packages", "shell"]);
         assert_eq!(
-            fit_breadcrumb(&trail, 25),
-            "\u{2026} \u{203a} packages \u{203a} home/shell"
+            fit_breadcrumb(&trail, 23),
+            "main \u{203a} packages \u{203a} shell"
         );
-        assert_eq!(fit_breadcrumb(&trail, 18), "\u{2026} \u{203a} home/shell");
+        assert_eq!(
+            fit_breadcrumb(&trail, 22),
+            "\u{2026} \u{203a} packages \u{203a} shell"
+        );
+        assert_eq!(fit_breadcrumb(&trail, 18), "\u{2026} \u{203a} shell");
     }
 
     #[test]

@@ -513,16 +513,16 @@ mod tests {
         let resolved = ResolvedProfile {
             name: "agent".to_string(),
             entries: vec![
-                entry("work/aws", Origin::Own),
-                entry("home/git", via("base")),
-                entry("home/shell", via("base")),
+                entry("aws", Origin::Own),
+                entry("git", via("base")),
+                entry("shell", via("base")),
             ],
         };
         assert_eq!(packages_fact(&resolved), "3  (1 own, 2 via base)");
 
         let own_only = ResolvedProfile {
             name: "solo".to_string(),
-            entries: vec![entry("home/git", Origin::Own)],
+            entries: vec![entry("git", Origin::Own)],
         };
         assert_eq!(packages_fact(&own_only), "1");
     }

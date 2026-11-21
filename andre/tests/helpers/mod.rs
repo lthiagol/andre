@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::path::PathBuf;
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{backend::TestBackend, buffer::Buffer, Terminal};
 use tempfile::TempDir;
@@ -9,17 +7,9 @@ use unicode_width::UnicodeWidthChar;
 
 use andre::app::App;
 
-pub fn make_test_app() -> (App, TempDir) {
-    let tmp = TempDir::new().unwrap();
-    let config_path = write_test_config(&tmp);
-    create_test_package(&tmp);
-    let app = App::with_home(config_path, tmp.path().to_path_buf()).unwrap();
-    (app, tmp)
-}
-
 /// A flat app: one packages folder (`dotfiles`) and no groups, holding the package `test`
 /// (`dotfiles/test/.bashrc`). HOME is the temp dir, so the target `~` is the temp dir.
-pub fn make_flat_test_app() -> (App, TempDir) {
+pub fn make_test_app() -> (App, TempDir) {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("andre.yml");
     std::fs::write(
@@ -53,30 +43,6 @@ pub fn make_flat_packages_app(packages: &[&str]) -> (App, TempDir) {
     }
     let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
     (app, tmp)
-}
-
-pub fn write_test_config(dir: &TempDir) -> PathBuf {
-    let path = dir.path().join("andre.yml");
-    std::fs::write(
-        &path,
-        r#"
-global:
-  stow:
-    verbosity: 0
-groups:
-  home:
-    source: dotfiles/home
-    target: "~"
-"#,
-    )
-    .unwrap();
-    path
-}
-
-pub fn create_test_package(dir: &TempDir) {
-    let pkg_dir = dir.path().join("dotfiles/home/test");
-    std::fs::create_dir_all(&pkg_dir).unwrap();
-    std::fs::write(pkg_dir.join(".bashrc"), "alias l='ls -la'").unwrap();
 }
 
 pub fn key_char(c: char) -> KeyEvent {
@@ -135,72 +101,13 @@ pub fn push_component(app: &mut App, name: &str) {
     });
 }
 
-pub fn make_two_group_app() -> (App, TempDir) {
-    let tmp = TempDir::new().unwrap();
-    let path = tmp.path().join("andre.yml");
-    std::fs::write(
-        &path,
-        r#"
-global:
-  stow:
-    verbosity: 0
-groups:
-  home:
-    source: dotfiles/home
-    target: "~"
-  config:
-    source: dotfiles/config
-    target: ~/.config
-"#,
-    )
-    .unwrap();
-    std::fs::create_dir_all(tmp.path().join("dotfiles/home/bash-env")).unwrap();
-    std::fs::write(
-        tmp.path().join("dotfiles/home/bash-env/.bashrc"),
-        "export PATH",
-    )
-    .unwrap();
-    std::fs::create_dir_all(tmp.path().join("dotfiles/config/nvim")).unwrap();
-    std::fs::write(
-        tmp.path().join("dotfiles/config/nvim/init.lua"),
-        "vim.cmd('set nu')",
-    )
-    .unwrap();
-    let app = App::with_home(path, tmp.path().to_path_buf()).unwrap();
-    (app, tmp)
-}
-
-/// An app whose loaded config folder sits inside package `andre` of group `config`, so the
-/// set-up item is offered: `dotfiles/config/andre/.config/andre/andre.yml` links to
-/// `<home>/.config/andre`, which does not exist yet.
+/// A bootstrap app: the packages folder `dotfiles/packages` holds the package `andre`, whose
+/// `.config/andre/andre.yml` is the running config. HOME is `homedir`, which has no `.config`
+/// yet, so the package's link (`~/.config/andre`) is free.
 pub fn make_bootstrap_app() -> (App, TempDir) {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let source = tmp.path().join("dotfiles").join("config");
-    let folder = source.join("andre").join(".config").join("andre");
-    std::fs::create_dir_all(&folder).unwrap();
-    std::fs::create_dir_all(&home).unwrap();
-    let config_path = folder.join("andre.yml");
-    std::fs::write(
-        &config_path,
-        format!(
-            "global: {{}}\ngroups:\n  config:\n    source: \"{}\"\n    target: \"{}\"\n",
-            source.display(),
-            home.display()
-        ),
-    )
-    .unwrap();
-    let app = App::with_home(config_path, home).unwrap();
-    (app, tmp)
-}
-
-/// A flat bootstrap app: the packages folder `dotfiles` holds the package `andre`, whose
-/// `.config/andre/andre.yml` is the running config. HOME is `home`, which has no `.config`
-/// yet, so the package's link (`~/.config/andre`) is free.
-pub fn make_flat_bootstrap_app() -> (App, TempDir) {
-    let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let packages = tmp.path().join("dotfiles");
+    let home = tmp.path().join("homedir");
+    let packages = tmp.path().join("dotfiles").join("packages");
     let folder = packages.join("andre").join(".config").join("andre");
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::create_dir_all(&home).unwrap();
@@ -217,10 +124,10 @@ pub fn make_flat_bootstrap_app() -> (App, TempDir) {
     (app, tmp)
 }
 
-/// `make_flat_test_app` with two stowed links into the `test` package, `.bashrc` and
+/// `make_test_app` with two stowed links into the `test` package, `.bashrc` and
 /// `.profile`, and the package's `.profile` file in place.
 pub fn make_unstow_app() -> (App, TempDir) {
-    let (app, tmp) = make_flat_test_app();
+    let (app, tmp) = make_test_app();
     std::fs::write(tmp.path().join("dotfiles/test/.profile"), "export X=1").unwrap();
     std::os::unix::fs::symlink("dotfiles/test/.bashrc", tmp.path().join(".bashrc")).unwrap();
     std::os::unix::fs::symlink("dotfiles/test/.profile", tmp.path().join(".profile")).unwrap();
