@@ -21,8 +21,8 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 ## TUI
 
-- (nothing open) — list screens share one cursor style, and panel titles are
-    lowercase without the breadcrumb.
+- Regenerate `docs/screenshots/*.png` with `make screenshots` now that the redesign batches are done (they still show the old UI).
+- Decide whether to keep ratatui's scrollbar thumb-length convention (6 of 8 rows visible draws a 3-of-6 thumb); if not, size the thumb from `content_len - viewport_len + 1`.
 
 ## Documentation
 

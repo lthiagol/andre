@@ -318,6 +318,15 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   round-trips.
 - A failed config save no longer prints to stderr while the TUI owns the
   terminal; the error toast is the only report.
+- Stow status scrolled past its last row when every row fit on screen, so Up
+  needed several presses before the list moved. Scrolling now stops at the last
+  row. Test: `components/status` `test_scroll_stops_at_the_last_row_when_rows_fit`.
+- Counts in titles read `(1 items)` and `(1 packages)`. A new `ui::plural` helper
+  picks the singular for one, so the titles read `(1 item)` and `(1 package)`.
+  Affects the file browser title (unstow symlinks) and the stow status title.
+  Tests: `ui` `test_plural_uses_singular_only_for_one`, `ui/status`
+  `test_status_title_counts_packages_with_the_right_noun`, and
+  `ui/widgets/file_browser` `test_entries_label_uses_the_right_noun_for_0_1_and_2`.
 
 ## [1.0.0-rc1] — 2026-10-30
 

@@ -50,6 +50,15 @@ const COMPACT_BANNER_ROWS: u16 = 1;
 /// Widest a screen's content grows. Wider frames centre the content.
 const MAX_CONTENT_WIDTH: u16 = 120;
 
+/// The noun for a count: `plural(1, "item", "items")` is `item`; 0 and 2+ are `items`.
+pub fn plural(n: usize, one: &'static str, many: &'static str) -> &'static str {
+    if n == 1 {
+        one
+    } else {
+        many
+    }
+}
+
 pub fn render(app: &mut App, frame: &mut Frame) {
     let (cols, rows) = app.ctx.terminal_size;
     if cols < 80 || rows < 24 {
@@ -214,7 +223,14 @@ pub fn elide(s: &str, max_width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::elide;
+    use super::{elide, plural};
+
+    #[test]
+    fn test_plural_uses_singular_only_for_one() {
+        assert_eq!(plural(0, "item", "items"), "items");
+        assert_eq!(plural(1, "item", "items"), "item");
+        assert_eq!(plural(2, "item", "items"), "items");
+    }
 
     #[test]
     fn test_elide_no_truncation() {

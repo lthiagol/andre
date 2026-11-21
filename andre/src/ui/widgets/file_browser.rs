@@ -10,6 +10,7 @@ use ratatui::{
 
 use crate::theme::ThemeColors;
 use crate::ui::icons::Icons;
+use crate::ui::plural;
 use crate::ui::selection;
 
 pub struct FileBrowserWidget<'a> {
@@ -176,15 +177,7 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
             })
             .collect();
 
-        let list_title = format!(
-            " {} ({}) ",
-            self.title,
-            if entries.is_empty() {
-                "empty".to_string()
-            } else {
-                format!("{} items", entries.len())
-            }
-        );
+        let list_title = format!(" {} ({}) ", self.title, entries_label(entries.len()));
 
         let list =
             List::new(items).block(crate::ui::themed_panel(self.colors).title(list_title.as_str()));
@@ -210,6 +203,15 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
     }
 }
 
+/// The count in a browser title: `empty` for no entries, otherwise `N item` or `N items`.
+fn entries_label(count: usize) -> String {
+    if count == 0 {
+        "empty".to_string()
+    } else {
+        format!("{} {}", count, plural(count, "item", "items"))
+    }
+}
+
 fn render_file_legend(buf: &mut ratatui::buffer::Buffer, area: Rect, colors: &ThemeColors) {
     let items: Vec<ListItem> = vec![
         ListItem::new(Line::from(vec![
@@ -228,4 +230,16 @@ fn render_file_legend(buf: &mut ratatui::buffer::Buffer, area: Rect, colors: &Th
 
     let legend = List::new(items).block(crate::ui::themed_panel(colors).title(" legend "));
     Widget::render(legend, area, buf);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::entries_label;
+
+    #[test]
+    fn test_entries_label_uses_the_right_noun_for_0_1_and_2() {
+        assert_eq!(entries_label(0), "empty");
+        assert_eq!(entries_label(1), "1 item");
+        assert_eq!(entries_label(2), "2 items");
+    }
 }

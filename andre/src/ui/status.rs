@@ -7,6 +7,7 @@ use ratatui::{
 
 use crate::theme::ThemeColors;
 use crate::ui::icons::Icons;
+use crate::ui::plural;
 use crate::ui::status_style::{render_legend, status_color, status_word, LEGEND_HEIGHT};
 use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
 use andre_core::StowStatus;
@@ -35,6 +36,16 @@ pub fn status_layout(area: Rect) -> (Rect, Option<Rect>) {
     }
 }
 
+/// The panel title. The package count shows only when there is at least one package.
+fn status_title(total_packages: usize) -> String {
+    if total_packages > 0 {
+        let noun = plural(total_packages, "package", "packages");
+        format!(" stow status ({} {}) ", total_packages, noun)
+    } else {
+        " stow status ".to_string()
+    }
+}
+
 pub fn render_status(
     frame: &mut Frame,
     area: Rect,
@@ -53,11 +64,7 @@ pub fn render_status(
         .map(|row| status_item(row, colors, icons))
         .collect();
 
-    let title = if total_packages > 0 {
-        format!(" stow status ({} packages) ", total_packages)
-    } else {
-        " stow status ".to_string()
-    };
+    let title = status_title(total_packages);
 
     let (list_area, legend_area) = status_layout(area);
 
@@ -96,5 +103,17 @@ fn status_item(row: &StatusRow, colors: &ThemeColors, icons: &Icons) -> ListItem
         StatusRow::Spacer => ListItem::new("").style(Style::default().fg(colors.primary)),
         StatusRow::NoPackages => ListItem::new("No packages found in any configured group.")
             .style(Style::default().fg(colors.muted)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::status_title;
+
+    #[test]
+    fn test_status_title_counts_packages_with_the_right_noun() {
+        assert_eq!(status_title(0), " stow status ");
+        assert_eq!(status_title(1), " stow status (1 package) ");
+        assert_eq!(status_title(2), " stow status (2 packages) ");
     }
 }

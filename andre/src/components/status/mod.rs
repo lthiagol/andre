@@ -85,8 +85,12 @@ impl Component for StatusComponent {
         {
             return Transition::Pop;
         }
-        let len = self.rows.len().max(self.viewport_height);
-        Input::handle_list_scroll(&key, &mut self.scroll_index, len, self.viewport_height);
+        Input::handle_list_scroll(
+            &key,
+            &mut self.scroll_index,
+            self.rows.len(),
+            self.viewport_height,
+        );
         Transition::None
     }
 
@@ -112,6 +116,7 @@ impl Component for StatusComponent {
 mod tests {
     use super::*;
     use andre_core::config::Config;
+    use crossterm::event::{KeyCode, KeyModifiers};
 
     /// One group `dots` with packages `alpha` and `beta`; both directories exist, so statuses are cached.
     fn fixture() -> (tempfile::TempDir, AppContext) {
@@ -178,6 +183,26 @@ mod tests {
         // Too short for a legend: the list takes the whole area.
         component.prepare(Rect::new(0, 0, 80, 10));
         assert_eq!(component.viewport_height, 8);
+    }
+
+    #[test]
+    fn test_scroll_stops_at_the_last_row_when_rows_fit() {
+        let (_tmp, mut ctx) = fixture();
+        let mut component = StatusComponent {
+            rows: build_rows(&ctx),
+            ..Default::default()
+        };
+        // 80x24: the list shows 6 rows, more than the 4 built here, so every row fits.
+        component.prepare(Rect::new(0, 0, 80, 24));
+        let last = component.rows.len() - 1;
+
+        for _ in 0..10 {
+            component.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), &mut ctx);
+        }
+        assert_eq!(component.scroll_index, last);
+
+        component.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), &mut ctx);
+        assert_eq!(component.scroll_index, last - 1);
     }
 
     #[test]
