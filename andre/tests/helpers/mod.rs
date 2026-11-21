@@ -95,8 +95,8 @@ pub fn push_component(app: &mut App, name: &str) {
         "Settings" => Box::new(settings::SettingsComponent::default()),
         "Status" => Box::new(status::StatusComponent::default()),
         "Help" => Box::new(help::HelpComponent::default()),
-        "AdoptTargetSelect" => Box::new(target_select::TargetSelectComponent::adopt()),
         "UnstowTargetSelect" => Box::new(target_select::TargetSelectComponent::unstow()),
+        "NewPackage" => Box::new(wizard::NewPackageWizard::default()),
         _ => return,
     });
 }

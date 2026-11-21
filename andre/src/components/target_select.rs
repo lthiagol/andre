@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{layout::Rect, widgets::ListState, Frame};
 
-use crate::components::adopt::AdoptFileSelectComponent;
 use crate::components::unstow::UnstowBrowseComponent;
 use crate::components::{AppContext, Component, Transition};
 use crate::input::Input;
@@ -12,7 +11,7 @@ use crate::ui::icons::Icons;
 use crate::ui::widgets::group_list::GroupListWidget;
 use andre_core::path::resolve_path;
 
-/// What differs between the adopt and unstow target pickers.
+/// What the target picker shows and opens. Unstow is its only flow.
 struct TargetFlow {
     id: &'static str,
     title: &'static str,
@@ -20,13 +19,6 @@ struct TargetFlow {
     /// Opens the browse screen for the chosen group at its resolved target.
     open: fn(String, PathBuf) -> Box<dyn Component>,
 }
-
-static ADOPT: TargetFlow = TargetFlow {
-    id: "AdoptTargetSelect",
-    title: "select target for adoption",
-    target_label: Some("Adopt from"),
-    open: |group, path| Box::new(AdoptFileSelectComponent::with_path(group, path)),
-};
 
 static UNSTOW: TargetFlow = TargetFlow {
     id: "UnstowTargetSelect",
@@ -42,13 +34,6 @@ pub struct TargetSelectComponent {
 }
 
 impl TargetSelectComponent {
-    pub fn adopt() -> Self {
-        Self {
-            cursor: 0,
-            flow: &ADOPT,
-        }
-    }
-
     pub fn unstow() -> Self {
         Self {
             cursor: 0,
@@ -120,7 +105,6 @@ mod tests {
 
     #[test]
     fn test_flows_report_their_ids() {
-        assert_eq!(TargetSelectComponent::adopt().id(), "AdoptTargetSelect");
         assert_eq!(TargetSelectComponent::unstow().id(), "UnstowTargetSelect");
     }
 }

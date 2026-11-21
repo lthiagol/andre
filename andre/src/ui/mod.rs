@@ -1,6 +1,3 @@
-mod adopt_confirm;
-mod adopt_name;
-mod adopt_preview;
 mod banner;
 mod block;
 pub mod chips;
@@ -25,9 +22,6 @@ pub mod tree;
 mod unstow_confirm;
 pub mod widgets;
 
-pub use adopt_confirm::render_adopt_confirm;
-pub use adopt_name::render_adopt_name;
-pub use adopt_preview::render_adopt_preview;
 pub use banner::{render_banner, render_compact_banner};
 pub use block::{focus_panel, themed_panel};
 pub use confirm::{render_confirm, ConfirmRow};

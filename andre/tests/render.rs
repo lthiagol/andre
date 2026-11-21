@@ -109,9 +109,6 @@ fn push_screen(app: &mut App, name: &str) {
         "Status" => app.component_stack.push(Box::new(
             andre::components::status::StatusComponent::default(),
         )),
-        "AdoptTargetSelect" => app.component_stack.push(Box::new(
-            andre::components::target_select::TargetSelectComponent::adopt(),
-        )),
         "UnstowTargetSelect" => app.component_stack.push(Box::new(
             andre::components::target_select::TargetSelectComponent::unstow(),
         )),
@@ -143,15 +140,6 @@ fn push_screen(app: &mut App, name: &str) {
                 ),
             ));
         }
-        "AdoptFileSelect" => {
-            let path = app.ctx.home_dir.join("dotfiles/home");
-            app.component_stack.push(Box::new(
-                andre::components::adopt::AdoptFileSelectComponent::with_path(
-                    "home".to_string(),
-                    path,
-                ),
-            ));
-        }
         _ => {}
     }
 }
@@ -166,7 +154,6 @@ fn screen_names() -> Vec<&'static str> {
         "Help",
         "Confirm",
         "Execute",
-        "AdoptTargetSelect",
         "UnstowTargetSelect",
         "NewPackage",
     ]
@@ -723,21 +710,11 @@ fn test_execute_completed_list_scrolls() {
 }
 
 #[test]
-fn test_adopt_target_select_shows_adopt_from_label() {
+fn test_unstow_target_select_shows_target_label() {
     let (mut app, _tmp) = make_test_app();
-    let (mut app2, _tmp2) = make_test_app();
-    // Normal unstow target select shows "target"
     push_screen(&mut app, "UnstowTargetSelect");
     let buf = render_app(&mut app, 80, 24);
     assert!(line_contains(&buf, "(target:"), "unstow should show target");
-
-    // Adopt target select shows "Adopt from"
-    push_screen(&mut app2, "AdoptTargetSelect");
-    let buf = render_app(&mut app2, 80, 24);
-    assert!(
-        line_contains(&buf, "(Adopt from:"),
-        "adopt should show Adopt from label"
-    );
 }
 
 #[test]
@@ -787,7 +764,6 @@ fn test_footer_context_hints_per_screen_family() {
         ("Help", "back"),                 // help
         ("Confirm", "confirm"),           // confirm y/n
         ("Execute", "continue"),          // status/execute family
-        ("AdoptTargetSelect", "select"),  // adopt target family
         ("UnstowTargetSelect", "select"), // unstow target family
     ];
 
@@ -1457,7 +1433,7 @@ fn test_detail_panel_describes_the_selected_item() {
     );
     assert!(
         row_containing(&buf, "targets")
-            .expect("adopt targets fact missing")
+            .expect("new package targets fact missing")
             .contains('~'),
         "targets should be shown relative to home"
     );
@@ -1485,14 +1461,7 @@ fn test_detail_text_is_inset_from_the_panel_border() {
 
 /// Every screen the render tests can draw, with the cursor row that `push_screen`
 /// leaves selected. Each one is checked for the shared cursor style.
-const CURSOR_SCREENS: [&str; 6] = [
-    "Packages",
-    "Settings",
-    "AdoptTargetSelect",
-    "UnstowTargetSelect",
-    "UnstowBrowse",
-    "AdoptFileSelect",
-];
+const CURSOR_SCREENS: [&str; 4] = ["Packages", "Settings", "UnstowTargetSelect", "UnstowBrowse"];
 
 fn buffer_text(buf: &Buffer) -> String {
     (0..buf.area().height)
@@ -1624,11 +1593,6 @@ fn test_panel_titles_are_lowercase_and_skip_the_breadcrumb() {
         ("Status", "stow status", "Stow Status"),
         ("Settings", "settings", ""),
         ("Help", "help", ""),
-        (
-            "AdoptTargetSelect",
-            "select target for adoption",
-            "Select Target for Adoption",
-        ),
         (
             "UnstowTargetSelect",
             "select target for unstow",
@@ -2469,10 +2433,9 @@ fn test_touched_screens_render_at_120x40_and_200x50_without_panic() {
         "Help",
         "Confirm",
         "Execute",
-        "AdoptTargetSelect",
         "UnstowTargetSelect",
-        "AdoptFileSelect",
         "UnstowBrowse",
+        "NewPackage",
     ];
     for (width, height) in [(120, 40), (200, 50)] {
         for name in screens {
@@ -3374,4 +3337,193 @@ fn test_new_package_steps_render_at_120x40_and_200x50_without_panic() {
         let buf = render_updated(&mut app, width, height);
         assert!(line_contains(&buf, "notes.txt"));
     }
+}
+
+// --- New-package wizard, steps 4-6 (ignore files, profiles, review) ---
+
+/// The wizard over the test app with one profile, `personal`, holding `home/git`.
+fn wizard_app_with_profile() -> (App, tempfile::TempDir) {
+    let (mut app, tmp) = wizard_app();
+    let dir = app.ctx.config_dir.join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("personal.yml"), "packages:\n  - home/git\n").unwrap();
+    app.ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
+    (app, tmp)
+}
+
+/// Group `home`, then the name `tmux`, then an empty source: the wizard on step 4.
+fn wizard_on_ignore_step(app: &mut App) {
+    choose_home(app);
+    press(app, &typed_keys("tmux"));
+    press(app, &[enter_key(), enter_key()]);
+}
+
+fn typed_keys(text: &str) -> Vec<KeyEvent> {
+    text.chars().map(key_char).collect()
+}
+
+#[test]
+fn test_new_package_ignore_step_shows_both_ignore_files_and_the_template() {
+    let (mut app, _tmp) = wizard_app();
+    wizard_on_ignore_step(&mut app);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(
+        &buf,
+        "\u{2713} source \u{203a} [4 ignore] \u{203a} 5 profiles"
+    ));
+    assert!(line_contains(&buf, "ignore files"));
+    assert!(line_contains(&buf, ".gitignore"));
+    assert!(line_contains(&buf, "common secrets"));
+    assert!(line_contains(&buf, ".stow-local-ignore"));
+    assert!(
+        line_contains(&buf, "*.env"),
+        "the template is in the detail"
+    );
+    assert!(footer_row(&buf).contains("Space toggle"));
+    assert!(footer_row(&buf).contains("Enter next"));
+}
+
+#[test]
+fn test_new_package_profiles_step_lists_profiles_and_what_the_package_joins() {
+    let (mut app, _tmp) = wizard_app_with_profile();
+    wizard_on_ignore_step(&mut app);
+    press(&mut app, &[enter_key(), key_char(' ')]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "[5 profiles]"));
+    assert!(line_contains(&buf, "add to profiles"));
+    assert!(line_contains(&buf, "personal"));
+    assert!(
+        line_contains(&buf, "2 (+ home/tmux)"),
+        "the detail shows the count once the package joins"
+    );
+    assert!(footer_row(&buf).contains("Enter next"));
+}
+
+#[test]
+fn test_new_package_profile_detail_counts_the_packages_a_profile_reaches_through_includes() {
+    let (mut app, _tmp) = wizard_app_with_profile();
+    let dir = app.ctx.config_dir.join("profiles");
+    // `laptop` lists no package of its own: it reaches `home/git` only through `personal`.
+    std::fs::write(dir.join("laptop.yml"), "includes:\n  - personal\n").unwrap();
+    app.ctx.core.profiles = andre_core::profile::ProfileSet::load(&dir).unwrap();
+    wizard_on_ignore_step(&mut app);
+    // `laptop` sorts first, so Space on the cursor's row chooses it.
+    press(&mut app, &[enter_key(), key_char(' ')]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(
+        line_contains(&buf, "2 (+ home/tmux)"),
+        "the include's package counts, and so does the new one"
+    );
+}
+
+#[test]
+fn test_new_package_review_lines_are_inset_one_column_from_the_border_at_80x24() {
+    let (mut app, _tmp) = wizard_app_with_profile();
+    wizard_on_ignore_step(&mut app);
+    press(&mut app, &[enter_key(), key_char(' '), enter_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(
+        line_contains(&buf, "\u{2502} create home/tmux/.gitignore"),
+        "the lines start one column inside the border"
+    );
+    assert!(line_contains(&buf, "\u{2502} edit   profiles/personal.yml"));
+    assert!(line_contains(&buf, "\u{2502} 0 moves"));
+}
+
+#[test]
+fn test_new_package_review_lists_the_plan_and_its_counts_at_80x24() {
+    let (mut app, _tmp) = wizard_app_with_profile();
+    wizard_on_ignore_step(&mut app);
+    press(&mut app, &[enter_key(), key_char(' '), enter_key()]);
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(&buf, "[6 review]"));
+    assert!(line_contains(&buf, "review \u{b7} new package home/tmux"));
+    assert!(line_contains(&buf, "create home/tmux/.gitignore"));
+    assert!(line_contains(
+        &buf,
+        "edit   profiles/personal.yml  + home/tmux"
+    ));
+    assert!(line_contains(
+        &buf,
+        "0 moves \u{b7} 0 links \u{b7} 1 file \u{b7} 1 profile"
+    ));
+    assert!(line_contains(&buf, "Esc back"));
+    assert!(line_contains(&buf, "Enter create"));
+    assert!(footer_row(&buf).contains("Enter create"));
+}
+
+#[test]
+fn test_new_package_review_ends_with_done_and_enter_leaves() {
+    let (mut app, tmp) = wizard_app_with_profile();
+    wizard_on_ignore_step(&mut app);
+    press(
+        &mut app,
+        &[enter_key(), key_char(' '), enter_key(), enter_key()],
+    );
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(tmp.path().join("dotfiles/home/tmux/.gitignore").is_file());
+    assert!(line_contains(&buf, "created home/tmux"));
+    assert!(footer_row(&buf).contains("Enter done"));
+
+    press(&mut app, &[enter_key()]);
+    assert_eq!(
+        app.component_stack.len(),
+        1,
+        "Enter after the result leaves the wizard"
+    );
+}
+
+#[test]
+fn test_new_package_steps_4_to_6_render_at_120x40_and_200x50_without_panic() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = wizard_app_with_profile();
+        wizard_on_ignore_step(&mut app);
+        render_updated(&mut app, width, height);
+        press(&mut app, &[enter_key(), key_char(' ')]);
+        render_updated(&mut app, width, height);
+        press(&mut app, &[enter_key()]);
+        let buf = render_updated(&mut app, width, height);
+        assert!(line_contains(&buf, "review"));
+        assert!(line_contains(&buf, "q quit"));
+    }
+}
+
+#[test]
+fn test_new_package_review_lists_moves_and_links_for_live_files_at_80x24() {
+    let (mut app, _tmp) = wizard_app_with_profile();
+    std::fs::write(app.ctx.home_dir.join("notes.txt"), "").unwrap();
+    render_updated(&mut app, 80, 24);
+    choose_home(&mut app);
+    press(&mut app, &typed_keys("tmux"));
+    press(&mut app, &[enter_key(), down_key(), enter_key()]);
+    render_updated(&mut app, 80, 24);
+    // The listing is andre.yml, dotfiles, notes.txt: two steps down to notes.txt.
+    press(
+        &mut app,
+        &[
+            down_key(),
+            down_key(),
+            space_key(),
+            enter_key(),
+            enter_key(),
+            enter_key(),
+        ],
+    );
+    let buf = render_updated(&mut app, 80, 24);
+
+    assert!(line_contains(
+        &buf,
+        "move   ~/notes.txt \u{2192} home/tmux/notes.txt"
+    ));
+    assert!(line_contains(&buf, "link   ~/notes.txt \u{21e2} package"));
+    assert!(line_contains(
+        &buf,
+        "1 move \u{b7} 1 link \u{b7} 1 file \u{b7} 0 profiles"
+    ));
 }

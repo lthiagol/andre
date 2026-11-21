@@ -13,13 +13,14 @@ use ratatui::{
     Frame,
 };
 
+use super::finish_view::{render_ignore, render_profiles, render_review};
 use super::picker::{refusal, FilePicker};
 use super::{NameRow, NewPackageWizard, Source, Step, SOURCES, STEPS};
 use crate::components::AppContext;
 use crate::theme::ThemeColors;
 use crate::ui::detail::{render_detail, Detail};
 use crate::ui::icons::Icons;
-use crate::ui::layout::{screen_rects, ScreenRects, Shape};
+use crate::ui::layout::{screen_rects, ScreenRects};
 use crate::ui::list_panel::{self, render_focused_list_panel, render_list_panel, Empty, ListView};
 use crate::ui::plural;
 use crate::ui::selection::{row, row_with_glyphs};
@@ -48,7 +49,7 @@ pub fn name_panels(list: Rect, error: bool) -> (Rect, Rect) {
 pub fn render(frame: &mut Frame, area: Rect, ctx: &AppContext, wizard: &NewPackageWizard) {
     let colors = ThemeColors::from_theme(ctx.core.theme);
     let icons = Icons::for_set(ctx.core.icons);
-    let rects = screen_rects(area, Shape::Wizard);
+    let rects = screen_rects(area, wizard.shape());
     if let Some(bar) = rects.chip {
         let steps = StepBar {
             steps: STEPS,
@@ -61,6 +62,9 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &AppContext, wizard: &NewPacka
         Step::Name => render_name(frame, rects, ctx, wizard, &colors),
         Step::Source => render_source(frame, rects, ctx, wizard, &colors, icons),
         Step::Files => render_files(frame, rects, ctx, wizard, &colors, icons),
+        Step::Ignore => render_ignore(frame, rects, wizard, &colors, icons),
+        Step::Profiles => render_profiles(frame, rects, ctx, wizard, &colors, icons),
+        Step::Review => render_review(frame, rects, wizard, &colors, icons),
     }
 }
 

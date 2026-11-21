@@ -1,17 +1,19 @@
-//! The new-package wizard, steps 1–3 of the flow: pick a group, name the package (typing
-//! filters the group's packages, and the create row is always first), then pick the source:
-//! an empty package, or live files moved in through a file picker. Steps 4–6 (ignore files,
-//! profiles, review) come with the creation screens; until then Enter on step 3 has no next
-//! step to go to.
+//! The new-package wizard, six steps: pick a group, name the package (typing filters the
+//! group's packages, and the create row is always first), pick the source (an empty package,
+//! or live files moved in through a file picker), choose the ignore files, choose the profiles
+//! the package joins, then review and create it.
 //!
-//! One component holds every answer, so Esc back never loses one. Nothing is written yet.
+//! One component holds every answer, so Esc back never loses one. Nothing is written until
+//! the review's Enter.
 
+mod finish;
+mod finish_view;
 mod picker;
 mod view;
 
 use std::collections::BTreeMap;
 
-use andre_core::create::is_valid_package_name;
+use andre_core::create::{is_valid_package_name, PackagePlan};
 use andre_core::discover_packages;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{layout::Rect, Frame};
@@ -19,14 +21,16 @@ use ratatui::{layout::Rect, Frame};
 use crate::components::{AppContext, Component, InputMode, Transition};
 use crate::input::Input;
 use crate::ui::footer::{
-    wizard_files_hints, wizard_group_hints, wizard_name_hints, wizard_source_hints, Hint,
+    wizard_done_hints, wizard_files_hints, wizard_group_hints, wizard_ignore_hints,
+    wizard_name_hints, wizard_profiles_hints, wizard_review_hints, wizard_source_hints, Hint,
 };
 use crate::ui::layout::{screen_rects, Shape};
 use crate::ui::list_panel::ListView;
 use crate::ui::text_field::TextField;
+use finish::{Done, Gitignore, ProfileCount, ReviewLine, IGNORE_ROWS};
 use picker::FilePicker;
 
-/// The steps as the step bar names them. Steps 4–6 are listed but not built yet.
+/// The steps as the step bar names them.
 pub const STEPS: &[&str] = &["group", "name", "source", "ignore", "profiles", "review"];
 
 /// The source choices, in the order the source step lists them.
@@ -41,6 +45,9 @@ pub enum Step {
     Source,
     /// The file picker opened from [`Source::LiveFiles`]. The step bar shows it as step 3.
     Files,
+    Ignore,
+    Profiles,
+    Review,
 }
 
 impl Step {
@@ -50,6 +57,9 @@ impl Step {
             Step::Group => 0,
             Step::Name => 1,
             Step::Source | Step::Files => 2,
+            Step::Ignore => 3,
+            Step::Profiles => 4,
+            Step::Review => 5,
         }
     }
 }
@@ -83,6 +93,24 @@ pub struct NewPackageWizard {
     source: Option<Source>,
     source_list: ListView,
     picker: Option<FilePicker>,
+    /// Step 4: the `.gitignore` template and whether `.stow-local-ignore` is written.
+    gitignore: Gitignore,
+    stow_local_ignore: bool,
+    ignore_list: ListView,
+    /// Step 5: the profile names, read when the step is entered, what each holds, and the
+    /// ones chosen.
+    profile_names: Vec<String>,
+    profile_counts: BTreeMap<String, ProfileCount>,
+    chosen_profiles: Vec<String>,
+    profile_list: ListView,
+    /// Step 6: the plan the review shows, its lines, and how far the lines are scrolled.
+    plan: Option<PackagePlan>,
+    review: Vec<ReviewLine>,
+    review_scroll: usize,
+    /// Rows the review's lines get, set in `prepare`.
+    review_height: u16,
+    /// Set once the review has run (or was a dry run). Enter then leaves the wizard.
+    done: Option<Done>,
 }
 
 impl Component for NewPackageWizard {
@@ -101,7 +129,12 @@ impl Component for NewPackageWizard {
     fn input_mode(&self) -> InputMode {
         match self.step {
             Step::Name => InputMode::TextInput,
-            Step::Group | Step::Source | Step::Files => InputMode::Normal,
+            Step::Group
+            | Step::Source
+            | Step::Files
+            | Step::Ignore
+            | Step::Profiles
+            | Step::Review => InputMode::Normal,
         }
     }
 
@@ -122,6 +155,9 @@ impl Component for NewPackageWizard {
             Step::Name => self.name_key(&key),
             Step::Source => self.source_key(&key, ctx),
             Step::Files => self.files_key(&key, ctx),
+            Step::Ignore => self.ignore_key(&key, ctx),
+            Step::Profiles => self.profiles_key(&key, ctx),
+            Step::Review => self.review_key(&key, ctx),
         };
         // The cursor may have moved onto another file.
         if let Some(picker) = &mut self.picker {
@@ -136,11 +172,15 @@ impl Component for NewPackageWizard {
             Step::Name => wizard_name_hints(),
             Step::Source => wizard_source_hints(),
             Step::Files => wizard_files_hints(),
+            Step::Ignore => wizard_ignore_hints(),
+            Step::Profiles => wizard_profiles_hints(),
+            Step::Review if self.done.is_some() => wizard_done_hints(),
+            Step::Review => wizard_review_hints(),
         }
     }
 
     fn prepare(&mut self, area: Rect) {
-        let rects = screen_rects(area, Shape::Wizard);
+        let rects = screen_rects(area, self.shape());
         match self.step {
             Step::Group => {
                 let len = self.groups().len();
@@ -158,6 +198,16 @@ impl Component for NewPackageWizard {
                     picker.list.prepare(rects.list, len);
                 }
             }
+            Step::Ignore => self.ignore_list.prepare(rects.list, IGNORE_ROWS),
+            Step::Profiles => {
+                let len = self.profile_names.len();
+                self.profile_list.prepare(rects.list, len);
+            }
+            Step::Review => {
+                let body = finish_view::review_body(rects.list);
+                self.review_height = body.height.saturating_sub(self.head_rows());
+                self.review_scroll = self.review_scroll.min(self.review_last_scroll());
+            }
         }
     }
 
@@ -167,6 +217,23 @@ impl Component for NewPackageWizard {
 }
 
 impl NewPackageWizard {
+    /// The layout of the current step: the review is one wide panel, the rest are two-pane.
+    pub fn shape(&self) -> Shape {
+        match self.step {
+            Step::Review => Shape::WizardWide,
+            _ => Shape::Wizard,
+        }
+    }
+
+    /// Rows above the review's lines: the result and a blank row once the review has ended.
+    fn head_rows(&self) -> u16 {
+        if self.done.is_some() {
+            2
+        } else {
+            0
+        }
+    }
+
     /// Group names in name order.
     fn groups(&self) -> Vec<&str> {
         self.listing.keys().map(String::as_str).collect()
@@ -311,9 +378,10 @@ impl NewPackageWizard {
             self.picker = Some(FilePicker::new(target));
         }
         self.source = Some(source);
-        if source == Source::LiveFiles {
-            self.step = Step::Files;
-        }
+        self.step = match source {
+            Source::Empty => Step::Ignore,
+            Source::LiveFiles => Step::Files,
+        };
     }
 
     fn files_key(&mut self, key: &KeyEvent, ctx: &mut AppContext) -> Transition {
@@ -333,12 +401,25 @@ impl NewPackageWizard {
                     ctx.show_error_toast(message);
                 }
             }
-            // Enter goes on to the ignore step, which is not built yet.
-            KeyCode::Enter => {}
+            KeyCode::Enter => self.choose_files(ctx),
             KeyCode::Esc => self.step = Step::Source,
             _ => return Transition::None,
         }
         Transition::Handled
+    }
+
+    /// Enter on the picker: live files need at least one mark. Empty packages are chosen on
+    /// the source step, so an empty mark list here is refused rather than read as one.
+    fn choose_files(&mut self, ctx: &mut AppContext) {
+        let marked = self
+            .picker
+            .as_ref()
+            .is_some_and(|picker| !picker.marks.is_empty());
+        if !marked {
+            ctx.show_error_toast("mark files to move in, or go back and pick an empty package");
+            return;
+        }
+        self.step = Step::Ignore;
     }
 
     /// Reads every group's packages once. Reading the disk is allowed here, not in paint.
@@ -543,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_source_is_chosen_and_stays_on_step_three_until_steps_four_to_six_exist() {
+    fn test_empty_source_is_chosen_and_enter_goes_on_to_the_ignore_step() {
         let (mut wizard, mut ctx, _dir) = start();
         choose(&mut wizard, &mut ctx, 1);
         type_text(&mut wizard, &mut ctx, "tmux");
@@ -551,7 +632,25 @@ mod tests {
         wizard.handle_key(key(KeyCode::Enter), &mut ctx);
 
         assert_eq!(wizard.source, Some(Source::Empty));
-        assert_eq!(wizard.step, Step::Source);
+        assert_eq!(wizard.step, Step::Ignore);
+    }
+
+    #[test]
+    fn test_enter_on_the_picker_without_marks_is_refused_with_the_reason() {
+        let (mut wizard, mut ctx, _dir) = start();
+        choose(&mut wizard, &mut ctx, 1);
+        type_text(&mut wizard, &mut ctx, "tmux");
+        wizard.handle_key(key(KeyCode::Enter), &mut ctx);
+        wizard.source_list.cursor = 1;
+        wizard.handle_key(key(KeyCode::Enter), &mut ctx);
+        wizard.handle_key(key(KeyCode::Enter), &mut ctx);
+
+        assert_eq!(wizard.step, Step::Files);
+        let toast = ctx.toast.as_ref().unwrap();
+        assert_eq!(
+            toast.message,
+            "mark files to move in, or go back and pick an empty package"
+        );
     }
 
     #[test]

@@ -103,12 +103,12 @@ fn test_enter_on_packages_goes_to_packages() {
 }
 
 #[test]
-fn test_enter_on_new_package_goes_to_adopt_target() {
+fn test_enter_on_new_package_opens_the_wizard() {
     let (mut app, _) = make_two_group_app();
     app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
-    assert_eq!(component_id(&app), "AdoptTargetSelect");
+    assert_eq!(component_id(&app), "NewPackage");
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn test_digit_key_jumps_and_activates() {
     let cases: [(char, &str); 8] = [
         ('1', "Profiles"),
         ('2', "Packages"),
-        ('3', "AdoptTargetSelect"),
+        ('3', "NewPackage"),
         ('4', "UnstowTargetSelect"),
         ('5', "Status"),
         ('6', "Settings"),
@@ -776,17 +776,24 @@ fn test_help_esc_goes_back() {
     assert_eq!(component_id(&app), "MainMenu");
 }
 
+/// The wizard on its name step, which is text input: group `config` is the first row.
+fn wizard_on_name_step(app: &mut App) {
+    app.component_dispatch(down_key());
+    app.component_dispatch(down_key());
+    app.component_dispatch(enter_key());
+    app.component_dispatch(enter_key());
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        andre::components::InputMode::TextInput
+    );
+}
+
 // --- Q Quit Blocked During Text Input ---
 
 #[test]
-fn test_q_quit_blocked_during_adopt_name_prompt() {
+fn test_q_quit_blocked_during_new_package_name_step() {
     let (mut app, _) = make_two_group_app();
-    use andre::components::adopt::AdoptNamePromptComponent;
-    app.component_stack
-        .push(Box::new(AdoptNamePromptComponent::new(
-            "test".to_string(),
-            vec![],
-        )));
+    wizard_on_name_step(&mut app);
     app.component_dispatch(key_char('q'));
     assert!(!app.quitting, "q should not quit during text input");
 }
@@ -794,14 +801,9 @@ fn test_q_quit_blocked_during_adopt_name_prompt() {
 // --- Global Keys Blocked During Text Input ---
 
 #[test]
-fn test_global_keys_blocked_during_adopt_name_prompt() {
+fn test_global_keys_blocked_during_new_package_name_step() {
     let (mut app, _) = make_two_group_app();
-    use andre::components::adopt::AdoptNamePromptComponent;
-    app.component_stack
-        .push(Box::new(AdoptNamePromptComponent::new(
-            "test".to_string(),
-            vec![],
-        )));
+    wizard_on_name_step(&mut app);
     let initial_theme = app.ctx.core.theme;
     let initial_verbosity = app.ctx.core.flags.verbosity;
     let initial_dry_run = app.ctx.core.flags.dry_run;
@@ -865,14 +867,15 @@ fn test_input_mode_audit_normal_components() {
 
 #[test]
 fn test_input_mode_audit_text_input() {
-    use andre::components::adopt::AdoptNamePromptComponent;
     use andre::components::InputMode;
-    let (mut app, _) = make_test_app();
-    app.component_stack
-        .push(Box::new(AdoptNamePromptComponent::new(
-            "test".to_string(),
-            vec![],
-        )));
+    let (mut app, _) = make_two_group_app();
+    push_component(&mut app, "NewPackage");
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::Normal,
+        "the group step takes no text"
+    );
+    wizard_on_name_step(&mut app);
     assert_eq!(
         app.component_stack.last().unwrap().input_mode(),
         InputMode::TextInput
@@ -1204,35 +1207,32 @@ fn test_unstow_target_second_row_opens_second_group() {
 }
 
 #[test]
-fn test_adopt_target_enter_opens_highlighted_group() {
-    let (mut app, tmp) = make_two_group_app();
+fn test_new_package_enter_on_a_group_opens_its_name_step() {
+    let (mut app, _) = make_two_group_app();
     app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
-    assert_eq!(component_id(&app), "AdoptTargetSelect");
+    assert_eq!(component_id(&app), "NewPackage");
 
     app.component_dispatch(enter_key());
-    let select: &andre::components::adopt::AdoptFileSelectComponent = top_component(&app);
-    assert_eq!(select.group_name, "config");
     assert_eq!(
-        select.browser.path,
-        andre_core::path::resolve_path("~/.config", tmp.path(), tmp.path())
+        app.component_stack.last().unwrap().input_mode(),
+        andre::components::InputMode::TextInput,
+        "Enter on the first group (config) opens the name step"
     );
 }
 
 #[test]
-fn test_adopt_target_second_row_opens_second_group() {
-    let (mut app, tmp) = make_two_group_app();
+fn test_new_package_second_group_row_opens_its_name_step() {
+    let (mut app, _) = make_two_group_app();
     app.component_dispatch(down_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
     app.component_dispatch(down_key());
     app.component_dispatch(enter_key());
-    let select: &andre::components::adopt::AdoptFileSelectComponent = top_component(&app);
-    assert_eq!(select.group_name, "home");
     assert_eq!(
-        select.browser.path,
-        andre_core::path::resolve_path("~", tmp.path(), tmp.path())
+        app.component_stack.last().unwrap().input_mode(),
+        andre::components::InputMode::TextInput
     );
 }
 

@@ -19,6 +19,7 @@ use crate::components::profiles::ProfilesComponent;
 use crate::components::settings::SettingsComponent;
 use crate::components::status::StatusComponent;
 use crate::components::target_select::TargetSelectComponent;
+use crate::components::wizard::NewPackageWizard;
 use crate::components::{AppContext, Component, Transition};
 use crate::input;
 use crate::theme::ThemeColors;
@@ -217,7 +218,7 @@ impl MainMenuComponent {
         match item {
             MenuItem::Profiles => Transition::Push(Box::new(ProfilesComponent::default())),
             MenuItem::Stow => Transition::Push(Box::new(PackagesComponent::default())),
-            MenuItem::NewPackage => Transition::Push(Box::new(TargetSelectComponent::adopt())),
+            MenuItem::NewPackage => Transition::Push(Box::new(NewPackageWizard::default())),
             MenuItem::Unstow => Transition::Push(Box::new(TargetSelectComponent::unstow())),
             MenuItem::Status => Transition::Push(Box::new(StatusComponent::default())),
             MenuItem::Settings => Transition::Push(Box::new(SettingsComponent::default())),

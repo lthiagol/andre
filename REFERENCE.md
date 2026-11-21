@@ -214,7 +214,7 @@ the breadcrumb. Content is capped at 120 columns and centred on wider terminals.
 |--------|------|-------------|
 | **profiles** | profiles / `◈` | Named sets of packages; run the current action on one (see Profiles) |
 | **packages** | link / `⇢` | Select groups and packages, then run the current action (stow, restow or unstow) |
-| **new package** | new package / `+` | Create a package from files that already sit in a target |
+| **new package** | new package / `+` | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
 | **unstow** | unlink / `≠` | Remove symlinks interactively, one link at a time |
 | **verify status** | check / `✓` | View stow status across all groups |
 | **settings** | gear / `≡` | Edit config, add/remove/edit groups, change global options |
@@ -421,8 +421,8 @@ count) and the selected profile on the right: description, includes, its package
 
 | Key | Action |
 |:---|:---|
-| `y` | Confirm (confirm/adopt/unstow screens) |
-| `n` | Cancel (confirm/adopt/unstow screens) |
+| `y` | Confirm (confirm/unstow screens) |
+| `n` | Cancel (confirm/unstow screens) |
 
 ### Application
 
@@ -483,7 +483,7 @@ Test individual functions in isolation.
 |--------|---------------|
 | `config.rs` | Load, save, defaults, groups, validation |
 | `stow.rs` | Argument building, status checks, symlink unlinking |
-| `adopt.rs` | Adoption planning, execution, target listing |
+| `adopt.rs` | Target folder listing for the file picker and unstow browse |
 | `state.rs` | Theme cycling, action strings, state defaults |
 | `packages.rs` | Package discovery, filtering, preview |
 | `path.rs` | Path resolution (absolute, relative, `~`, `$ENV`) |

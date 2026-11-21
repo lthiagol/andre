@@ -42,7 +42,6 @@ pub struct LogEntry {
     pub message: String,
 }
 
-pub mod adopt;
 pub mod browser;
 pub mod confirm;
 pub mod execute;

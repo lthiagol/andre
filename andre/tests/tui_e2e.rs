@@ -7,7 +7,9 @@ use tempfile::TempDir;
 
 use andre::app::App;
 use andre::components::execute::ExecuteComponent;
+use andre::components::wizard::NewPackageWizard;
 use andre::execute::ExecutionState;
+use andre_core::profile::ProfileSet;
 
 fn binary_path() -> PathBuf {
     // Try llvm-cov target dir first, then default debug dir
@@ -294,4 +296,109 @@ fn test_onboard_creates_config_file() {
         content.contains("global:") && content.contains("groups:"),
         "config should contain global and groups"
     );
+}
+
+// --- New-package wizard, end to end in a temp HOME ---
+
+/// Config folder at the temp root: group `home` from `dotfiles/home` into `home/` (the temp
+/// HOME), one profile `personal` holding `home/git`. Returns the app with the wizard on top.
+fn wizard_app() -> (App, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("andre.yml"),
+        "global:\n  stow:\n    verbosity: 0\ngroups:\n  home:\n    source: dotfiles/home\n    target: \"~\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("dotfiles/home/git")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("home")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("profiles")).unwrap();
+    std::fs::write(
+        tmp.path().join("profiles/personal.yml"),
+        "packages:\n  - home/git\n",
+    )
+    .unwrap();
+    let mut app = App::with_home(tmp.path().join("andre.yml"), tmp.path().join("home")).unwrap();
+    app.component_stack
+        .push(Box::new(NewPackageWizard::default()));
+    (app, tmp)
+}
+
+/// Presses each key in turn, as the event loop would.
+fn press_all(app: &mut App, codes: &[KeyCode]) {
+    for code in codes {
+        app.component_dispatch(key(*code));
+    }
+}
+
+fn typed(text: &str) -> Vec<KeyCode> {
+    text.chars().map(KeyCode::Char).collect()
+}
+
+#[test]
+fn test_new_package_empty_creates_the_package_its_gitignore_and_the_profile_ref() {
+    let (mut app, tmp) = wizard_app();
+    // group home, name tmux, create row, empty source, ignore defaults, profile personal.
+    press_all(&mut app, &[KeyCode::Enter]);
+    press_all(&mut app, &typed("tmux"));
+    press_all(&mut app, &[KeyCode::Enter, KeyCode::Enter, KeyCode::Enter]);
+    press_all(&mut app, &[KeyCode::Char(' '), KeyCode::Enter]);
+    // Review, then create, then leave.
+    press_all(&mut app, &[KeyCode::Enter, KeyCode::Enter]);
+
+    let package = tmp.path().join("dotfiles/home/tmux");
+    assert!(package.is_dir(), "package folder is created");
+    let gitignore = std::fs::read_to_string(package.join(".gitignore")).unwrap();
+    assert!(
+        gitignore.contains("*.env"),
+        "secrets template written: {gitignore:?}"
+    );
+    assert!(!package.join(".stow-local-ignore").exists());
+    let profiles = ProfileSet::load(&tmp.path().join("profiles")).unwrap();
+    assert!(profiles
+        .get("personal")
+        .unwrap()
+        .packages
+        .contains(&"home/tmux".to_string()));
+    assert_eq!(
+        app.component_stack.len(),
+        1,
+        "Enter after the result leaves to the menu"
+    );
+}
+
+#[test]
+fn test_new_package_from_live_files_moves_the_file_and_links_it_back() {
+    let (mut app, tmp) = wizard_app();
+    let live = tmp.path().join("home/.bashrc");
+    std::fs::write(&live, "alias l='ls -la'\n").unwrap();
+    // group home, name shell, create row, live files, the picker opens at the target.
+    press_all(&mut app, &[KeyCode::Enter]);
+    press_all(&mut app, &typed("shell"));
+    press_all(&mut app, &[KeyCode::Enter, KeyCode::Down, KeyCode::Enter]);
+    // The picker reads its listing on each frame, so update once before the keys.
+    app.update_components();
+    // Mark the only entry, then ignore defaults, no profile, review, create.
+    press_all(
+        &mut app,
+        &[
+            KeyCode::Char(' '),
+            KeyCode::Enter,
+            KeyCode::Enter,
+            KeyCode::Enter,
+        ],
+    );
+    press_all(&mut app, &[KeyCode::Enter]);
+
+    let package = tmp.path().join("dotfiles/home/shell");
+    let moved = package.join(".bashrc");
+    assert_eq!(
+        std::fs::read_to_string(&moved).unwrap(),
+        "alias l='ls -la'\n"
+    );
+    // The link is relative (stow-compatible), so compare where it resolves.
+    assert_eq!(
+        std::fs::canonicalize(&live).unwrap(),
+        std::fs::canonicalize(&moved).unwrap()
+    );
+    assert!(package.join(".gitignore").is_file());
 }

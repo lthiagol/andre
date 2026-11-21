@@ -8,7 +8,7 @@ use crate::input::{step_cursor, Input};
 /// Lists one directory for a [`Browser`].
 pub type ListFn = fn(&Path) -> Vec<TargetEntry>;
 
-/// Every entry in a directory (the unstow and adopt browse screens).
+/// Every entry in a directory (the unstow browse screen and the new-package file picker).
 pub fn all_entries(path: &Path) -> Vec<TargetEntry> {
     andre_core::adopt::list_target_entries(path).unwrap_or_default()
 }

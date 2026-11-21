@@ -204,20 +204,7 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
         "Help" => vec![esc("back")],
         "Settings" => vec![arrows("navigate"), enter("group menu"), esc("back")],
         "Confirm" => vec![ky("confirm"), kn("cancel")],
-        "AdoptTargetSelect" | "UnstowTargetSelect" => {
-            vec![arrows("navigate"), enter("select"), esc("back")]
-        }
-        "AdoptFileSelect" => vec![
-            arrows("navigate"),
-            space("toggle"),
-            Hint::new("\u{2192}", "into", PRIO_VERB),
-            enter("confirm"),
-            Hint::new("\u{2190}", "up", PRIO_VERB),
-            esc("back"),
-        ],
-        "AdoptConfirm" => vec![ky("proceed"), kn("back")],
-        "AdoptNamePrompt" => vec![enter("confirm"), esc("back")],
-        "AdoptPreview" => vec![ky("execute"), kn("cancel")],
+        "UnstowTargetSelect" => vec![arrows("navigate"), enter("select"), esc("back")],
         "UnstowBrowse" => vec![
             arrows("navigate"),
             Hint::new("\u{2192}", "into", PRIO_VERB),
@@ -382,6 +369,43 @@ pub fn wizard_files_hints() -> Vec<Hint> {
     ]
 }
 
+/// Hints for the wizard's ignore-files step.
+pub fn wizard_ignore_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("Space", "toggle", PRIO_VERB),
+        Hint::new("\u{2190}\u{2192}", "template", PRIO_VERB),
+        Hint::new("Enter", "next", PRIO_PRIMARY),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
+}
+
+/// Hints for the wizard's profiles step. None chosen is valid, so Enter always goes on.
+pub fn wizard_profiles_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("\u{2191}\u{2193}", "move", PRIO_NAV),
+        Hint::new("Space", "toggle", PRIO_VERB),
+        Hint::new("Enter", "next", PRIO_PRIMARY),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
+}
+
+/// Hints for the wizard's review, before it runs.
+pub fn wizard_review_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("\u{2191}\u{2193}", "scroll", PRIO_NAV),
+        Hint::new("Enter", "create", PRIO_PRIMARY),
+        Hint::new("Esc", "back", PRIO_BACK),
+    ]
+}
+
+/// Hints for the wizard's review once it has run: the lines still scroll, and Enter leaves.
+pub fn wizard_done_hints() -> Vec<Hint> {
+    vec![
+        Hint::new("\u{2191}\u{2193}", "scroll", PRIO_NAV),
+        Hint::new("Enter", "done", PRIO_PRIMARY),
+    ]
+}
+
 /// Hints for the profile membership dialog.
 pub fn membership_dialog_hints() -> Vec<Hint> {
     vec![
@@ -395,7 +419,7 @@ pub fn membership_dialog_hints() -> Vec<Hint> {
 mod tests {
     use super::{
         delete_dialog_hints, fit, footer_line, hint_spans, hints_width as hint_row_width,
-        name_dialog_hints, profiles_hints, screen_hints, Hint,
+        name_dialog_hints, profiles_hints, screen_hints, Hint, PRIO_PRIMARY,
     };
     use crate::theme::ThemeColors;
     use andre_core::Theme;
@@ -408,7 +432,7 @@ mod tests {
     /// Inner width at the 80-column minimum: border and margin take four.
     const INNER_WIDTH: usize = 76;
 
-    const SCREENS: [&str; 15] = [
+    const SCREENS: [&str; 10] = [
         "MainMenu",
         "Packages",
         "Settings",
@@ -416,11 +440,6 @@ mod tests {
         "Execute",
         "Help",
         "Confirm",
-        "AdoptTargetSelect",
-        "AdoptFileSelect",
-        "AdoptConfirm",
-        "AdoptNamePrompt",
-        "AdoptPreview",
         "UnstowTargetSelect",
         "UnstowBrowse",
         "UnstowConfirm",
@@ -613,19 +632,20 @@ mod tests {
     }
 
     #[test]
-    fn test_longest_hint_screen_drops_theme_chip_at_80_columns() {
-        // AdoptFileSelect has the longest hints. Neither the name nor the word
-        // fits beside them at 76 columns, so the chip goes and `q quit` stays.
-        let longest = SCREENS
-            .into_iter()
-            .max_by_key(|screen| hints_width(screen))
-            .unwrap();
-        assert_eq!(longest, "AdoptFileSelect");
-        assert!(stub_chip_width(longest) > INNER_WIDTH);
+    fn test_hints_that_leave_no_room_for_the_word_drop_the_chip_at_80_columns() {
+        // The `theme` word stays only when the hints leave room for it. A hint too wide for
+        // that drops the chip, and `q quit` stays.
+        let mut hints = screen_hints("UnstowBrowse");
+        hints.push(Hint::new(
+            "Enter",
+            "a verb long enough to fill the whole row",
+            PRIO_PRIMARY,
+        ));
+        assert!(hint_row_width(&hints) + 2 + "theme".width() + 2 + "q quit".width() > INNER_WIDTH);
         for theme in Theme::ALL {
             let line = footer_line(
                 &ThemeColors::from_theme(theme),
-                &screen_hints(longest),
+                &hints,
                 theme.name(),
                 INNER_WIDTH,
             );
@@ -663,19 +683,14 @@ mod tests {
     #[test]
     fn test_footer_drops_hints_so_quit_is_still_shown_when_very_narrow() {
         for width in [0, 1, 5, 6, 8, 20, 30] {
-            let line = footer_line(
-                &colors(),
-                &screen_hints("AdoptFileSelect"),
-                "default",
-                width,
-            );
+            let line = footer_line(&colors(), &screen_hints("UnstowBrowse"), "default", width);
             assert!(
                 line_width(&line) <= width.max(6),
                 "width {width}: {:?}",
                 line_text(&line)
             );
         }
-        let line = footer_line(&colors(), &screen_hints("AdoptFileSelect"), "default", 30);
+        let line = footer_line(&colors(), &screen_hints("UnstowBrowse"), "default", 30);
         let t = line_text(&line);
         assert!(t.ends_with("q quit"), "{t:?}");
         assert_eq!(line_width(&line), 30);
@@ -684,28 +699,29 @@ mod tests {
 
     #[test]
     fn test_narrow_footer_drops_the_lowest_priority_hint_whole() {
-        // At 60 columns the row has 52 columns for hints after `q quit`. `navigate` is the
-        // lowest priority and is dropped whole; the rest keep their order and wording.
-        let line = footer_line(&colors(), &screen_hints("AdoptFileSelect"), "default", 60);
+        // At 56 columns the row has 48 columns for hints after `q quit`. The hints need 49 with
+        // `navigate`, so `navigate` (the lowest priority) is dropped whole; the rest keep their
+        // order and wording.
+        let line = footer_line(&colors(), &screen_hints("UnstowBrowse"), "default", 56);
         let t = line_text(&line);
         assert!(
-            t.starts_with("Space toggle  \u{2192} into  Enter confirm"),
+            t.starts_with("\u{2192} into  Enter unlink  \u{2190} up"),
             "{t:?}"
         );
         assert!(!t.contains("navigate"), "{t:?}");
         assert!(!t.contains("navi"), "no partial word: {t:?}");
-        assert_eq!(line_width(&line), 60);
+        assert_eq!(line_width(&line), 56);
     }
 
     #[test]
     fn test_fit_drops_lowest_priority_first_and_keeps_order() {
-        let hints = screen_hints("AdoptFileSelect");
+        let hints = screen_hints("UnstowBrowse");
         // Room for the hints without `navigate` (11 columns and a gap) but not with it.
         let room = hint_row_width(&hints) - 13;
         let kept = fit(hints.clone(), room);
         assert_eq!(
             kept.iter().map(|h| h.label.as_ref()).collect::<Vec<_>>(),
-            ["toggle", "into", "confirm", "up", "back"]
+            ["into", "unlink", "up", "back"]
         );
     }
 

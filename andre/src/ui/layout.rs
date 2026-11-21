@@ -24,6 +24,8 @@ pub enum Shape {
     ChipReview,
     /// One panel across the full width, above an action bar.
     Wide,
+    /// A step bar and a blank row, then one panel across the full width and an action bar.
+    WizardWide,
 }
 
 /// The parts of one screen. `detail` is empty for [`Shape::Wide`].
@@ -49,10 +51,10 @@ pub fn screen_rects(area: Rect, shape: Shape) -> ScreenRects {
     let head = match shape {
         Shape::TwoPane | Shape::Review | Shape::Wide => 0,
         Shape::ChipTwoPane | Shape::ChipReview => 1,
-        Shape::Wizard => 2,
+        Shape::Wizard | Shape::WizardWide => 2,
     };
     let foot = match shape {
-        Shape::Review | Shape::ChipReview | Shape::Wide => 1,
+        Shape::Review | Shape::ChipReview | Shape::Wide | Shape::WizardWide => 1,
         Shape::TwoPane | Shape::ChipTwoPane | Shape::Wizard => 0,
     };
 
@@ -66,7 +68,7 @@ pub fn screen_rects(area: Rect, shape: Shape) -> ScreenRects {
         ..area
     });
 
-    if shape == Shape::Wide {
+    if matches!(shape, Shape::Wide | Shape::WizardWide) {
         return ScreenRects {
             chip,
             list: Rect {
@@ -157,6 +159,15 @@ mod tests {
     fn test_wide_gives_the_list_rect_the_full_width_and_no_detail() {
         let rects = screen_rects(Rect::new(0, 0, 76, 16), Shape::Wide);
         assert_eq!(rects.list, Rect::new(0, 0, 76, 15));
+        assert_eq!(rects.detail.width, 0);
+        assert_eq!(rects.actions, Some(Rect::new(0, 15, 76, 1)));
+    }
+
+    #[test]
+    fn test_wizard_wide_has_the_step_row_one_panel_and_the_action_bar() {
+        let rects = screen_rects(Rect::new(0, 0, 76, 16), Shape::WizardWide);
+        assert_eq!(rects.chip, Some(Rect::new(0, 0, 76, 1)));
+        assert_eq!(rects.list, Rect::new(0, 2, 76, 13));
         assert_eq!(rects.detail.width, 0);
         assert_eq!(rects.actions, Some(Rect::new(0, 15, 76, 1)));
     }

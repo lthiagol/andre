@@ -140,7 +140,7 @@ selection colour and marked with a `▌` bar.
 |--------|-------------|
 | **profiles** | Named sets of packages. Pick one and run the current action on all of it |
 | **packages** | Select groups and packages, then run the current action (stow, restow or unstow) |
-| **new package** | Create a package from files that already sit in a target |
+| **new package** | Create a package: empty, or from files that already sit in a target; sets its ignore files and profiles |
 | **unstow** | Remove symlinks interactively |
 | **verify status** | View stow status across all groups |
 | **settings** | Edit config, add/remove groups, change options |
@@ -162,7 +162,7 @@ selection colour and marked with a `▌` bar.
 | `t` | Cycle theme |
 | `q` / `Ctrl+C` | Quit |
 
-Global shortcuts work from list screens. They are blocked during text input (e.g., typing a package name in the adoption prompt) and modal popups (e.g., settings picker).
+Global shortcuts work from list screens. They are blocked during text input (e.g., typing a package name in the new-package wizard) and modal popups (e.g., settings picker).
 
 Icons default to the Nerd Font set. If your terminal font is not a [Nerd Font](https://www.nerdfonts.com/), set `global.icons: unicode` in `andre.yml` (or pick it in Settings) to use plain symbols instead.
 

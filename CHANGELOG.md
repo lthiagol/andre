@@ -11,13 +11,22 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
-- **New-package wizard, steps 1–3 (not in the menu yet).** `NewPackageWizard` picks a group,
+- **New-package wizard, steps 1–3.** `NewPackageWizard` picks a group,
   names the package (typing filters the group's packages; the create row is always first,
   and an existing name adds files to that package), then picks the source: an empty package,
   or live files moved in through a picker opened at the group's target. Marks are by Space;
   symlinks and artifacts are listed but refused. Esc goes back one step and keeps every
-  answer. Nothing is written yet, and the main menu still opens the adopt flow until the
-  ignore, profile and review steps land.
+  answer. Steps 4–6 are in the entry below.
+- **New-package wizard, steps 4–6; `3 new package` opens it.** Step 4 sets the ignore files:
+  `.gitignore` with the common secrets template (Space or `←→` turns it off), and
+  `.stow-local-ignore` (Space; it replaces stow's built-in list, so the detail says so).
+  Step 5 chooses profiles (none is valid); its detail counts each profile's packages with
+  includes resolved, and the count once the package joins. Step 6 plans the package with the same
+  `plan_package` the create API uses, and lists each move, link, ignore file and profile
+  edit with the counts. Enter runs `execute_package`: the result shows on the review, and
+  Enter leaves. `dry-run` shows the plan and writes nothing. A plan that is refused (an
+  existing `.gitignore`, say) stays on step 5 with the reason as a toast. The review
+  scrolls with `↑↓`.
 - **Ignore editor (`i`).** On the packages screen, `i` opens the two ignore files of the
   cursor's package: `.gitignore` (kept out of git) and `.stow-local-ignore` (never
   linked). `Tab` switches file; the tabs show how many patterns each holds, or `(none)`.
@@ -121,7 +130,7 @@ bumps and release dates are decided when `wip` promotes to `stable`.
   known shows `·`. Marking does not reread statuses. The help workflow lists the new steps.
 - **Main menu has eight items.** `1 profiles`, `2 packages` (the old
   stow flow, now labelled `packages` without the action name: the top bar pill shows
-  the action), `3 new package` (still the adopt flow until F4), `4 unstow`,
+  the action), `3 new package` (the wizard), `4 unstow`,
   `5 verify status`, `6 settings`, `7 help`, `8 quit`. `1`–`8` jump to an item.
   Its facts for profiles show the profile count, packages and stowed count.
 - **Action key `s`.** `s` cycles the action stow → restow → unstow from
@@ -455,6 +464,13 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Removed
 
+- The adopt screens (target select, file select, confirm, name prompt, preview) and their
+  footer entries. `3 new package` replaces them. The `adopt` flag stays (it still means
+  `stow --adopt`). `andre_core::adopt` keeps only the folder listing (`list_target_entries`,
+  `list_target_dirs`, `TargetEntry`) that the file picker and unstow browse read.
+- `andre_core::adopt::plan_adoption` and `execute_adoption`, with `AdoptionPlan`,
+  `AdoptionStep` and `AdoptionAction`. Nothing called them once the adopt screens went;
+  `andre_core::create` does the move-in.
 - `StowStatus::icon` in `andre-core`. The glyphs now live in `ui::icons`, where
   the icon set can choose them.
 

@@ -11,10 +11,7 @@ pub mod state;
 pub mod stow;
 pub mod yolo;
 
-pub use adopt::{
-    execute_adoption, list_target_dirs, plan_adoption, AdoptionAction, AdoptionPlan, AdoptionStep,
-    TargetEntry,
-};
+pub use adopt::{list_target_dirs, TargetEntry};
 pub use config::{Config, ConfigWarning, GlobalSettings, Group, StowConfig};
 pub use create::{execute_package, plan_package, FileMove, NewPackage, PackagePlan, ProfileEdit};
 pub use engine::{
