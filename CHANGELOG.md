@@ -11,6 +11,14 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- **Grouped package tree (no screen change yet).** `andre/src/ui/tree.rs`: `Tree`
+  holds groups, folds and marks; `rows()` flattens it for a list, `tree_line` paints
+  a row (fold, mark, status, name, right-hand text). A group header shows `on`,
+  `off` or `some` (`▣`) and `marked/total`. Space on a header marks every own
+  package, or unmarks them when all count as marked. Inherited packages (`via <profile>`)
+  cannot be toggled; `toggle_mark` says so. `marked()` lists own marks in config order.
+  `set_status` updates one package and `replace_groups` refreshes the data; both keep
+  the folds. List panes 44 cols or wider show the status word before the meta.
 - Per-package ignore lists, GNU Stow semantics (`andre-core/src/ignore.rs`). A
   package's `.stow-local-ignore` holds one Perl-style regex per line (`#` comments,
   blank lines skipped). A pattern with `/` matches the path below the package root
