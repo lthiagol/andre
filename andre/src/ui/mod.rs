@@ -11,7 +11,7 @@ pub mod icons;
 pub mod layout;
 pub mod list_panel;
 pub mod selection;
-mod settings;
+pub mod settings;
 mod status_bar;
 pub mod status_style;
 pub mod step_bar;
@@ -25,7 +25,6 @@ pub use banner::{render_banner, render_compact_banner};
 pub use block::{focus_panel, themed_panel};
 pub use footer::render_footer;
 pub use help::render_help;
-pub use settings::render_settings;
 pub use status_bar::{breadcrumb_label, format_breadcrumb, render_status_bar};
 pub use toast::render_toast;
 

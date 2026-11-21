@@ -469,6 +469,21 @@ state, the files in the way first.
 | `o` | Toggle dotfiles mode |
 | `t` | Cycle theme |
 
+### Settings Screen
+
+| Key | Action |
+|:---|:---|
+| `↑` / `↓` | Move (headers are skipped) |
+| `Space` / `Enter` | Change the row: flip a flag, or open its picker or menu. On a group, `Enter` opens its menu |
+| `+` | Add a group: name, then source and target folders |
+| `x` | Remove the group under the cursor (asks first). On `w`, its refs are dropped from every profile |
+| `w` | Save `andre.yml` |
+| `Esc` | Back. With unsaved edits: `y` save, `n` discard, `Esc` stay |
+
+In a group's menu, `Enter` edits the field under the cursor (name, source, target, ignore
+list) and `Esc` cancels every edit made in that menu. In a pattern list, `+` adds,
+`Enter` edits, `x` deletes. Pickers: `↑↓` move, `Enter` keeps, `Esc` reverts.
+
 ### Dialogs
 
 | Key | Action |
@@ -604,8 +619,8 @@ Cycle through themes with `t`:
 ## 🔣 Icons
 
 Set `global.icons` to `nerd` (the default) or `unicode`, or change it on the
-Settings screen: the `icons` row cycles with Enter, and the change applies once
-you save the config.
+Settings screen: the `icons` row opens a picker that previews live (Esc reverts),
+and the change applies once you save the config.
 
 | Set | Toggles on / off | When to use |
 |:---|:---|:---|

@@ -1,68 +1,138 @@
+use andre_core::{Config, IconSet, StowFlag, Theme};
+
+use super::pending::GroupChange;
 use crate::components::browser::Browser;
+use crate::ui::text_field::TextField;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PickerField {
+/// What a list row edits. Headers are drawn but never selected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Row {
+    Header,
     Action,
+    Flag(StowFlag),
     Theme,
+    Icons,
+    GlobalIgnore,
+    Group(String),
 }
 
+/// One row of the settings list, as painted: its label and its value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Item {
+    pub row: Row,
+    pub label: String,
+    pub value: String,
+}
+
+impl Item {
+    pub fn selectable(&self) -> bool {
+        self.row != Row::Header
+    }
+}
+
+/// Which pattern list an ignore editor edits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IgnoreScope {
+    Global,
+    Group(String),
+}
+
+/// What a directory picker chose a path for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pick {
+    /// A new group's source, then its target.
+    NewSource {
+        name: String,
+    },
+    NewTarget {
+        name: String,
+        source: String,
+    },
+    /// One path of an existing group.
+    Source {
+        group: String,
+    },
+    Target {
+        group: String,
+    },
+}
+
+/// The group name dialog: a new group, or a rename.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NameTarget {
+    New,
+    Rename { original: String },
+}
+
+/// The pattern being typed in an ignore editor. `index` is the pattern it replaces, or
+/// `None` for a new pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineEdit {
+    pub index: Option<usize>,
+    pub field: TextField,
+}
+
+/// What a group menu restores when it is cancelled: the group's name when the menu opened,
+/// the config, the group changes and the dirty flag.
 #[derive(Debug, Clone)]
-pub struct PickerState {
-    pub options: Vec<String>,
-    pub selected_index: usize,
-    pub title: String,
-    pub field: PickerField,
+pub struct Snapshot {
+    pub group: String,
+    pub config: Config,
+    pub changes: Vec<GroupChange>,
+    pub dirty: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GroupEditField {
-    Source,
-    Target,
-}
-
+/// A dialog on top of the settings list. The last one in `SettingsComponent::overlays`
+/// takes keys and is the only one painted.
 #[derive(Debug, Clone)]
-pub enum GroupDialog {
-    Actions {
+pub enum Overlay {
+    /// The action picker; `cursor` indexes `StowAction::ALL`.
+    Action {
         cursor: usize,
     },
-    AddName {
-        name: String,
-    },
-    AddBrowse {
-        name: String,
-        source: Option<String>,
-        browser: Browser,
-    },
-    RemoveSelect {
+    /// The theme picker. Moving the cursor previews the theme; Esc puts `original` back.
+    Theme {
         cursor: usize,
+        original: Theme,
     },
-    RemoveConfirm {
-        name: String,
-    },
-    EditSelect {
+    /// The icon set picker, with the same preview and revert as the theme picker.
+    Icons {
         cursor: usize,
+        original: IconSet,
     },
-    EditField {
+    /// A group's edit menu. Rows: name, source, target, ignore, done.
+    Group {
         group: String,
         cursor: usize,
+        snapshot: Snapshot,
     },
-    EditName {
-        /// The group's current name, kept so Esc can return to it and Enter can rename it.
-        original: String,
-        /// The name being typed.
-        name: String,
+    Name {
+        target: NameTarget,
+        field: TextField,
     },
-    EditBrowse {
-        group: String,
-        field: GroupEditField,
+    Browse {
+        pick: Pick,
         browser: Browser,
     },
-    IgnoreManage {
-        group: Option<String>,
+    /// Confirm removing a group. `refs` counts the profile refs into it.
+    Remove {
+        group: String,
+        refs: usize,
+    },
+    /// A pattern list. The row after the last pattern adds one.
+    Ignore {
+        scope: IgnoreScope,
         cursor: usize,
+        edit: Option<LineEdit>,
     },
-    IgnoreAdd {
-        group: Option<String>,
-        pattern: String,
-    },
+    /// Unsaved edits: save, discard or stay.
+    Leave,
 }
+
+/// Rows of a group's edit menu, in display order.
+pub const GROUP_NAME: usize = 0;
+pub const GROUP_SOURCE: usize = 1;
+pub const GROUP_TARGET: usize = 2;
+pub const GROUP_IGNORE: usize = 3;
+pub const GROUP_DONE: usize = 4;
+pub const GROUP_ROWS: usize = 5;

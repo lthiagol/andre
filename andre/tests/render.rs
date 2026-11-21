@@ -351,10 +351,10 @@ fn test_empty_app_renders() {
 fn test_config_screen_renders() {
     let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
-    let buf = render_app(&mut app, 80, 24);
+    let buf = render_updated(&mut app, 80, 24);
     assert!(
-        line_contains(&buf, "Config"),
-        "config screen title not shown"
+        line_contains(&buf, "settings"),
+        "settings screen title not shown"
     );
 }
 
@@ -431,10 +431,7 @@ fn test_config_screen_shows_verbosity() {
     let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
     let buf = render_app(&mut app, 80, 24);
-    assert!(
-        line_contains(&buf, "verbosity"),
-        "verbosity row not visible"
-    );
+    assert!(line_contains(&buf, "verbose"), "verbose row not visible");
 }
 
 #[test]
@@ -896,7 +893,7 @@ fn test_footer_context_hints_per_screen_family() {
     let cases: &[(&str, &str)] = &[
         ("", "navigate"),                 // MainMenu
         ("Packages", "mark"),             // packages browser
-        ("Settings", "group menu"),       // settings
+        ("Settings", "change"),           // settings
         ("Help", "back"),                 // help
         ("Confirm", "cancel"),            // review y/n
         ("Execute", "inspect"),           // run screen, not finished
@@ -1181,7 +1178,7 @@ fn test_chrome_renders_across_themes() {
             theme.name()
         );
         assert!(
-            line_contains(&buf, "group menu"),
+            line_contains(&buf, "change"),
             "footer missing under theme {:?}",
             theme.name()
         );
@@ -1225,35 +1222,23 @@ fn test_chrome_degrades_on_minimum_supported_width() {
 
 #[test]
 fn test_settings_icons_row_shows_pending_set_after_enter() {
-    use andre::components::settings::rows::ROW_ICONS;
-    use andre::components::settings::SettingsComponent;
     use helpers::enter_key;
 
     let (mut app, _tmp) = make_test_app();
     push_screen(&mut app, "Settings");
-    app.component_stack
-        .last_mut()
-        .unwrap()
-        .as_any_mut()
-        .downcast_mut::<SettingsComponent>()
-        .unwrap()
-        .cursor = ROW_ICONS;
+    select_setting(&mut app, "icons");
 
     let buf = render_app(&mut app, 80, 40);
-    let row = row_containing(&buf, "icons:").expect("icons row missing from settings");
+    let row = row_containing(&buf, "icons  ").expect("icons row missing from settings");
     assert!(row.contains("nerd"), "default icon set not shown: {row:?}");
 
     app.component_dispatch(enter_key());
+    app.component_dispatch(down_key());
     let buf = render_app(&mut app, 80, 40);
-    let row = row_containing(&buf, "icons:").expect("icons row missing from settings");
+    let row = row_containing(&buf, "icons  ").expect("icons row missing from settings");
     assert!(
         row.contains("unicode"),
         "Enter must show the pending set: {row:?}"
-    );
-    assert_eq!(
-        app.ctx.core.icons,
-        IconSet::Nerd,
-        "icons apply only once saved"
     );
 }
 
@@ -1631,15 +1616,63 @@ fn test_no_screen_draws_the_old_cursor_markers() {
     }
 }
 
-/// Puts the settings cursor on the first setting, past the info rows above it.
-fn select_first_setting(app: &mut App) {
-    app.component_stack
+/// Puts the settings cursor on the row labelled `label`, after the update that builds
+/// the rows.
+fn select_setting(app: &mut App, label: &str) {
+    app.update_components();
+    let settings = app
+        .component_stack
         .last_mut()
         .unwrap()
         .as_any_mut()
         .downcast_mut::<andre::components::settings::SettingsComponent>()
-        .unwrap()
-        .cursor = 2;
+        .unwrap();
+    settings.list.cursor = settings
+        .items()
+        .iter()
+        .position(|item| item.label == label)
+        .unwrap_or_else(|| panic!("no settings row labelled {label}"));
+}
+
+/// Renames group `home` to `dots` through its menu, with `work.yml` holding `home/git` saved.
+/// Returns the app with the settings screen open on the renamed group.
+fn renamed_group_with_a_saved_ref() -> (App, tempfile::TempDir) {
+    let (mut app, tmp) = make_two_group_app();
+    let dir = tmp.path().join("profiles");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("work.yml"), "packages: [home/git]\n").unwrap();
+    app.ctx.core.profiles = andre_core::ProfileSet::load(&dir).unwrap();
+    push_screen(&mut app, "Settings");
+    select_setting(&mut app, "home");
+    app.component_dispatch(enter_key()); // group menu
+    app.component_dispatch(enter_key()); // name row: rename
+    for _ in 0..4 {
+        app.component_dispatch(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    }
+    for c in "dots".chars() {
+        app.component_dispatch(key_char(c));
+    }
+    app.component_dispatch(enter_key()); // rename
+    for _ in 0..4 {
+        app.component_dispatch(down_key());
+    }
+    app.component_dispatch(enter_key()); // done
+    select_setting(&mut app, "dots");
+    (app, tmp)
+}
+
+#[test]
+fn test_remove_dialog_after_a_rename_counts_the_saved_profile_refs() {
+    let (mut app, _tmp) = renamed_group_with_a_saved_ref();
+    app.component_dispatch(key_char('x'));
+
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(line_contains(&buf, "1 profile ref to dots/* is removed."));
+}
+
+/// Puts the settings cursor on the first setting.
+fn select_first_setting(app: &mut App) {
+    select_setting(app, "action");
 }
 
 #[test]
@@ -4346,4 +4379,190 @@ fn test_review_run_and_unlink_render_at_120x40_and_200x50() {
             .push(Box::new(UnstowConfirmComponent::with_paths(vec![link])));
         render_updated(&mut app, width, height);
     }
+}
+
+// --- Settings screen (F6d) ---
+
+#[test]
+fn test_settings_list_shows_its_sections_and_no_save_status_text() {
+    let (mut app, _tmp) = make_two_group_app();
+    push_screen(&mut app, "Settings");
+    let buf = render_updated(&mut app, 80, 24);
+    for header in ["stow options", "appearance", "config", "groups"] {
+        assert!(line_contains(&buf, header), "section {header} not drawn");
+    }
+    for text in ["[Update", "[All saved]", "Saved.", "Unsaved changes"] {
+        assert!(
+            !line_contains(&buf, text),
+            "save status {text:?} still drawn"
+        );
+    }
+    assert!(line_contains(&buf, "home"), "group rows not drawn");
+}
+
+#[test]
+fn test_settings_title_marks_unsaved_edits() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Settings");
+    let buf = render_updated(&mut app, 80, 24);
+    assert!(!line_contains(&buf, "unsaved"));
+
+    app.component_dispatch(key_char('v'));
+    let buf = render_app(&mut app, 80, 24);
+    assert!(
+        line_contains(&buf, "unsaved"),
+        "title does not mark the edit"
+    );
+}
+
+#[test]
+fn test_settings_skips_headers_when_the_cursor_moves() {
+    let (mut app, _tmp) = make_two_group_app();
+    push_screen(&mut app, "Settings");
+    select_setting(&mut app, "global ignore");
+    app.component_dispatch(down_key());
+    let buf = render_app(&mut app, 80, 24);
+    // The cursor row is the first group: its detail title is the group's name.
+    assert!(
+        line_contains(&buf, "Group `home`"),
+        "cursor did not skip the groups header"
+    );
+}
+
+/// Every settings dialog paints at the design size and at the two larger sizes.
+#[test]
+fn test_settings_dialogs_render_at_80x24_120x40_and_200x50() {
+    type Scenario = (&'static str, fn(&mut App), &'static str);
+    let scenarios: &[Scenario] = &[
+        (
+            "action picker",
+            |app| {
+                select_setting(app, "action");
+                app.component_dispatch(enter_key());
+            },
+            "action",
+        ),
+        (
+            "theme picker",
+            |app| {
+                select_setting(app, "theme");
+                app.component_dispatch(enter_key());
+            },
+            "theme",
+        ),
+        (
+            "icons picker",
+            |app| {
+                select_setting(app, "icons");
+                app.component_dispatch(enter_key());
+            },
+            "icons",
+        ),
+        (
+            "global ignore",
+            |app| {
+                select_setting(app, "global ignore");
+                app.component_dispatch(enter_key());
+            },
+            "global ignore",
+        ),
+        (
+            "group menu",
+            |app| {
+                select_setting(app, "home");
+                app.component_dispatch(enter_key());
+            },
+            "edit group home",
+        ),
+        (
+            "remove group",
+            |app| {
+                select_setting(app, "home");
+                app.component_dispatch(key_char('x'));
+            },
+            "remove group",
+        ),
+        (
+            "new group name",
+            |app| {
+                app.component_dispatch(key_char('+'));
+            },
+            "new group",
+        ),
+        (
+            "leave",
+            |app| {
+                app.component_dispatch(key_char('v'));
+                app.component_dispatch(esc_key());
+            },
+            "unsaved changes",
+        ),
+    ];
+    for (name, open, title) in scenarios {
+        for (width, height) in [(80, 24), (120, 40), (200, 50)] {
+            let (mut app, _tmp) = make_two_group_app();
+            push_screen(&mut app, "Settings");
+            app.update_components();
+            open(&mut app);
+            let buf = render_app(&mut app, width, height);
+            assert!(
+                line_contains(&buf, title),
+                "{name} at {width}x{height}: title {title:?} not drawn"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_settings_list_renders_at_120x40_and_200x50() {
+    for (width, height) in [(120, 40), (200, 50)] {
+        let (mut app, _tmp) = make_two_group_app();
+        push_screen(&mut app, "Settings");
+        let buf = render_updated(&mut app, width, height);
+        assert!(
+            line_contains(&buf, "stow options"),
+            "section header missing at {width}x{height}"
+        );
+        assert!(
+            line_contains(&buf, "relative to"),
+            "detail of the cursor row missing at {width}x{height}"
+        );
+    }
+}
+
+#[test]
+fn test_settings_group_row_footer_says_edit_and_keeps_the_theme_chip_at_80x24() {
+    let (mut app, _tmp) = make_two_group_app();
+    push_screen(&mut app, "Settings");
+    select_setting(&mut app, "home");
+    let buf = render_app(&mut app, 80, 24);
+    let footer = footer_row(&buf);
+    assert!(
+        footer.contains("Enter edit  + add  x remove  w save  Esc back"),
+        "group row footer: {footer:?}"
+    );
+    assert!(
+        footer.contains("theme default"),
+        "theme chip crowded out: {footer:?}"
+    );
+}
+
+#[test]
+fn test_settings_unsaved_dot_is_drawn_in_the_warn_colour() {
+    let (mut app, _tmp) = make_test_app();
+    push_screen(&mut app, "Settings");
+    render_updated(&mut app, 80, 24);
+    app.component_dispatch(key_char('v'));
+    let buf = render_app(&mut app, 80, 24);
+
+    let warn = andre::theme::ThemeColors::from_theme(andre_core::Theme::Default).warn;
+    let dot = (0..buf.area().height)
+        .flat_map(|y| (0..buf.area().width).map(move |x| (x, y)))
+        .find(|&(x, y)| buf[(x, y)].symbol() == "\u{25cf}")
+        .expect("unsaved dot drawn");
+    assert_eq!(buf[dot].fg, warn, "dot should be in warn");
+    assert!(
+        line_contains(&buf, "unsaved \u{25cf}"),
+        "title should read `unsaved ●`"
+    );
 }

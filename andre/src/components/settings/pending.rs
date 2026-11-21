@@ -1,10 +1,21 @@
-use andre_core::{AppState, Config, IconSet, StowFlags, Theme};
+use std::collections::BTreeSet;
+
+use andre_core::{AppState, Config, IconSet, ProfileSet, StowFlags, Theme};
+
+/// A group renamed or removed on the screen. Kept until `w`, so the profiles can follow it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupChange {
+    Rename { from: String, to: String },
+    Remove(String),
+}
 
 pub struct PendingSettings {
     pub config: Config,
     pub flags: StowFlags,
     pub theme: Theme,
     pub icons: IconSet,
+    /// Group renames and removals, in the order they were made, not yet written to profiles.
+    pub group_changes: Vec<GroupChange>,
 }
 
 impl PendingSettings {
@@ -14,7 +25,23 @@ impl PendingSettings {
             flags: core.flags,
             theme: core.theme,
             icons: core.icons,
+            group_changes: Vec::new(),
         }
+    }
+
+    /// Applies the group changes to `profiles`, in order. Returns how many profiles changed.
+    /// A change only touches refs into the group it names, so applying one again is a no-op:
+    /// a save that failed part way can be retried.
+    pub fn apply_to_profiles(&self, profiles: &mut ProfileSet) -> andre_core::Result<usize> {
+        let mut changed = BTreeSet::new();
+        for change in &self.group_changes {
+            let names = match change {
+                GroupChange::Rename { from, to } => profiles.rename_group(from, to)?,
+                GroupChange::Remove(group) => profiles.remove_group(group)?,
+            };
+            changed.extend(names);
+        }
+        Ok(changed.len())
     }
 
     /// The config as it should be written to disk: the groups plus every pending setting.
@@ -51,6 +78,7 @@ mod tests {
             },
             theme,
             icons: IconSet::Unicode,
+            group_changes: Vec::new(),
         }
     }
 

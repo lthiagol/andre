@@ -1,602 +1,415 @@
-use std::path::Path;
+//! Paint for the settings screen: the list of rows and the dialogs on top of it. Every
+//! dialog is built from the overlay's state and the pending settings, so painting reads
+//! them and changes nothing.
 
+use andre_core::{IconSet, StowAction, Theme};
+use crossterm::event::KeyCode;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::Rect,
+    style::Style,
     text::{Line, Span},
-    widgets::{Clear, List, ListItem, ListState},
     Frame,
 };
 
-use crate::components::browser::Browser;
-use crate::components::settings::rows::{build_flat_items, SettingsRow};
-use crate::components::settings::ConfigMessage;
-use crate::components::settings::{GroupDialog, PickerState};
+use crate::components::settings::build::pattern_count;
+use crate::components::settings::pending::PendingSettings;
+use crate::components::settings::{IgnoreScope, Item, NameTarget, Overlay, Pick, Row, GROUP_DONE};
+use crate::components::AppContext;
 use crate::theme::ThemeColors;
-use crate::ui::icons::Icons;
+use crate::ui::dialog::{dialog_rect, key_button, leave_dialog, render_dialog, Dialog};
+use crate::ui::list_panel::{self, render_titled_list_panel, ListView};
 use crate::ui::selection;
-use crate::ui::widgets::file_browser::FileBrowserWidget;
-use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
-use andre_core::{config::Config, IconSet, StowFlags};
+use crate::ui::text_field::{field_line, TextField};
+use crate::ui::{display_path, elide};
 
-/// Width of the setting name column. Values start at the same column on every row.
-const LABEL_WIDTH: usize = 18;
+/// Width of every dialog row. Dialogs size to their widest line, so this sets their width.
+const DIALOG_ROW: u16 = 44;
+/// Rows of a browser or a pattern list that a dialog shows at once.
+const VISIBLE: usize = 8;
+/// Width of a label column inside a dialog or the list.
+const LABEL: usize = 14;
 
-fn val_str(on: bool) -> &'static str {
-    if on {
-        "ON "
-    } else {
-        "OFF"
-    }
-}
-
-/// A setting's name. Bold on the cursor row, like the labels elsewhere.
-fn label(text: &str, colors: &ThemeColors, selected: bool) -> Span<'static> {
-    let style = if selected {
-        Style::default()
-            .fg(colors.text)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(colors.text)
-    };
-    Span::styled(format!("{text:<LABEL_WIDTH$}"), style)
-}
-
-fn value(text: String, fg: Color) -> Span<'static> {
-    Span::styled(text, Style::default().fg(fg))
-}
-
-fn flag_value(on: bool, colors: &ThemeColors) -> Span<'static> {
-    let fg = if on { colors.ok } else { colors.err };
-    value(val_str(on).to_string(), fg)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_row(
-    row: &SettingsRow,
-    is_cursor: bool,
-    colors: &ThemeColors,
-    flags: &StowFlags,
-    theme_name: &str,
-    icons: IconSet,
-    config_path: &Path,
-    config_dir: &Path,
-    config_dirty: bool,
-    config_message: ConfigMessage,
-    filename: &str,
-    width: u16,
-) -> ListItem<'static> {
-    let StowFlags {
-        action,
-        verbosity,
-        dry_run,
-        no_folding,
-        adopt,
-        dotfiles,
-    } = *flags;
-    let selectable = !matches!(
-        row,
-        SettingsRow::ConfigPathInfo
-            | SettingsRow::ConfigResolveInfo
-            | SettingsRow::Spacer
-            | SettingsRow::SavedMessage
-    );
-    let selected = is_cursor && selectable;
-
-    let spans: Vec<Span<'static>> = match row {
-        SettingsRow::ConfigPathInfo => vec![value(
-            format!("Config: {}", config_path.display()),
-            colors.text_dim,
-        )],
-        SettingsRow::ConfigResolveInfo => vec![value(
-            format!("Paths resolve relative to: {}", config_dir.display()),
-            colors.text_dim,
-        )],
-        SettingsRow::Verbosity => vec![
-            label("verbosity:", colors, selected),
-            value(verbosity.to_string(), colors.value),
-        ],
-        SettingsRow::DryRun => vec![
-            label("dry_run:", colors, selected),
-            flag_value(dry_run, colors),
-        ],
-        SettingsRow::NoFolding => vec![
-            label("no_folding:", colors, selected),
-            flag_value(no_folding, colors),
-        ],
-        SettingsRow::Adopt => vec![label("adopt:", colors, selected), flag_value(adopt, colors)],
-        SettingsRow::Dotfiles => vec![
-            label("dotfiles:", colors, selected),
-            flag_value(dotfiles, colors),
-        ],
-        SettingsRow::Action => vec![
-            label("action:", colors, selected),
-            value(action.as_str().to_string(), colors.value),
-        ],
-        SettingsRow::ThemeName => vec![
-            label("theme:", colors, selected),
-            value(theme_name.to_string(), colors.value),
-        ],
-        SettingsRow::IconsName => vec![
-            label("icons:", colors, selected),
-            value(icons.name().to_string(), colors.value),
-        ],
-        SettingsRow::IgnoreLine { count } => {
-            let noun = if *count == 1 { "pattern" } else { "patterns" };
-            vec![
-                label("ignore:", colors, selected),
-                value(format!("{count} {noun}"), colors.value),
-            ]
-        }
-        SettingsRow::Spacer => vec![Span::raw("")],
-        SettingsRow::GroupLine { count } => {
-            let noun = if *count == 1 { "group" } else { "groups" };
-            vec![
-                label("group:", colors, selected),
-                value(format!("{count} {noun}"), colors.value),
-            ]
-        }
-        SettingsRow::SaveButton => {
-            let (text, fg) = if config_dirty {
-                (format!("[Update {filename}]"), colors.accent)
-            } else {
-                ("[All saved]".to_string(), colors.text_dim)
-            };
-            vec![value(text, fg)]
-        }
-        SettingsRow::SavedMessage => {
-            let (text, fg) = match config_message {
-                ConfigMessage::ConfirmDiscard => (
-                    "Unsaved changes  y=save  n=discard  Esc=cancel".to_string(),
-                    colors.warn,
-                ),
-                ConfigMessage::Saved => ("Saved.".to_string(), colors.ok),
-                ConfigMessage::Hidden => (String::new(), colors.text_dim),
-            };
-            vec![value(text, fg)]
-        }
-    };
-
-    ListItem::new(selection::row(spans, selected, colors, width))
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn render_settings(
+/// Paints the settings rows in the list pane. The selected row takes the cursor fill. With
+/// unsaved edits the title ends in `· unsaved ●`, the dot in `warn`.
+pub fn render_list(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
-    title: &str,
-    config: &Config,
-    config_path: &Path,
-    config_dir: &Path,
-    flags: &StowFlags,
-    theme_name: &str,
-    icons: IconSet,
-    cursor: usize,
-    config_message: ConfigMessage,
-    config_dirty: bool,
-    filename: &str,
-    picker: Option<&PickerState>,
-    group_dialog: Option<&GroupDialog>,
+    dirty: bool,
+    items: &[Item],
+    view: &ListView,
 ) {
-    let config_saved_message = config_message != ConfigMessage::Hidden;
-    let mut flat = build_flat_items(config);
-    if config_saved_message {
-        flat.push(SettingsRow::SavedMessage);
-    }
-    let total = flat.len();
-    let cursor = cursor.min(total.saturating_sub(1));
-
-    let viewport_height = area.height.saturating_sub(2).max(1) as usize;
-    // The panel borders take one column on each side.
-    let width = area.width.saturating_sub(2);
-
-    let list_items: Vec<ListItem> = flat
+    let width = list_panel::inner(area).width;
+    let rows = items
         .iter()
         .enumerate()
-        .map(|(i, row)| {
-            render_row(
-                row,
-                i == cursor,
-                colors,
-                flags,
-                theme_name,
-                icons,
-                config_path,
-                config_dir,
-                config_dirty,
-                config_message,
-                filename,
-                width,
-            )
-        })
+        .map(|(i, item)| list_line(item, i == view.cursor, colors, width))
         .collect();
-
-    let list = List::new(list_items).block(crate::ui::themed_panel(colors).title(title));
-    let mut list_state = ListState::default();
-    list_state.select(Some(cursor));
-    frame.render_stateful_widget(list, area, &mut list_state);
-    render_scrollbar(
+    render_titled_list_panel(
         frame,
-        border_track(area),
+        area,
         colors,
-        total,
-        viewport_height,
-        cursor,
-    );
-
-    if let Some(picker) = picker {
-        render_picker_popup(frame, area, colors, picker);
-    }
-    if let Some(dialog) = group_dialog {
-        render_group_dialog(frame, area, colors, icons, dialog, config);
-    }
-}
-
-/// One row of a popup list: the shared cursor style over plain text.
-fn popup_row(text: &str, selected: bool, colors: &ThemeColors, width: u16) -> ListItem<'static> {
-    let span = Span::styled(text.to_string(), Style::default().fg(colors.text));
-    ListItem::new(selection::row(vec![span], selected, colors, width))
-}
-
-/// Clears the popup area and draws a themed panel with a list in it. `cursor` keeps
-/// the cursor row in view when the list is taller than the popup.
-fn render_popup_list(
-    frame: &mut Frame,
-    popup_area: Rect,
-    colors: &ThemeColors,
-    title: &str,
-    items: Vec<ListItem>,
-    cursor: usize,
-) {
-    let list = List::new(items).block(
-        crate::ui::themed_panel(colors)
-            .title(format!(" {} ", title))
-            .style(Style::default().bg(colors.bg).fg(colors.border)),
-    );
-    let mut list_state = ListState::default();
-    list_state.select(Some(cursor));
-
-    frame.render_widget(Clear, popup_area);
-    frame.render_stateful_widget(list, popup_area, &mut list_state);
-}
-
-fn render_picker_popup(frame: &mut Frame, area: Rect, colors: &ThemeColors, picker: &PickerState) {
-    let popup_width = (picker.options.iter().map(String::len).max().unwrap_or(10) + 8)
-        .min(area.width.saturating_sub(4) as usize) as u16;
-    let popup_height =
-        (picker.options.len() + 2).min(area.height.saturating_sub(4) as usize) as u16;
-
-    let popup_area = centered_rect(popup_width, popup_height, area);
-    let width = popup_area.width.saturating_sub(2);
-
-    let items: Vec<ListItem> = picker
-        .options
-        .iter()
-        .enumerate()
-        .map(|(i, opt)| popup_row(opt, i == picker.selected_index, colors, width))
-        .collect();
-
-    render_popup_list(
-        frame,
-        popup_area,
-        colors,
-        &format!("pick {}", picker.title.to_lowercase()),
-        items,
-        picker.selected_index,
-    );
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length((r.height.saturating_sub(percent_y)) / 2),
-            Constraint::Length(percent_y),
-            Constraint::Length((r.height.saturating_sub(percent_y)) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length((r.width.saturating_sub(percent_x)) / 2),
-            Constraint::Length(percent_x),
-            Constraint::Length((r.width.saturating_sub(percent_x)) / 2),
-        ])
-        .split(popup_layout[1])[1]
-}
-
-fn render_group_dialog(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    icons: IconSet,
-    dialog: &GroupDialog,
-    config: &Config,
-) {
-    match dialog {
-        GroupDialog::Actions { cursor } => {
-            render_group_actions_popup(frame, area, colors, *cursor);
-        }
-        GroupDialog::AddName { name } => {
-            render_name_input_popup(frame, area, colors, name, "add group");
-        }
-        GroupDialog::AddBrowse {
-            name: _,
-            source: _,
-            browser,
-        } => {
-            render_dir_browser_popup(frame, area, colors, icons, browser, "select directory");
-        }
-        GroupDialog::RemoveSelect { cursor } => {
-            let names: Vec<&str> = config.groups.keys().map(String::as_str).collect();
-            render_list_picker_popup(frame, area, colors, names, *cursor, "remove group");
-        }
-        GroupDialog::RemoveConfirm { name } => {
-            render_confirm_popup(frame, area, colors, name, "remove group");
-        }
-        GroupDialog::EditSelect { cursor } => {
-            let names: Vec<&str> = config.groups.keys().map(String::as_str).collect();
-            render_list_picker_popup(frame, area, colors, names, *cursor, "edit group");
-        }
-        GroupDialog::EditField { group, cursor } => {
-            let fields = vec!["Name", "Source", "Target", "Ignore"];
-            render_edit_field_popup(frame, area, colors, group, fields, *cursor);
-        }
-        GroupDialog::EditName { name, .. } => {
-            render_name_input_popup(frame, area, colors, name, "edit group name");
-        }
-        GroupDialog::EditBrowse {
-            group: _,
-            field: _,
-            browser,
-        } => {
-            render_dir_browser_popup(frame, area, colors, icons, browser, "select directory");
-        }
-        GroupDialog::IgnoreManage { group, cursor } => {
-            let patterns: Vec<String> = match group {
-                Some(g) => config
-                    .get_group_ignore(g)
-                    .map(<[String]>::to_vec)
-                    .unwrap_or_default(),
-                None => config.global_ignore(),
-            };
-            render_ignore_manage_popup(frame, area, colors, &patterns, *cursor);
-        }
-        GroupDialog::IgnoreAdd { group: _, pattern } => {
-            render_name_input_popup(frame, area, colors, pattern, "add ignore pattern");
-        }
-    }
-}
-
-fn render_group_actions_popup(frame: &mut Frame, area: Rect, colors: &ThemeColors, cursor: usize) {
-    let options = ["Add", "Remove", "Edit"];
-    let popup_width = 24u16.min(area.width.saturating_sub(4));
-    let popup_height = (options.len() + 2) as u16;
-    let popup_area = centered_rect(popup_width, popup_height, area);
-    let width = popup_area.width.saturating_sub(2);
-
-    let items: Vec<ListItem> = options
-        .iter()
-        .enumerate()
-        .map(|(i, opt)| popup_row(opt, i == cursor, colors, width))
-        .collect();
-
-    render_popup_list(frame, popup_area, colors, "group actions", items, cursor);
-}
-
-fn render_name_input_popup(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    current: &str,
-    title: &str,
-) {
-    let popup_width = 40u16.min(area.width.saturating_sub(4));
-    let popup_height = 5u16.min(area.height.saturating_sub(4));
-    let popup_area = centered_rect(popup_width, popup_height, area);
-
-    let cursor_visible = "_".to_string();
-    let display_name = if current.is_empty() {
-        cursor_visible
-    } else {
-        current.to_string()
-    };
-
-    let items: Vec<ListItem> = vec![
-        ListItem::new(Line::from(vec![
-            Span::styled(" Name: ", Style::default().fg(colors.text_dim)),
-            Span::styled(display_name, Style::default().fg(colors.value)),
-        ])),
-        ListItem::new(Line::from(Span::styled(
-            "",
-            Style::default().fg(colors.text_dim),
-        ))),
-        ListItem::new(Line::from(vec![
-            Span::styled("Enter", Style::default().fg(colors.key)),
-            Span::styled(" confirm  ", Style::default().fg(colors.text_dim)),
-            Span::styled("Esc", Style::default().fg(colors.key)),
-            Span::styled(" cancel", Style::default().fg(colors.text_dim)),
-        ])),
-    ];
-
-    let list = List::new(items).block(
-        crate::ui::themed_panel(colors)
-            .title(format!(" {} ", title))
-            .style(Style::default().bg(colors.bg).fg(colors.border)),
-    );
-
-    frame.render_widget(Clear, popup_area);
-    frame.render_widget(list, popup_area);
-}
-
-fn render_confirm_popup(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    name: &str,
-    title: &str,
-) {
-    let popup_width = 36u16.min(area.width.saturating_sub(4));
-    let popup_height = 5u16.min(area.height.saturating_sub(4));
-    let popup_area = centered_rect(popup_width, popup_height, area);
-
-    let items: Vec<ListItem> = vec![
-        ListItem::new(Line::from(Span::styled(
-            format!(" {} {}?", title, name),
-            Style::default().fg(colors.text),
-        ))),
-        ListItem::new(Line::from(vec![
-            Span::styled("y", Style::default().fg(colors.key)),
-            Span::styled("es  ", Style::default().fg(colors.text_dim)),
-            Span::styled("n", Style::default().fg(colors.key)),
-            Span::styled("o  ", Style::default().fg(colors.text_dim)),
-            Span::styled("Esc", Style::default().fg(colors.key)),
-            Span::styled(" cancel", Style::default().fg(colors.text_dim)),
-        ])),
-    ];
-
-    let list = List::new(items).block(
-        crate::ui::themed_panel(colors)
-            .title(format!(" {} ", title))
-            .style(Style::default().bg(colors.bg).fg(colors.border)),
-    );
-
-    frame.render_widget(Clear, popup_area);
-    frame.render_widget(list, popup_area);
-}
-
-fn render_list_picker_popup(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    options: Vec<&str>,
-    cursor: usize,
-    title: &str,
-) {
-    let max_len = options.iter().map(|o| o.len()).max().unwrap_or(10);
-    let popup_width = (max_len + 8).min(area.width.saturating_sub(4) as usize) as u16;
-    let popup_height = (options.len() + 2).min(area.height.saturating_sub(4) as usize) as u16;
-    let popup_area = centered_rect(popup_width, popup_height, area);
-    let width = popup_area.width.saturating_sub(2);
-
-    let items: Vec<ListItem> = options
-        .iter()
-        .enumerate()
-        .map(|(i, opt)| popup_row(opt, i == cursor, colors, width))
-        .collect();
-
-    render_popup_list(frame, popup_area, colors, title, items, cursor);
-}
-
-fn render_edit_field_popup(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    group: &str,
-    fields: Vec<&str>,
-    cursor: usize,
-) {
-    let max_len = fields.iter().map(|f| f.len()).max().unwrap_or(10);
-    let popup_width =
-        ((max_len + 8).max(group.len() + 8)).min(area.width.saturating_sub(4) as usize) as u16;
-    let popup_height = (fields.len() + 2).min(area.height.saturating_sub(4) as usize) as u16;
-    let popup_area = centered_rect(popup_width, popup_height, area);
-    let width = popup_area.width.saturating_sub(2);
-
-    let items: Vec<ListItem> = fields
-        .iter()
-        .enumerate()
-        .map(|(i, field)| popup_row(field, i == cursor, colors, width))
-        .collect();
-
-    render_popup_list(
-        frame,
-        popup_area,
-        colors,
-        &format!("edit: {}", group),
-        items,
-        cursor,
-    );
-}
-
-fn render_ignore_manage_popup(
-    frame: &mut Frame,
-    area: Rect,
-    colors: &ThemeColors,
-    patterns: &[String],
-    cursor: usize,
-) {
-    let max_len = patterns
-        .iter()
-        .map(|p| p.len() + 6)
-        .max()
-        .unwrap_or(20)
-        .max(20);
-    let popup_width = (max_len + 6).min(area.width.saturating_sub(4) as usize) as u16;
-    let popup_height = (patterns.len() + 4).min(area.height.saturating_sub(4) as usize) as u16;
-    let popup_area = centered_rect(popup_width, popup_height, area);
-    let width = popup_area.width.saturating_sub(2);
-
-    let mut items: Vec<ListItem> = patterns
-        .iter()
-        .enumerate()
-        .map(|(i, pat)| {
-            let selected = i == cursor;
-            let remove_fg = if selected {
-                colors.err
-            } else {
-                colors.text_dim
-            };
-            let spans = vec![
-                Span::styled(pat.clone(), Style::default().fg(colors.text)),
-                Span::raw("  "),
-                Span::styled("[r]", Style::default().fg(remove_fg)),
-            ];
-            ListItem::new(selection::row(spans, selected, colors, width))
-        })
-        .collect();
-
-    let rule = Span::styled("-".repeat(max_len), Style::default().fg(colors.border));
-    items.push(ListItem::new(selection::row(
-        vec![rule],
         false,
-        colors,
-        width,
-    )));
-    items.push(popup_row(
-        "[+] Add Pattern",
-        cursor >= patterns.len(),
-        colors,
-        width,
-    ));
-
-    render_popup_list(frame, popup_area, colors, "ignore patterns", items, cursor);
+        list_title(dirty, colors),
+        rows,
+        view,
+        None,
+    );
 }
 
-fn render_dir_browser_popup(
+/// The list's title: `settings`, and `· unsaved ●` while there are unsaved edits.
+fn list_title(dirty: bool, colors: &ThemeColors) -> Line<'static> {
+    let mut spans = vec![Span::raw(" settings")];
+    if dirty {
+        spans.push(Span::raw(" \u{b7} unsaved "));
+        spans.push(Span::styled("\u{25cf}", Style::default().fg(colors.warn)));
+    }
+    spans.push(Span::raw(" "));
+    Line::from(spans)
+}
+
+/// One row: a header is a dim label with its meta in `accent`; a setting or a group is a
+/// label column and its value.
+pub fn list_line(item: &Item, selected: bool, colors: &ThemeColors, width: u16) -> Line<'static> {
+    if item.row == Row::Header {
+        let mut content = vec![Span::styled(
+            item.label.clone(),
+            Style::default().fg(colors.text_dim),
+        )];
+        if !item.value.is_empty() {
+            content.push(Span::raw("  "));
+            content.push(Span::styled(
+                item.value.clone(),
+                Style::default().fg(colors.accent),
+            ));
+        }
+        return selection::row(content, false, colors, width);
+    }
+    let label_style = Style::default().fg(colors.text);
+    let value_style = Style::default().fg(colors.value);
+    let content = vec![
+        Span::raw("  "),
+        Span::styled(format!("{:<LABEL$}", item.label), label_style),
+        Span::styled(item.value.clone(), value_style),
+    ];
+    selection::row(content, selected, colors, width)
+}
+
+/// Paints the dialog for the top overlay, centred in `area`.
+pub fn render_overlay(
     frame: &mut Frame,
     area: Rect,
     colors: &ThemeColors,
-    icons: IconSet,
-    browser: &Browser,
-    title: &str,
+    overlay: &Overlay,
+    pending: &PendingSettings,
+    ctx: &AppContext,
 ) {
-    let popup_width = area.width.saturating_sub(6).max(30);
-    let popup_height = area.height.saturating_sub(6).max(10);
-    let popup_area = centered_rect(popup_width, popup_height, area);
+    let dialog = overlay_dialog(overlay, pending, ctx, colors);
+    render_dialog(frame, dialog_rect(area, &dialog), colors, &dialog);
+}
 
-    let mut list_state = ListState::default();
-    let widget = FileBrowserWidget::new(
+fn overlay_dialog(
+    overlay: &Overlay,
+    pending: &PendingSettings,
+    ctx: &AppContext,
+    colors: &ThemeColors,
+) -> Dialog {
+    match overlay {
+        Overlay::Action { cursor } => {
+            let options = StowAction::ALL
+                .iter()
+                .map(|action| action.as_str().to_string())
+                .collect();
+            picker("action", options, *cursor, "cancel", colors)
+        }
+        Overlay::Theme { cursor, .. } => {
+            let options = Theme::ALL.iter().map(|t| t.name().to_string()).collect();
+            picker("theme", options, *cursor, "revert", colors)
+        }
+        Overlay::Icons { cursor, .. } => {
+            let options = IconSet::ALL.iter().map(|i| i.name().to_string()).collect();
+            picker("icons", options, *cursor, "revert", colors)
+        }
+        Overlay::Group { group, cursor, .. } => group_menu(group, *cursor, pending, ctx, colors),
+        Overlay::Name { target, field } => name_dialog(target, field, colors),
+        Overlay::Browse { pick, browser } => browse_dialog(pick, browser, ctx, colors),
+        Overlay::Remove { group, refs } => remove_dialog(group, *refs, colors),
+        Overlay::Ignore {
+            scope,
+            cursor,
+            edit,
+        } => ignore_dialog(scope, *cursor, edit.as_ref(), pending, colors),
+        Overlay::Leave => leave_dialog("andre.yml", colors),
+    }
+}
+
+/// A list of options with the cursor on one. Enter keeps the cursor's option.
+fn picker(
+    title: &str,
+    options: Vec<String>,
+    cursor: usize,
+    back: &'static str,
+    colors: &ThemeColors,
+) -> Dialog {
+    let body = options
+        .into_iter()
+        .enumerate()
+        .map(|(i, option)| {
+            let content = vec![Span::styled(option, Style::default().fg(colors.text))];
+            selection::row(content, i == cursor, colors, DIALOG_ROW)
+        })
+        .collect();
+    Dialog {
+        title: title.to_string(),
+        body,
+        buttons: vec![
+            key_button(KeyCode::Esc, back, false),
+            key_button(KeyCode::Enter, "keep", true),
+        ],
+    }
+}
+
+/// A group's fields. Enter on a field opens its dialog; the last row is done.
+fn group_menu(
+    group: &str,
+    cursor: usize,
+    pending: &PendingSettings,
+    ctx: &AppContext,
+    colors: &ThemeColors,
+) -> Dialog {
+    let (source, target) =
+        crate::components::settings::build::group_paths(pending, group, ctx).unwrap_or_default();
+    let own_ignore = pending
+        .config
+        .get_group_ignore(group)
+        .map_or(0, <[String]>::len);
+    let fields = [
+        ("name", group.to_string(), "rename \u{25b8}"),
+        ("source", elide(&source, 24), "browse \u{25b8}"),
+        ("target", elide(&target, 24), "browse \u{25b8}"),
+        ("ignore", pattern_count(own_ignore), "edit \u{25b8}"),
+    ];
+    let mut body: Vec<Line<'static>> = fields
+        .into_iter()
+        .enumerate()
+        .map(|(i, (label, value, action))| {
+            let content = vec![
+                Span::styled(
+                    format!("{label:<LABEL$}"),
+                    Style::default().fg(colors.text_dim),
+                ),
+                Span::styled(format!("{value:<24}"), Style::default().fg(colors.value)),
+                Span::styled(action, Style::default().fg(colors.text_dim)),
+            ];
+            selection::row(content, i == cursor, colors, DIALOG_ROW)
+        })
+        .collect();
+    body.push(selection::row(
+        vec![Span::styled(
+            "done \u{25b8}",
+            Style::default().fg(colors.text),
+        )],
+        cursor == GROUP_DONE,
         colors,
-        Icons::for_set(icons),
-        &browser.path,
-        browser.cursor,
-        title,
-    )
-    .with_entries(browser.entries());
+        DIALOG_ROW,
+    ));
+    Dialog {
+        title: format!("edit group {group}"),
+        body,
+        buttons: vec![key_button(KeyCode::Esc, "cancel", false)],
+    }
+}
 
-    frame.render_widget(Clear, popup_area);
-    frame.render_stateful_widget(widget, popup_area, &mut list_state);
+fn name_dialog(target: &NameTarget, field: &TextField, colors: &ThemeColors) -> Dialog {
+    let (title, verb) = match target {
+        NameTarget::New => ("new group", "create"),
+        NameTarget::Rename { .. } => ("rename group", "rename"),
+    };
+    let mut body = vec![field_line("name", field, true, colors)];
+    if let Some(error) = &field.error {
+        body.push(Line::styled(error.clone(), Style::default().fg(colors.err)));
+    }
+    Dialog {
+        title: title.to_string(),
+        body,
+        buttons: vec![
+            key_button(KeyCode::Esc, "cancel", false),
+            key_button(KeyCode::Enter, verb, true),
+        ],
+    }
+}
+
+/// The folder being picked, then the folders in it, a window of them with the cursor
+/// shown. Enter chooses the highlighted folder.
+fn browse_dialog(
+    pick: &Pick,
+    browser: &crate::components::browser::Browser,
+    ctx: &AppContext,
+    colors: &ThemeColors,
+) -> Dialog {
+    let title = match pick {
+        Pick::NewSource { .. } => "source for new group".to_string(),
+        Pick::NewTarget { name, .. } => format!("target for {name}"),
+        Pick::Source { group } => format!("source for {group}"),
+        Pick::Target { group } => format!("target for {group}"),
+    };
+    let width = DIALOG_ROW as usize;
+    let mut body = vec![Line::styled(
+        elide(&display_path(&browser.path, &ctx.home_dir), width),
+        Style::default().fg(colors.text_dim),
+    )];
+    body.push(Line::raw(""));
+    let entries = browser.entries();
+    if entries.is_empty() {
+        body.push(Line::styled(
+            "no folders here",
+            Style::default().fg(colors.text_dim),
+        ));
+    }
+    let start = browser.cursor.saturating_sub(VISIBLE - 1);
+    for (i, entry) in entries.iter().enumerate().skip(start).take(VISIBLE) {
+        let content = vec![
+            Span::styled("/ ", Style::default().fg(colors.text_dim)),
+            Span::styled(entry.name.clone(), Style::default().fg(colors.text)),
+        ];
+        body.push(selection::row(
+            content,
+            i == browser.cursor,
+            colors,
+            DIALOG_ROW,
+        ));
+    }
+    let choose = match browser.current() {
+        Some(entry) => format!("choose {}", entry.name),
+        None => "choose".to_string(),
+    };
+    Dialog {
+        title,
+        body,
+        buttons: vec![
+            key_button(KeyCode::Esc, "cancel", false),
+            key_button(KeyCode::Enter, choose, true),
+        ],
+    }
+}
+
+fn remove_dialog(group: &str, refs: usize, colors: &ThemeColors) -> Dialog {
+    let text = Style::default().fg(colors.text);
+    let mut body = vec![Line::styled(
+        format!("Remove group `{group}` from andre.yml?"),
+        text,
+    )];
+    if refs > 0 {
+        let (noun, verb) = if refs == 1 {
+            ("profile ref", "is")
+        } else {
+            ("profile refs", "are")
+        };
+        body.push(Line::styled(
+            format!("{refs} {noun} to {group}/* {verb} removed."),
+            text,
+        ));
+    }
+    body.push(Line::styled("No files are touched.", text));
+    Dialog {
+        title: "remove group".to_string(),
+        body,
+        buttons: vec![
+            key_button(KeyCode::Char('n'), "keep", false),
+            key_button(KeyCode::Char('y'), "remove", true),
+        ],
+    }
+}
+
+/// A pattern list: one row per pattern, then the add row. An open edit shows its field in
+/// place of its row.
+fn ignore_dialog(
+    scope: &IgnoreScope,
+    cursor: usize,
+    edit: Option<&crate::components::settings::LineEdit>,
+    pending: &PendingSettings,
+    colors: &ThemeColors,
+) -> Dialog {
+    let (title, patterns) = match scope {
+        IgnoreScope::Global => ("global ignore".to_string(), pending.config.global_ignore()),
+        IgnoreScope::Group(group) => (
+            format!("ignore \u{b7} {group}"),
+            pending
+                .config
+                .get_group_ignore(group)
+                .map(<[String]>::to_vec)
+                .unwrap_or_default(),
+        ),
+    };
+    let rows = patterns.len() + 1;
+    let start = cursor.saturating_sub(VISIBLE - 1);
+    let body = (start..rows)
+        .take(VISIBLE)
+        .map(|i| {
+            let editing = edit.filter(|line| line.index.unwrap_or(patterns.len()) == i);
+            if let Some(line) = editing {
+                return field_line("", &line.field, true, colors);
+            }
+            if i == patterns.len() {
+                let content = vec![Span::styled(
+                    "+ add a pattern",
+                    Style::default().fg(colors.text_dim),
+                )];
+                return selection::row(content, i == cursor, colors, DIALOG_ROW);
+            }
+            let content = vec![Span::styled(
+                elide(&patterns[i], DIALOG_ROW as usize - 4),
+                Style::default().fg(colors.text),
+            )];
+            selection::row(content, i == cursor, colors, DIALOG_ROW)
+        })
+        .collect();
+    let buttons = if edit.is_some() {
+        vec![
+            key_button(KeyCode::Esc, "cancel", false),
+            key_button(KeyCode::Enter, "done", true),
+        ]
+    } else {
+        vec![key_button(KeyCode::Esc, "back", false)]
+    };
+    Dialog {
+        title,
+        body,
+        buttons,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn body_text(dialog: &Dialog) -> Vec<String> {
+        dialog
+            .body
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_remove_dialog_says_the_profile_refs_are_removed() {
+        let colors = ThemeColors::from_theme(Theme::Default);
+        let text = body_text(&remove_dialog("work", 2, &colors));
+        assert!(text.contains(&"2 profile refs to work/* are removed.".to_string()));
+
+        let text = body_text(&remove_dialog("work", 1, &colors));
+        assert!(text.contains(&"1 profile ref to work/* is removed.".to_string()));
+    }
+
+    #[test]
+    fn test_remove_dialog_without_refs_says_nothing_about_profiles() {
+        let colors = ThemeColors::from_theme(Theme::Default);
+        let text = body_text(&remove_dialog("work", 0, &colors));
+        assert!(text.iter().all(|line| !line.contains("profile")));
+    }
 }

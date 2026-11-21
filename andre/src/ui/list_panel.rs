@@ -117,7 +117,33 @@ pub fn render_focused_list_panel(
     view: &ListView,
     empty: Option<Empty>,
 ) {
-    let block = focus_panel(colors, focused).title(format!(" {title} "));
+    render_titled_list_panel(
+        frame,
+        area,
+        colors,
+        focused,
+        Line::raw(format!(" {title} ")),
+        rows,
+        view,
+        empty,
+    );
+}
+
+/// [`render_focused_list_panel`] with a styled title line, for a title that marks a state
+/// in its own colour, such as `· unsaved ●`. The line is drawn as given, so it carries its
+/// own padding.
+#[allow(clippy::too_many_arguments)]
+pub fn render_titled_list_panel(
+    frame: &mut Frame,
+    area: Rect,
+    colors: &ThemeColors,
+    focused: bool,
+    title: Line<'static>,
+    rows: Vec<Line<'static>>,
+    view: &ListView,
+    empty: Option<Empty>,
+) {
+    let block = focus_panel(colors, focused).title(title);
     frame.render_widget(block, area);
     let body = inner(area);
 

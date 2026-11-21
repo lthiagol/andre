@@ -135,6 +135,15 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- **Settings uses the list and detail layout.** One list with section headers (`stow
+  options`, `appearance`, `config`, `groups`) and the selected row's detail beside it. The
+  global ignore list and each group are rows; `+` adds a group, `x` removes one, and a
+  group's menu edits its name, source, target and ignore list (Esc cancels its edits).
+  Pickers for action and theme are dialogs; the theme previews while you move and Esc
+  reverts it. Edits stay pending until `w` writes `andre.yml`; Esc with unsaved edits asks
+  to save, discard or stay. The `Update`/`All saved` row is gone. On `w`, a group's rename
+  or removal is applied to every profile's refs (`x` asks first, and the dialog says how many
+  refs go). A group's row says `Enter edit`; the `icons` picker previews and Esc reverts.
 - **Unstow uses the list and detail layout.** `4 unstow` lists the groups with their targets;
   the detail gives the group's source, target and package count. With one group, unstow
   opens that group's browse screen directly. The browse screen lists only folders and links.

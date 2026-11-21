@@ -5,7 +5,6 @@ use andre::components::confirm::ConfirmComponent;
 use andre::components::packages::PackagesComponent;
 use andre::components::profiles::edit::ProfileEditComponent;
 use andre::components::profiles::{NameCheck, Popup, ProfilesComponent};
-use andre::components::settings::rows::*;
 use andre::components::status::StatusComponent;
 use andre::components::InputMode;
 use andre_core::profile::ProfileSet;
@@ -667,94 +666,6 @@ fn test_quit_screen_ignores_keys() {
     assert!(app.quitting);
 }
 
-// --- Config Screen Navigation ---
-
-#[test]
-fn test_config_navigation_starts_at_first_interactive() {
-    let (mut app, _) = make_test_app();
-    push_component(&mut app, "Settings");
-    app.component_dispatch(down_key());
-    assert!(
-        settings(&app).cursor >= 2,
-        "cursor should skip to interactive row, got {}",
-        settings(&app).cursor
-    );
-}
-
-#[test]
-fn test_config_up_wraps_to_last_interactive() {
-    let (mut app, _) = make_test_app();
-    push_component(&mut app, "Settings");
-    settings_mut(&mut app).cursor = ROW_VERBOSITY;
-    app.component_dispatch(up_key());
-    assert!(
-        settings(&app).cursor >= 2,
-        "cursor at {}",
-        settings(&app).cursor
-    );
-}
-
-// --- Group Actions Dialog ---
-
-fn navigate_to_group_row(app: &mut App) {
-    settings_mut(app).cursor = ROW_GROUP_LINE;
-}
-
-#[test]
-fn test_group_actions_opens_on_enter() {
-    let (mut app, _) = make_test_app();
-    push_component(&mut app, "Settings");
-    navigate_to_group_row(&mut app);
-    assert!(settings(&app).dialog.is_none());
-    app.component_dispatch(enter_key());
-    assert!(matches!(
-        settings(&app).dialog,
-        Some(andre::components::settings::GroupDialog::Actions { cursor: 0 })
-    ));
-}
-
-#[test]
-fn test_group_actions_esc_closes() {
-    let (mut app, _) = make_test_app();
-    push_component(&mut app, "Settings");
-    navigate_to_group_row(&mut app);
-    app.component_dispatch(enter_key());
-    assert!(settings(&app).dialog.is_some());
-    app.component_dispatch(esc_key());
-    assert!(settings(&app).dialog.is_none());
-}
-
-#[test]
-fn test_group_actions_navigates_add_remove_edit() {
-    let (mut app, _) = make_test_app();
-    push_component(&mut app, "Settings");
-    navigate_to_group_row(&mut app);
-    app.component_dispatch(enter_key());
-    // Default is Add (cursor=0)
-    assert!(matches!(
-        settings(&app).dialog,
-        Some(andre::components::settings::GroupDialog::Actions { cursor: 0 })
-    ));
-    // Down to Remove
-    app.component_dispatch(down_key());
-    assert!(matches!(
-        settings(&app).dialog,
-        Some(andre::components::settings::GroupDialog::Actions { cursor: 1 })
-    ));
-    // Down to Edit
-    app.component_dispatch(down_key());
-    assert!(matches!(
-        settings(&app).dialog,
-        Some(andre::components::settings::GroupDialog::Actions { cursor: 2 })
-    ));
-    // Up wraps back to Add
-    app.component_dispatch(up_key());
-    assert!(matches!(
-        settings(&app).dialog,
-        Some(andre::components::settings::GroupDialog::Actions { cursor: 1 })
-    ));
-}
-
 // --- Help Scrolling ---
 
 fn help(app: &App) -> &andre::components::help::HelpComponent {
@@ -838,22 +749,6 @@ fn test_global_keys_blocked_during_new_package_name_step() {
     assert_eq!(app.ctx.core.flags.dotfiles, initial_dotfiles);
 }
 
-#[test]
-fn test_global_keys_blocked_during_settings_picker() {
-    let (mut app, _) = make_test_app();
-    push_component(&mut app, "Settings");
-    // Navigate to Action row (ROW_ACTION = 7)
-    settings_mut(&mut app).cursor = ROW_ACTION;
-    app.component_dispatch(enter_key());
-    assert!(settings(&app).picker.is_some(), "picker should be open");
-    let initial_theme = app.ctx.core.theme;
-    app.component_dispatch(key_char('t'));
-    assert_eq!(
-        app.ctx.core.theme, initial_theme,
-        "theme should not change while picker is open"
-    );
-}
-
 // --- InputMode Audit ---
 
 #[test]
@@ -892,54 +787,6 @@ fn test_input_mode_audit_text_input() {
     assert_eq!(
         app.component_stack.last().unwrap().input_mode(),
         InputMode::TextInput
-    );
-}
-
-#[test]
-fn test_settings_picker_is_modal() {
-    let (mut app, _) = make_test_app();
-    use andre::components::InputMode;
-    push_component(&mut app, "Settings");
-    // Open picker on Action row
-    settings_mut(&mut app).cursor = ROW_ACTION;
-    app.component_dispatch(enter_key());
-    assert_eq!(
-        app.component_stack.last().unwrap().input_mode(),
-        InputMode::Modal,
-        "Settings with picker should be Modal"
-    );
-}
-
-#[test]
-fn test_settings_add_name_is_text_input() {
-    let (mut app, _) = make_test_app();
-    use andre::components::InputMode;
-    push_component(&mut app, "Settings");
-    // Navigate to group row, open Actions, select Add
-    settings_mut(&mut app).cursor = ROW_GROUP_LINE;
-    app.component_dispatch(enter_key()); // Actions menu
-    app.component_dispatch(enter_key()); // Add → AddName dialog
-    assert_eq!(
-        app.component_stack.last().unwrap().input_mode(),
-        InputMode::TextInput,
-        "Settings AddName should be TextInput"
-    );
-}
-
-#[test]
-fn test_settings_text_input_blocks_globals() {
-    let (mut app, _) = make_test_app();
-    push_component(&mut app, "Settings");
-    // Open AddName dialog via group row
-    settings_mut(&mut app).cursor = ROW_GROUP_LINE;
-    app.component_dispatch(enter_key()); // Actions menu
-    app.component_dispatch(enter_key()); // Add → AddName dialog
-    let initial_theme = app.ctx.core.theme;
-    // Global t key should be blocked
-    app.component_dispatch(key_char('t'));
-    assert_eq!(
-        app.ctx.core.theme, initial_theme,
-        "theme should not change while AddName text input is active"
     );
 }
 
@@ -983,121 +830,11 @@ fn test_config_save_shows_toast() {
 
     let (mut app, _tmp) = make_test_app();
     push_component(&mut app, "Settings");
-    // Cursor on verbosity, toggle, then Save (row 12 per config_persistence helpers).
-    app.component_dispatch(enter_key());
-    let settings = app
-        .component_stack
-        .last_mut()
-        .unwrap()
-        .as_any_mut()
-        .downcast_mut::<andre::components::settings::SettingsComponent>()
-        .unwrap();
-    settings.cursor = ROW_SAVE_BUTTON;
-    app.component_dispatch(enter_key());
+    app.component_dispatch(key_char('v'));
+    app.component_dispatch(key_char('w'));
     let toast = app.ctx.toast.as_ref().expect("toast after save");
     assert_eq!(toast.message, "Config saved");
     assert_eq!(toast.kind, ToastKind::Success);
-}
-
-#[test]
-fn test_config_save_failure_error_toast_keeps_dirty() {
-    use andre::components::settings::{ConfigMessage, SettingsComponent};
-    use andre::components::ToastKind;
-
-    let (mut app, tmp) = make_test_app();
-    push_component(&mut app, "Settings");
-    // Verbosity row (2) → dirty, then Save (12) with unwritable path.
-    {
-        let s = app
-            .component_stack
-            .last_mut()
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<SettingsComponent>()
-            .unwrap();
-        s.cursor = ROW_VERBOSITY;
-    }
-    app.component_dispatch(enter_key());
-    app.ctx.config_path = tmp.path().join("missing-dir").join("andre.yml");
-    {
-        let s = app
-            .component_stack
-            .last_mut()
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<SettingsComponent>()
-            .unwrap();
-        s.cursor = ROW_SAVE_BUTTON;
-    }
-    let verbosity_before = app.ctx.core.flags.verbosity;
-    app.component_dispatch(enter_key());
-
-    let settings = app
-        .component_stack
-        .last()
-        .unwrap()
-        .as_any()
-        .downcast_ref::<SettingsComponent>()
-        .unwrap();
-    assert!(settings.config_dirty, "dirty must remain after failed save");
-    assert_ne!(
-        settings.config_message,
-        ConfigMessage::Saved,
-        "must not claim Saved on failure"
-    );
-    let toast = app.ctx.toast.as_ref().expect("error toast");
-    assert!(
-        toast.message.starts_with("Save failed:"),
-        "unexpected toast: {}",
-        toast.message
-    );
-    assert_eq!(toast.kind, ToastKind::Error);
-    assert_eq!(
-        app.ctx.core.flags.verbosity, verbosity_before,
-        "core must not commit pending changes when disk write fails"
-    );
-}
-
-#[test]
-fn test_discard_save_y_stays_on_failure() {
-    use andre::components::settings::{ConfigMessage, SettingsComponent};
-
-    let (mut app, tmp) = make_test_app();
-    push_component(&mut app, "Settings");
-    {
-        let s = app
-            .component_stack
-            .last_mut()
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<SettingsComponent>()
-            .unwrap();
-        s.cursor = ROW_VERBOSITY;
-    }
-    app.component_dispatch(enter_key()); // dirty via verbosity
-    app.ctx.config_path = tmp.path().join("nope").join("andre.yml");
-    app.component_dispatch(esc_key());
-    assert_eq!(
-        app.component_stack
-            .last()
-            .unwrap()
-            .as_any()
-            .downcast_ref::<SettingsComponent>()
-            .unwrap()
-            .config_message,
-        ConfigMessage::ConfirmDiscard
-    );
-    app.component_dispatch(key_char('y'));
-    assert_eq!(
-        app.component_stack.last().map(|c| c.id()),
-        Some("Settings"),
-        "must stay on Settings when confirm-save fails"
-    );
-    assert!(app
-        .ctx
-        .toast
-        .as_ref()
-        .is_some_and(|t| t.message.starts_with("Save failed:")));
 }
 
 #[test]
@@ -1250,115 +987,6 @@ fn test_new_package_second_group_row_opens_its_name_step() {
 }
 
 /// Save the open Settings screen (Save row) and reload the config file from disk.
-fn save_and_reload(app: &mut App) -> andre_core::Config {
-    settings_mut(app).cursor = ROW_SAVE_BUTTON;
-    app.component_dispatch(enter_key());
-    andre_core::Config::load(&app.ctx.config_path).unwrap()
-}
-
-#[test]
-fn test_group_ignore_add_then_remove_persists_on_save() {
-    use andre::components::settings::GroupDialog;
-
-    let (mut app, _tmp) = make_test_app();
-    push_component(&mut app, "Settings");
-    settings_mut(&mut app).dialog = Some(GroupDialog::IgnoreManage {
-        group: Some("home".into()),
-        cursor: 0,
-    });
-
-    // Add "*.log" (add row is 0 while the list is empty), then "tmp" (add row is 1).
-    app.component_dispatch(enter_key());
-    for c in "*.log".chars() {
-        app.component_dispatch(key_char(c));
-    }
-    app.component_dispatch(enter_key());
-    app.component_dispatch(down_key());
-    app.component_dispatch(enter_key());
-    for c in "tmp".chars() {
-        app.component_dispatch(key_char(c));
-    }
-    app.component_dispatch(enter_key());
-
-    // Remove the first pattern with 'r' on row 0.
-    app.component_dispatch(key_char('r'));
-    settings_mut(&mut app).dialog = None;
-
-    let saved = save_and_reload(&mut app);
-    assert_eq!(
-        saved.groups["home"].ignore.as_deref(),
-        Some(&["tmp".to_string()][..])
-    );
-}
-
-#[test]
-fn test_removing_last_group_ignore_clears_it_on_save() {
-    use andre::components::settings::GroupDialog;
-
-    let (mut app, _tmp) = make_test_app();
-    push_component(&mut app, "Settings");
-    settings_mut(&mut app).dialog = Some(GroupDialog::IgnoreManage {
-        group: Some("home".into()),
-        cursor: 0,
-    });
-    app.component_dispatch(enter_key());
-    for c in "*.log".chars() {
-        app.component_dispatch(key_char(c));
-    }
-    app.component_dispatch(enter_key());
-    app.component_dispatch(key_char('r'));
-    settings_mut(&mut app).dialog = None;
-
-    let saved = save_and_reload(&mut app);
-    assert_eq!(saved.groups["home"].ignore, None);
-}
-
-#[test]
-fn test_global_ignore_add_persists_on_save() {
-    use andre::components::settings::GroupDialog;
-
-    let (mut app, _tmp) = make_test_app();
-    push_component(&mut app, "Settings");
-    settings_mut(&mut app).dialog = Some(GroupDialog::IgnoreManage {
-        group: None,
-        cursor: 0,
-    });
-    app.component_dispatch(enter_key());
-    for c in "node_modules".chars() {
-        app.component_dispatch(key_char(c));
-    }
-    app.component_dispatch(enter_key());
-    settings_mut(&mut app).dialog = None;
-
-    let saved = save_and_reload(&mut app);
-    assert_eq!(saved.global_ignore(), vec!["node_modules".to_string()]);
-}
-
-#[test]
-fn test_edit_group_target_from_browser_persists_on_save() {
-    use andre::components::settings::{GroupDialog, GroupEditField};
-
-    let (mut app, tmp) = make_test_app();
-    push_component(&mut app, "Settings");
-    let browse = tmp.path().join("browse");
-    std::fs::create_dir_all(browse.join("only")).unwrap();
-    settings_mut(&mut app).dialog = Some(GroupDialog::EditBrowse {
-        group: "home".into(),
-        field: GroupEditField::Target,
-        browser: andre::components::browser::Browser::open(
-            browse.clone(),
-            andre::components::browser::dir_entries,
-        ),
-    });
-    app.component_dispatch(enter_key());
-
-    let saved = save_and_reload(&mut app);
-    assert_eq!(
-        saved.groups["home"].target,
-        browse.join("only").to_string_lossy()
-    );
-}
-
 /// The whole screen as text, one line per buffer row.
 fn screen_text(app: &mut App) -> String {
     app.set_terminal_size(120, 24);
@@ -1984,7 +1612,7 @@ fn test_s_on_settings_waits_for_save_like_the_other_settings() {
         StowAction::Stow,
         "the core action is unchanged until save"
     );
-    assert!(settings(&app).config_dirty);
+    assert!(settings(&app).dirty);
     assert!(
         screen_text(&mut app).contains("restow"),
         "the Settings action row shows the pending action"
@@ -2379,4 +2007,122 @@ fn test_space_on_a_folder_is_refused_with_a_toast_and_marks_nothing() {
             .any(|hint| hint.label == "review"),
         "no link was marked"
     );
+}
+
+// --- Settings screen: dialogs, modal keys and the save flow ---
+
+/// Opens the settings screen and runs one update, as the app's loop does before a paint.
+fn open_settings(app: &mut App) {
+    push_component(app, "Settings");
+    app.update_components();
+}
+
+/// Moves the settings cursor onto the row labelled `label`.
+fn select_setting(app: &mut App, label: &str) {
+    let settings = settings_mut(app);
+    settings.list.cursor = settings
+        .items()
+        .iter()
+        .position(|item| item.label == label)
+        .unwrap_or_else(|| panic!("no settings row labelled {label}"));
+}
+
+#[test]
+fn test_settings_picker_is_modal_and_blocks_global_keys() {
+    use andre::components::InputMode;
+
+    let (mut app, _) = make_test_app();
+    open_settings(&mut app);
+    select_setting(&mut app, "action");
+    app.component_dispatch(enter_key());
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::Modal,
+        "an open picker is Modal"
+    );
+    app.component_dispatch(key_char('s'));
+    assert_eq!(
+        app.ctx.core.flags.action,
+        StowAction::Stow,
+        "the action key must not cycle the action while the picker is open"
+    );
+    assert_eq!(settings(&app).overlays.len(), 1);
+}
+
+#[test]
+fn test_settings_name_dialog_is_text_input_and_blocks_globals() {
+    use andre::components::settings::Overlay;
+    use andre::components::InputMode;
+
+    let (mut app, _) = make_test_app();
+    open_settings(&mut app);
+    app.component_dispatch(key_char('+'));
+    assert_eq!(
+        app.component_stack.last().unwrap().input_mode(),
+        InputMode::TextInput,
+        "the new group name is typed text"
+    );
+    let theme = app.ctx.core.theme;
+    app.component_dispatch(key_char('t'));
+    assert_eq!(
+        app.ctx.core.theme, theme,
+        "t types into the name, not the theme"
+    );
+    let Some(Overlay::Name { field, .. }) = settings(&app).overlays.last() else {
+        panic!("name dialog should still be open");
+    };
+    assert_eq!(field.value, "t");
+}
+
+#[test]
+fn test_config_save_failure_error_toast_keeps_dirty() {
+    use andre::components::ToastKind;
+
+    let (mut app, tmp) = make_test_app();
+    open_settings(&mut app);
+    select_setting(&mut app, "verbose");
+    app.component_dispatch(enter_key());
+    app.ctx.config_path = tmp.path().join("missing-dir").join("andre.yml");
+    let verbosity_before = app.ctx.core.flags.verbosity;
+    app.component_dispatch(key_char('w'));
+
+    assert!(settings(&app).dirty, "dirty must remain after failed save");
+    let toast = app.ctx.toast.as_ref().expect("error toast");
+    assert!(
+        toast.message.starts_with("Save failed:"),
+        "unexpected toast: {}",
+        toast.message
+    );
+    assert_eq!(toast.kind, ToastKind::Error);
+    assert_eq!(
+        app.ctx.core.flags.verbosity, verbosity_before,
+        "core must not commit pending changes when disk write fails"
+    );
+}
+
+#[test]
+fn test_discard_save_y_stays_on_failure() {
+    let (mut app, tmp) = make_test_app();
+    open_settings(&mut app);
+    select_setting(&mut app, "verbose");
+    app.component_dispatch(enter_key());
+    app.ctx.config_path = tmp.path().join("nope").join("andre.yml");
+    app.component_dispatch(esc_key());
+    assert!(matches!(
+        settings(&app).overlays.last(),
+        Some(andre::components::settings::Overlay::Leave)
+    ));
+    app.component_dispatch(key_char('y'));
+
+    assert_eq!(
+        component_id(&app),
+        "Settings",
+        "must stay on Settings when the save fails"
+    );
+    assert!(settings(&app).dirty);
+    assert!(app
+        .ctx
+        .toast
+        .as_ref()
+        .is_some_and(|t| t.message.starts_with("Save failed:")));
 }

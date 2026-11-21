@@ -37,6 +37,18 @@ pub fn detail_inner(area: Rect) -> Rect {
     area.inner(Margin::new(2, 1))
 }
 
+/// One fact as the detail draws it: the label in `text_dim`, the value in `value`. A
+/// section that lists facts uses this too, so both read the same.
+pub fn fact_line(label: &str, value: &str, colors: &ThemeColors) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("{label:<LABEL_WIDTH$}"),
+            Style::default().fg(colors.text_dim),
+        ),
+        Span::styled(value.to_string(), Style::default().fg(colors.value)),
+    ])
+}
+
 /// The rows `d` draws, before wrapping.
 fn detail_lines(d: &Detail, colors: &ThemeColors) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = d.headline.clone();
@@ -45,13 +57,7 @@ fn detail_lines(d: &Detail, colors: &ThemeColors) -> Vec<Line<'static>> {
             lines.push(Line::raw(""));
         }
         for (label, value) in &d.facts {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("{label:<LABEL_WIDTH$}"),
-                    Style::default().fg(colors.text_dim),
-                ),
-                Span::styled(value.clone(), Style::default().fg(colors.value)),
-            ]));
+            lines.push(fact_line(label, value, colors));
         }
     }
     if !d.sections.is_empty() {

@@ -219,7 +219,7 @@ pub fn screen_hints(screen_id: &str) -> Vec<Hint> {
         "Packages" => vec![arrows("navigate"), space("mark"), enter("run"), esc("back")],
         "Status" => status_hints(),
         "Help" => vec![esc("back")],
-        "Settings" => vec![arrows("navigate"), enter("group menu"), esc("back")],
+        "Settings" => settings_hints(false),
         "UnstowTargetSelect" => vec![arrows("move"), enter("browse"), esc("back")],
         "UnstowBrowse" => unstow_browse_hints(0),
         _ => Vec::new(),
@@ -343,6 +343,26 @@ pub fn leave_dialog_hints() -> Vec<Hint> {
         Hint::new("y", "save", PRIO_PRIMARY),
         Hint::new("n", "discard", PRIO_BACK),
         Hint::new("Esc", "stay", PRIO_BACK),
+    ]
+}
+
+/// Hints for the settings list. A group row says `edit` (its menu) and adds the remove key;
+/// any other row says `change`.
+pub fn settings_hints(on_group: bool) -> Vec<Hint> {
+    if on_group {
+        return vec![
+            Hint::new("Enter", "edit", PRIO_PRIMARY),
+            Hint::new("+", "add", PRIO_VERB),
+            Hint::new("x", "remove", PRIO_VERB),
+            Hint::new("w", "save", PRIO_VERB),
+            Hint::new("Esc", "back", PRIO_BACK),
+        ];
+    }
+    vec![
+        Hint::new("Space/Enter", "change", PRIO_PRIMARY),
+        Hint::new("+", "group", PRIO_VERB),
+        Hint::new("w", "save", PRIO_VERB),
+        Hint::new("Esc", "back", PRIO_BACK),
     ]
 }
 
@@ -591,7 +611,7 @@ mod tests {
     #[test]
     fn test_key_names_use_key_colour() {
         let spans = hint_spans(&screen_hints("Settings"), &colors());
-        let enter = spans.iter().find(|s| s.content == "Enter").unwrap();
+        let enter = spans.iter().find(|s| s.content == "Space/Enter").unwrap();
         assert_eq!(enter.style.fg, Some(colors().key));
     }
 
