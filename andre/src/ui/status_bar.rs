@@ -136,7 +136,7 @@ fn left_chips(
         chips.push(vec![Span::styled(
             "debug",
             Style::default()
-                .fg(colors.warning)
+                .fg(colors.warn)
                 .add_modifier(Modifier::BOLD),
         )]);
     }
@@ -144,7 +144,7 @@ fn left_chips(
     let mut spans = vec![action_pill(colors, flags.action.as_str()), Span::raw(" ")];
     spans.extend(verbose_chip(colors, icons, flags.verbosity, labels));
     spans.push(Span::raw(" ".repeat(GAP)));
-    spans.push(Span::styled(DIVIDER, Style::default().fg(colors.muted)));
+    spans.push(Span::styled(DIVIDER, Style::default().fg(colors.text_dim)));
     for chip in chips {
         spans.push(Span::raw(" ".repeat(GAP)));
         spans.extend(chip);
@@ -156,7 +156,7 @@ fn left_chips(
 fn action_pill(colors: &ThemeColors, action: &str) -> Span<'static> {
     Span::styled(
         format!(" {action} "),
-        Style::default().fg(colors.background).bg(colors.primary),
+        Style::default().fg(colors.on_accent).bg(colors.accent),
     )
 }
 
@@ -181,14 +181,14 @@ fn verbose_chip(
         spans.push(Span::styled(
             icons.meter_full.repeat(level),
             Style::default()
-                .fg(colors.primary)
+                .fg(colors.accent)
                 .add_modifier(Modifier::BOLD),
         ));
     }
     if level < segments {
         spans.push(Span::styled(
             icons.meter_empty.repeat(segments - level),
-            Style::default().fg(colors.muted),
+            Style::default().fg(colors.text_dim),
         ));
     }
     spans
@@ -211,15 +211,15 @@ fn toggle_chip(
 /// separate (see `label_spans`).
 fn icon_span(colors: &ThemeColors, icons: &Icons, on: bool) -> Vec<Span<'static>> {
     let (glyph, fg) = if on {
-        (icons.flag_on, colors.success)
+        (icons.flag_on, colors.ok)
     } else {
-        (icons.flag_off, colors.error)
+        (icons.flag_off, colors.err)
     };
     vec![Span::styled(format!("{glyph} "), Style::default().fg(fg))]
 }
 
 /// A label with its hotkey letter (`hotkey` is a byte index into an ASCII label)
-/// drawn in the indicator colour. On labels are bright, off labels muted.
+/// drawn in the `key` colour. On labels are bright, off labels `text_dim`.
 fn label_spans(
     colors: &ThemeColors,
     label: &str,
@@ -231,9 +231,7 @@ fn label_spans(
     let (key, after) = rest.split_at(1);
     let key_span = Span::styled(
         key.to_string(),
-        Style::default()
-            .fg(colors.indicator)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(colors.key).add_modifier(Modifier::BOLD),
     );
     if labels != Labels::Full {
         return vec![key_span];
@@ -246,14 +244,14 @@ fn label_spans(
     ]
 }
 
-/// Bright and bold when the chip is on, muted when off.
+/// Bright and bold when the chip is on, `text_dim` when off.
 fn word_style(colors: &ThemeColors, on: bool) -> Style {
     if on {
         Style::default()
-            .fg(colors.primary)
+            .fg(colors.accent)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(colors.muted)
+        Style::default().fg(colors.text_dim)
     }
 }
 
@@ -389,8 +387,8 @@ mod tests {
         };
         let line = bar(&flags, &NERD, false, 76);
         let pill = span(&line, " unstow ");
-        assert_eq!(pill.style.bg, Some(colors().primary));
-        assert_eq!(pill.style.fg, Some(colors().background));
+        assert_eq!(pill.style.bg, Some(colors().accent));
+        assert_eq!(pill.style.fg, Some(colors().on_accent));
     }
 
     #[test]
@@ -431,14 +429,14 @@ mod tests {
             ..all_off()
         };
         let line = bar(&flags, &NERD, false, 76);
-        assert_eq!(span(&line, "\u{f00c} ").style.fg, Some(colors().success));
-        assert_eq!(span(&line, "\u{f00d} ").style.fg, Some(colors().error));
+        assert_eq!(span(&line, "\u{f00c} ").style.fg, Some(colors().ok));
+        assert_eq!(span(&line, "\u{f00d} ").style.fg, Some(colors().err));
     }
 
     #[test]
     fn test_marks_are_error_when_off_in_unicode_set_too() {
         let line = bar(&all_off(), &UNICODE, false, 76);
-        assert_eq!(span(&line, "\u{2717} ").style.fg, Some(colors().error));
+        assert_eq!(span(&line, "\u{2717} ").style.fg, Some(colors().err));
         let on = bar(
             &StowFlags {
                 adopt: true,
@@ -448,7 +446,7 @@ mod tests {
             false,
             76,
         );
-        assert_eq!(span(&on, "\u{2713} ").style.fg, Some(colors().success));
+        assert_eq!(span(&on, "\u{2713} ").style.fg, Some(colors().ok));
     }
 
     #[test]
@@ -459,18 +457,18 @@ mod tests {
         };
         let line = bar(&flags, &NERD, false, 76);
         let on_word = span(&line, "ry-run");
-        assert_eq!(on_word.style.fg, Some(colors().primary));
+        assert_eq!(on_word.style.fg, Some(colors().accent));
         assert!(on_word.style.add_modifier.contains(Modifier::BOLD));
 
         let off_word = span(&line, "o-fold");
-        assert_eq!(off_word.style.fg, Some(colors().muted));
+        assert_eq!(off_word.style.fg, Some(colors().text_dim));
     }
 
     #[test]
     fn test_hotkey_letter_is_indicator_bold_inside_the_label() {
         let line = bar(&all_off(), &NERD, false, 76);
         let key = span(&line, "d");
-        assert_eq!(key.style.fg, Some(colors().indicator));
+        assert_eq!(key.style.fg, Some(colors().key));
         assert!(key.style.add_modifier.contains(Modifier::BOLD));
 
         // The letter is part of the label, not a separate key chip: it is
@@ -488,12 +486,12 @@ mod tests {
         let line = bar(&all_off(), &NERD, false, 76);
         // Verbose `v`, dry-run `d`, no-fold `n`, adopt `a`, dotfiles `o` (d-o-tfiles).
         for key in ["v", "d", "n", "a", "o"] {
-            assert_eq!(span(&line, key).style.fg, Some(colors().indicator), "{key}");
+            assert_eq!(span(&line, key).style.fg, Some(colors().key), "{key}");
         }
-        assert_eq!(span(&line, "erbose").style.fg, Some(colors().muted));
-        assert_eq!(span(&line, "o-fold").style.fg, Some(colors().muted));
-        assert_eq!(span(&line, "dopt").style.fg, Some(colors().muted));
-        assert_eq!(span(&line, "tfiles").style.fg, Some(colors().muted));
+        assert_eq!(span(&line, "erbose").style.fg, Some(colors().text_dim));
+        assert_eq!(span(&line, "o-fold").style.fg, Some(colors().text_dim));
+        assert_eq!(span(&line, "dopt").style.fg, Some(colors().text_dim));
+        assert_eq!(span(&line, "tfiles").style.fg, Some(colors().text_dim));
     }
 
     #[test]
@@ -507,14 +505,14 @@ mod tests {
             false,
             76,
         );
-        assert_eq!(span(&on, "erbose").style.fg, Some(colors().primary));
+        assert_eq!(span(&on, "erbose").style.fg, Some(colors().accent));
         assert!(span(&on, "erbose")
             .style
             .add_modifier
             .contains(Modifier::BOLD));
 
         let off = bar(&all_off(), &NERD, false, 76);
-        assert_eq!(span(&off, "erbose").style.fg, Some(colors().muted));
+        assert_eq!(span(&off, "erbose").style.fg, Some(colors().text_dim));
     }
 
     /// Glyphs of `glyph` drawn anywhere in `line`.
@@ -555,14 +553,14 @@ mod tests {
                 );
                 for span in &line.spans {
                     if span.content.contains(icons.meter_full) {
-                        assert_eq!(span.style.fg, Some(colors().primary), "{context}");
+                        assert_eq!(span.style.fg, Some(colors().accent), "{context}");
                         assert!(
                             span.style.add_modifier.contains(Modifier::BOLD),
                             "{context}"
                         );
                     }
                     if span.content.contains(icons.meter_empty) {
-                        assert_eq!(span.style.fg, Some(colors().muted), "{context}");
+                        assert_eq!(span.style.fg, Some(colors().text_dim), "{context}");
                     }
                 }
             }
@@ -595,7 +593,7 @@ mod tests {
         let divider = t.find(DIVIDER).expect("divider missing");
         assert!(t.find("verbose").unwrap() < divider, "{t:?}");
         assert!(divider < t.find("dry-run").unwrap(), "{t:?}");
-        assert_eq!(span(&line, DIVIDER).style.fg, Some(colors().muted));
+        assert_eq!(span(&line, DIVIDER).style.fg, Some(colors().text_dim));
     }
 
     #[test]
@@ -623,7 +621,7 @@ mod tests {
         assert!(!text(&plain).contains("debug"));
 
         let debug = bar(&all_off(), &NERD, true, 76);
-        assert_eq!(span(&debug, "debug").style.fg, Some(colors().warning));
+        assert_eq!(span(&debug, "debug").style.fg, Some(colors().warn));
     }
 
     #[test]

@@ -68,8 +68,8 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
 
-    let outer = crate::ui::themed_panel(&colors)
-        .style(Style::default().fg(colors.border).bg(colors.background));
+    let outer =
+        crate::ui::themed_panel(&colors).style(Style::default().fg(colors.border).bg(colors.bg));
     frame.render_widget(&outer, frame.area());
 
     let inner = frame.area().inner(Margin::new(1, 1));

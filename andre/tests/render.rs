@@ -242,18 +242,18 @@ fn test_top_bar_marks_are_green_when_on_and_red_when_off() {
 
     assert_eq!(
         first_glyph_color(&buf_on, NERD.flag_on),
-        Some(colors.success),
+        Some(colors.ok),
         "an ON mark must use the success colour"
     );
     assert_eq!(
         first_glyph_color(&buf_off, NERD.flag_off),
-        Some(colors.error),
+        Some(colors.err),
         "an OFF mark must use the error colour"
     );
 }
 
 /// Mixed marks in one row, located by column: each mark sits two columns left
-/// of its label (`<mark> <label>`), and the action pill is filled with `primary`.
+/// of its label (`<mark> <label>`), and the action pill is filled with `accent`.
 #[test]
 fn test_top_bar_marks_sit_beside_their_labels_by_column() {
     let (mut app, _) = make_test_app();
@@ -264,13 +264,13 @@ fn test_top_bar_marks_sit_beside_their_labels_by_column() {
     let y = top_bar_row(&buf);
 
     let pill = column_of(&buf, y, " stow ").expect("action pill missing");
-    assert_eq!(buf[(pill, y)].bg, colors.primary, "pill must be filled");
+    assert_eq!(buf[(pill, y)].bg, colors.accent, "pill must be filled");
 
     let cases = [
-        ("dry-run", NERD.flag_on, colors.success),
-        ("no-fold", NERD.flag_off, colors.error),
-        ("adopt", NERD.flag_off, colors.error),
-        ("dotfiles", NERD.flag_off, colors.error),
+        ("dry-run", NERD.flag_on, colors.ok),
+        ("no-fold", NERD.flag_off, colors.err),
+        ("adopt", NERD.flag_off, colors.err),
+        ("dotfiles", NERD.flag_off, colors.err),
     ];
     for (label, glyph, fg) in cases {
         let x = column_of(&buf, y, label).unwrap_or_else(|| panic!("{label} missing"));
@@ -298,7 +298,7 @@ fn test_top_bar_group_is_centred_at_80_and_120_columns() {
 
         // Columns 0 and the last are the frame border; column 1 is the margin.
         let bar = 2..width - 2;
-        let drawn = |x: u16| buf[(x, y)].symbol() != " " || buf[(x, y)].bg != colors.background;
+        let drawn = |x: u16| buf[(x, y)].symbol() != " " || buf[(x, y)].bg != colors.bg;
         let first = bar.clone().find(|&x| drawn(x)).expect("top bar is empty");
         let last = bar.clone().rev().find(|&x| drawn(x)).unwrap();
         let left = (first - bar.start) as usize;
@@ -847,8 +847,8 @@ fn test_footer_shows_quit_at_right_and_no_global_toggles() {
     let q_x = column_of(&buf, y, "q quit").expect("q quit cell missing");
     assert_eq!(
         buf[(q_x, y)].fg,
-        ThemeColors::from_theme(Theme::Default).indicator,
-        "q must be drawn in the indicator colour"
+        ThemeColors::from_theme(Theme::Default).key,
+        "q must be drawn in the key colour"
     );
 }
 
@@ -958,7 +958,7 @@ fn test_top_bar_verbose_meter_fits_80_columns_at_low_mid_and_max_level() {
         let x = (from..buf.area().width)
             .find(|&x| buf[(x, y)].symbol() == "│")
             .expect("divider missing");
-        assert_eq!(buf[(x, y)].fg, colors.muted, "divider colour");
+        assert_eq!(buf[(x, y)].fg, colors.text_dim, "divider colour");
     }
 }
 
@@ -985,11 +985,7 @@ fn test_main_menu_footer_shows_theme_chip_for_every_theme_at_80_columns() {
     let y = buf.area().height - 2;
     let colors = ThemeColors::from_theme(Theme::CatppuccinMacchiato);
     let t_x = column_of(&buf, y, "theme").expect("theme chip missing");
-    assert_eq!(
-        buf[(t_x, y)].fg,
-        colors.indicator,
-        "t must be the indicator colour"
-    );
+    assert_eq!(buf[(t_x, y)].fg, colors.key, "t must be the key colour");
     assert!(
         buf[(t_x, y)].modifier.contains(Modifier::BOLD),
         "t must be bold"
@@ -997,8 +993,8 @@ fn test_main_menu_footer_shows_theme_chip_for_every_theme_at_80_columns() {
     let name_x = column_of(&buf, y, "catppuccin-macchiato").expect("theme name missing");
     assert_eq!(
         buf[(name_x, y)].fg,
-        colors.highlight,
-        "name must be the highlight colour"
+        colors.value,
+        "name must be the value colour"
     );
 }
 
@@ -1206,12 +1202,12 @@ fn test_menu_selected_row_is_filled_with_selection_colour() {
     let (x0, y) = accent_cell(&buf);
     assert_eq!(
         buf[(x0, y)].fg,
-        colors.primary,
-        "accent bar must use the primary colour"
+        colors.accent,
+        "accent bar must use the accent colour"
     );
     assert_eq!(
         buf[(x0, y)].bg,
-        colors.background,
+        colors.bg,
         "accent bar sits on the normal background, not the selection fill"
     );
     let right_border = (x0..buf.area().width)
@@ -1235,7 +1231,7 @@ fn test_menu_selected_row_is_filled_with_selection_colour() {
 /// own background, which this test cannot see. It is taken as black, the dark terminal
 /// the Default theme is built for, so the accent check does not cover light terminals.
 fn painted_background(colors: &ThemeColors) -> Color {
-    match colors.background {
+    match colors.bg {
         Color::Reset => Color::Rgb(0, 0, 0),
         other => other,
     }
@@ -1266,7 +1262,7 @@ fn test_selected_row_text_is_readable_in_every_theme() {
             );
             assert_eq!(
                 accent.bg,
-                colors.background,
+                colors.bg,
                 "{}: accent bar is filled",
                 theme.name()
             );
@@ -1512,7 +1508,7 @@ fn test_every_list_screen_draws_its_cursor_with_the_shared_style() {
             .unwrap_or_else(|| panic!("{screen}: no cursor accent bar on the cursor row"));
         assert_eq!(
             buf[(x0, y)].bg,
-            colors.background,
+            colors.bg,
             "{screen}: accent bar must sit on the normal background"
         );
         let right_border = (x0 + 1..buf.area().width)
@@ -1536,12 +1532,12 @@ fn test_cursor_row_text_is_label_coloured_and_glyphs_read_at_3_to_1() {
     for theme in Theme::ALL {
         let colors = ThemeColors::from_theme(theme);
         assert!(
-            contrast(colors.secondary, colors.selection) >= 4.5,
+            contrast(colors.text, colors.selection) >= 4.5,
             "{}: label on the selection fill is below 4.5:1",
             theme.name()
         );
         assert!(
-            contrast(colors.primary, colors.selection) >= 3.0,
+            contrast(colors.accent, colors.selection) >= 3.0,
             "{}: accent on the selection fill is below 3:1",
             theme.name()
         );
@@ -1561,8 +1557,7 @@ fn test_cursor_row_text_is_label_coloured_and_glyphs_read_at_3_to_1() {
                 .expect("panel border after the cursor row");
             for x in x0 + 1..right_border {
                 let cell = &buf[(x, y)];
-                if cell.symbol() == " " || cell.fg == colors.secondary || cell.fg == colors.primary
-                {
+                if cell.symbol() == " " || cell.fg == colors.text || cell.fg == colors.accent {
                     continue;
                 }
                 assert!(
@@ -1984,15 +1979,12 @@ fn test_package_list_draws_its_scrollbar_thumb_when_rows_overflow() {
     let (mut app, _tmp) = make_two_group_app();
     push_packages(&mut app, &["home", "workstation"]);
     let colors = ThemeColors::from_theme(app.ctx.core.theme);
-    assert_ne!(
-        colors.indicator, colors.border,
-        "thumb and track must differ"
-    );
+    assert_ne!(colors.key, colors.border, "thumb and track must differ");
     let buf = render_updated(&mut app, 80, 24);
 
     let column = panel_right_column(&buf, PACKAGES_TITLE);
     let rows = panel_rows(&buf, PACKAGES_TITLE);
-    let thumb = rows_with_fg(&buf, column, rows.clone(), colors.indicator);
+    let thumb = rows_with_fg(&buf, column, rows.clone(), colors.key);
     assert!(!thumb.is_empty(), "no scrollbar thumb on the right border");
     assert!(thumb.len() < rows.len(), "the thumb fills the whole track");
     for y in rows.filter(|y| !thumb.contains(y)) {
@@ -2013,7 +2005,7 @@ fn test_package_list_draws_no_scrollbar_when_every_row_fits() {
 
     let column = panel_right_column(&buf, PACKAGES_TITLE);
     let rows = panel_rows(&buf, PACKAGES_TITLE);
-    assert!(rows_with_fg(&buf, column, rows.clone(), colors.indicator).is_empty());
+    assert!(rows_with_fg(&buf, column, rows.clone(), colors.key).is_empty());
     assert!(
         rows.clone()
             .all(|y| buf[(column, y)].symbol() == "\u{2502}"),
@@ -2060,7 +2052,7 @@ fn test_group_list_draws_its_scrollbar_thumb_when_groups_overflow() {
     let column = panel_right_column(&buf, title);
     let rows = panel_rows(&buf, title);
     assert!(
-        !rows_with_fg(&buf, column, rows, colors.indicator).is_empty(),
+        !rows_with_fg(&buf, column, rows, colors.key).is_empty(),
         "no scrollbar thumb on the group list's right border"
     );
 }
@@ -2090,7 +2082,7 @@ fn test_execute_list_draws_its_scrollbar_thumb_on_the_panel_border() {
     let column = panel_right_column(&buf, title);
     let rows = panel_rows(&buf, title);
     assert!(
-        !rows_with_fg(&buf, column, rows, colors.indicator).is_empty(),
+        !rows_with_fg(&buf, column, rows, colors.key).is_empty(),
         "no scrollbar thumb on the execute list's panel border"
     );
 }
@@ -2109,7 +2101,7 @@ fn test_status_list_draws_its_scrollbar_thumb_when_rows_overflow() {
     let rows = panel_rows(&buf, STATUS_TITLE);
     assert_eq!(rows.len(), 6, "the status list should show 6 rows at 80x24");
     assert!(
-        !rows_with_fg(&buf, column, rows, colors.indicator).is_empty(),
+        !rows_with_fg(&buf, column, rows, colors.key).is_empty(),
         "no scrollbar thumb on the status list's right border"
     );
 }
@@ -2123,7 +2115,7 @@ fn test_status_list_draws_no_scrollbar_when_every_row_fits() {
 
     let column = panel_right_column(&buf, STATUS_TITLE);
     let rows = panel_rows(&buf, STATUS_TITLE);
-    assert!(rows_with_fg(&buf, column, rows.clone(), colors.indicator).is_empty());
+    assert!(rows_with_fg(&buf, column, rows.clone(), colors.key).is_empty());
     assert!(
         rows.clone()
             .all(|y| buf[(column, y)].symbol() == "\u{2502}"),

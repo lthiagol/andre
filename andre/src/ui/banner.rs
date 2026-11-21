@@ -98,7 +98,7 @@ pub fn render_compact_banner(
         .collect();
     spans.push(Span::styled(
         format!("  {breadcrumb}"),
-        Style::default().fg(colors.secondary),
+        Style::default().fg(colors.text),
     ));
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
@@ -109,11 +109,11 @@ pub fn render_banner(frame: &mut Frame, area: Rect, colors: &ThemeColors) {
             Line::from(""),
             Line::from(vec![Span::styled(
                 "andre",
-                Style::default().fg(colors.primary),
+                Style::default().fg(colors.accent),
             )]),
             Line::from(vec![Span::styled(
                 TAGLINE,
-                Style::default().fg(colors.secondary),
+                Style::default().fg(colors.text),
             )]),
         ]);
         let paragraph = Paragraph::new(text).alignment(Alignment::Center);
@@ -130,6 +130,6 @@ pub fn render_banner(frame: &mut Frame, area: Rect, colors: &ThemeColors) {
 
     let paragraph = Paragraph::new(rows)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(colors.primary));
+        .style(Style::default().fg(colors.accent));
     frame.render_widget(paragraph, area);
 }

@@ -179,8 +179,8 @@ Components with text input or modal popups override `fn input_mode(&self) -> Inp
 Always via `resolve_path(path, config_dir, home_dir)` from `andre-core/src/path.rs`. Source/target existence checked by `get_group_source()` / `get_group_target()` in config.
 
 ### Theme Colors
-`ThemeColors::from_theme(theme)` → 11 field color struct (`background`, `border`, `primary`, `success`, `warning`, `error`, `secondary`, `muted`, `highlight`, `indicator`, `selection`). 8 themes cycled with `t`.
-`selection` is the fill of the selected main-menu row. It is chosen per theme so the label (`secondary`) reads at ≥4.5:1 and the icon (`primary`) at ≥3:1 on it; `test_selected_row_text_is_readable_in_every_theme` enforces both, plus the accent bar at ≥3:1 on the normal background. Any new theme must pass that test.
+`ThemeColors::from_theme(theme)` → 13 field color struct: `bg`, `border`, `accent`, `on_accent`, `ok`, `warn`, `err`, `text`, `text_dim`, `value`, `key`, `selection`, and `banner: [Color; 5]`. Roles name purpose, not importance: `text` is body text, `text_dim` is secondary text that must still be read, `accent` is brand and focus, `value` is user data, `key` is hotkey letters, `ok`/`warn`/`err` are status only. `on_accent` is the text on an `accent` fill (the action pill). 8 themes cycled with `t`.
+`selection` is the fill of the selected main-menu row. It is chosen per theme so the label (`text`) reads at ≥4.5:1 and the icon (`accent`) at ≥3:1 on it; `test_selected_row_text_is_readable_in_every_theme` enforces both, plus the accent bar at ≥3:1 on the normal background. Any new theme must pass that test.
 
 ---
 

@@ -86,7 +86,7 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
             .split(area);
 
         let breadcrumb = Paragraph::new(format!("Path: {}", self.path.display()))
-            .style(Style::default().fg(self.colors.muted));
+            .style(Style::default().fg(self.colors.text_dim));
         Widget::render(breadcrumb, vert[0], buf);
 
         state.select(Some(self.cursor.min(entries.len().saturating_sub(1))));
@@ -113,13 +113,13 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                 let kind = entry.kind_icon();
 
                 let entry_fg = if entry.is_dir {
-                    self.colors.highlight
+                    self.colors.value
                 } else if entry.is_symlink {
-                    self.colors.success
+                    self.colors.ok
                 } else if entry.is_artifact {
-                    self.colors.muted
+                    self.colors.text_dim
                 } else {
-                    self.colors.primary
+                    self.colors.accent
                 };
 
                 let mut glyphs: Vec<Span> = Vec::new();
@@ -140,9 +140,9 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                     let is_selected = selected.contains(&self.path.join(&entry.name));
                     if entry.is_selectable() {
                         let mark_fg = if is_selected {
-                            self.colors.success
+                            self.colors.ok
                         } else {
-                            self.colors.muted
+                            self.colors.text_dim
                         };
                         glyphs.push(Span::styled(
                             format!("{} ", self.icons.checkbox(is_selected)),
@@ -152,7 +152,7 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                         glyphs.push(Span::raw("  "));
                     }
                     let fg = if is_selected {
-                        self.colors.success
+                        self.colors.ok
                     } else {
                         entry_fg
                     };
@@ -189,8 +189,8 @@ impl<'a> StatefulWidget for FileBrowserWidget<'a> {
                 .begin_symbol(Some("↑"))
                 .end_symbol(Some("↓"))
                 .track_symbol(Some("│"))
-                .thumb_style(Style::default().fg(self.colors.indicator))
-                .track_style(Style::default().fg(self.colors.muted));
+                .thumb_style(Style::default().fg(self.colors.key))
+                .track_style(Style::default().fg(self.colors.text_dim));
             let mut scrollbar_state = ScrollbarState::new(content_len)
                 .position(self.cursor)
                 .viewport_content_length(page_size);
@@ -215,16 +215,16 @@ fn entries_label(count: usize) -> String {
 fn render_file_legend(buf: &mut ratatui::buffer::Buffer, area: Rect, colors: &ThemeColors) {
     let items: Vec<ListItem> = vec![
         ListItem::new(Line::from(vec![
-            Span::styled("  /  ", Style::default().fg(colors.secondary)),
-            Span::styled("Directory", Style::default().fg(colors.muted)),
+            Span::styled("  /  ", Style::default().fg(colors.text)),
+            Span::styled("Directory", Style::default().fg(colors.text_dim)),
         ])),
         ListItem::new(Line::from(vec![
-            Span::styled("  ~  ", Style::default().fg(colors.success)),
-            Span::styled("Symlink", Style::default().fg(colors.muted)),
+            Span::styled("  ~  ", Style::default().fg(colors.ok)),
+            Span::styled("Symlink", Style::default().fg(colors.text_dim)),
         ])),
         ListItem::new(Line::from(vec![
-            Span::styled("  \u{2022}  ", Style::default().fg(colors.secondary)),
-            Span::styled("File", Style::default().fg(colors.muted)),
+            Span::styled("  \u{2022}  ", Style::default().fg(colors.text)),
+            Span::styled("File", Style::default().fg(colors.text_dim)),
         ])),
     ];
 

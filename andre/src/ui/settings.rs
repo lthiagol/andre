@@ -34,10 +34,10 @@ fn val_str(on: bool) -> &'static str {
 fn label(text: &str, colors: &ThemeColors, selected: bool) -> Span<'static> {
     let style = if selected {
         Style::default()
-            .fg(colors.secondary)
+            .fg(colors.text)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(colors.secondary)
+        Style::default().fg(colors.text)
     };
     Span::styled(format!("{text:<LABEL_WIDTH$}"), style)
 }
@@ -47,7 +47,7 @@ fn value(text: String, fg: Color) -> Span<'static> {
 }
 
 fn flag_value(on: bool, colors: &ThemeColors) -> Span<'static> {
-    let fg = if on { colors.success } else { colors.error };
+    let fg = if on { colors.ok } else { colors.err };
     value(val_str(on).to_string(), fg)
 }
 
@@ -86,15 +86,15 @@ fn render_row(
     let spans: Vec<Span<'static>> = match row {
         SettingsRow::ConfigPathInfo => vec![value(
             format!("Config: {}", config_path.display()),
-            colors.muted,
+            colors.text_dim,
         )],
         SettingsRow::ConfigResolveInfo => vec![value(
             format!("Paths resolve relative to: {}", config_dir.display()),
-            colors.muted,
+            colors.text_dim,
         )],
         SettingsRow::Verbosity => vec![
             label("verbosity:", colors, selected),
-            value(verbosity.to_string(), colors.primary),
+            value(verbosity.to_string(), colors.accent),
         ],
         SettingsRow::DryRun => vec![
             label("dry_run:", colors, selected),
@@ -111,21 +111,21 @@ fn render_row(
         ],
         SettingsRow::Action => vec![
             label("action:", colors, selected),
-            value(action.as_str().to_string(), colors.primary),
+            value(action.as_str().to_string(), colors.accent),
         ],
         SettingsRow::ThemeName => vec![
             label("theme:", colors, selected),
-            value(theme_name.to_string(), colors.highlight),
+            value(theme_name.to_string(), colors.value),
         ],
         SettingsRow::IconsName => vec![
             label("icons:", colors, selected),
-            value(icons.name().to_string(), colors.highlight),
+            value(icons.name().to_string(), colors.value),
         ],
         SettingsRow::IgnoreLine { count } => {
             let noun = if *count == 1 { "pattern" } else { "patterns" };
             vec![
                 label("ignore:", colors, selected),
-                value(format!("{count} {noun}"), colors.primary),
+                value(format!("{count} {noun}"), colors.accent),
             ]
         }
         SettingsRow::Spacer => vec![Span::raw("")],
@@ -133,14 +133,14 @@ fn render_row(
             let noun = if *count == 1 { "group" } else { "groups" };
             vec![
                 label("group:", colors, selected),
-                value(format!("{count} {noun}"), colors.primary),
+                value(format!("{count} {noun}"), colors.accent),
             ]
         }
         SettingsRow::SaveButton => {
             let (text, fg) = if config_dirty {
-                (format!("[Update {filename}]"), colors.highlight)
+                (format!("[Update {filename}]"), colors.value)
             } else {
-                ("[All saved]".to_string(), colors.muted)
+                ("[All saved]".to_string(), colors.text_dim)
             };
             vec![value(text, fg)]
         }
@@ -148,10 +148,10 @@ fn render_row(
             let (text, fg) = match config_message {
                 ConfigMessage::ConfirmDiscard => (
                     "Unsaved changes  y=save  n=discard  Esc=cancel".to_string(),
-                    colors.warning,
+                    colors.warn,
                 ),
-                ConfigMessage::Saved => ("Saved.".to_string(), colors.success),
-                ConfigMessage::Hidden => (String::new(), colors.muted),
+                ConfigMessage::Saved => ("Saved.".to_string(), colors.ok),
+                ConfigMessage::Hidden => (String::new(), colors.text_dim),
             };
             vec![value(text, fg)]
         }
@@ -235,7 +235,7 @@ pub fn render_settings(
 
 /// One row of a popup list: the shared cursor style over plain text.
 fn popup_row(text: &str, selected: bool, colors: &ThemeColors, width: u16) -> ListItem<'static> {
-    let span = Span::styled(text.to_string(), Style::default().fg(colors.secondary));
+    let span = Span::styled(text.to_string(), Style::default().fg(colors.text));
     ListItem::new(selection::row(vec![span], selected, colors, width))
 }
 
@@ -252,7 +252,7 @@ fn render_popup_list(
     let list = List::new(items).block(
         crate::ui::themed_panel(colors)
             .title(format!(" {} ", title))
-            .style(Style::default().bg(colors.background).fg(colors.border)),
+            .style(Style::default().bg(colors.bg).fg(colors.border)),
     );
     let mut list_state = ListState::default();
     list_state.select(Some(cursor));
@@ -406,25 +406,25 @@ fn render_name_input_popup(
 
     let items: Vec<ListItem> = vec![
         ListItem::new(Line::from(vec![
-            Span::styled(" Name: ", Style::default().fg(colors.muted)),
-            Span::styled(display_name, Style::default().fg(colors.highlight)),
+            Span::styled(" Name: ", Style::default().fg(colors.text_dim)),
+            Span::styled(display_name, Style::default().fg(colors.value)),
         ])),
         ListItem::new(Line::from(Span::styled(
             "",
-            Style::default().fg(colors.muted),
+            Style::default().fg(colors.text_dim),
         ))),
         ListItem::new(Line::from(vec![
-            Span::styled("Enter", Style::default().fg(colors.indicator)),
-            Span::styled(" confirm  ", Style::default().fg(colors.muted)),
-            Span::styled("Esc", Style::default().fg(colors.indicator)),
-            Span::styled(" cancel", Style::default().fg(colors.muted)),
+            Span::styled("Enter", Style::default().fg(colors.key)),
+            Span::styled(" confirm  ", Style::default().fg(colors.text_dim)),
+            Span::styled("Esc", Style::default().fg(colors.key)),
+            Span::styled(" cancel", Style::default().fg(colors.text_dim)),
         ])),
     ];
 
     let list = List::new(items).block(
         crate::ui::themed_panel(colors)
             .title(format!(" {} ", title))
-            .style(Style::default().bg(colors.background).fg(colors.border)),
+            .style(Style::default().bg(colors.bg).fg(colors.border)),
     );
 
     frame.render_widget(Clear, popup_area);
@@ -445,22 +445,22 @@ fn render_confirm_popup(
     let items: Vec<ListItem> = vec![
         ListItem::new(Line::from(Span::styled(
             format!(" {} {}?", title, name),
-            Style::default().fg(colors.secondary),
+            Style::default().fg(colors.text),
         ))),
         ListItem::new(Line::from(vec![
-            Span::styled("y", Style::default().fg(colors.indicator)),
-            Span::styled("es  ", Style::default().fg(colors.muted)),
-            Span::styled("n", Style::default().fg(colors.indicator)),
-            Span::styled("o  ", Style::default().fg(colors.muted)),
-            Span::styled("Esc", Style::default().fg(colors.indicator)),
-            Span::styled(" cancel", Style::default().fg(colors.muted)),
+            Span::styled("y", Style::default().fg(colors.key)),
+            Span::styled("es  ", Style::default().fg(colors.text_dim)),
+            Span::styled("n", Style::default().fg(colors.key)),
+            Span::styled("o  ", Style::default().fg(colors.text_dim)),
+            Span::styled("Esc", Style::default().fg(colors.key)),
+            Span::styled(" cancel", Style::default().fg(colors.text_dim)),
         ])),
     ];
 
     let list = List::new(items).block(
         crate::ui::themed_panel(colors)
             .title(format!(" {} ", title))
-            .style(Style::default().bg(colors.background).fg(colors.border)),
+            .style(Style::default().bg(colors.bg).fg(colors.border)),
     );
 
     frame.render_widget(Clear, popup_area);
@@ -544,9 +544,13 @@ fn render_ignore_manage_popup(
         .enumerate()
         .map(|(i, pat)| {
             let selected = i == cursor;
-            let remove_fg = if selected { colors.error } else { colors.muted };
+            let remove_fg = if selected {
+                colors.err
+            } else {
+                colors.text_dim
+            };
             let spans = vec![
-                Span::styled(pat.clone(), Style::default().fg(colors.secondary)),
+                Span::styled(pat.clone(), Style::default().fg(colors.text)),
                 Span::raw("  "),
                 Span::styled("[r]", Style::default().fg(remove_fg)),
             ];
@@ -554,7 +558,7 @@ fn render_ignore_manage_popup(
         })
         .collect();
 
-    let rule = Span::styled("-".repeat(max_len), Style::default().fg(colors.muted));
+    let rule = Span::styled("-".repeat(max_len), Style::default().fg(colors.text_dim));
     items.push(ListItem::new(selection::row(
         vec![rule],
         false,

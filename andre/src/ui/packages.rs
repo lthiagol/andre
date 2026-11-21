@@ -90,7 +90,7 @@ pub fn render_package_select(
     if is_scanning {
         let ch = SCANNER_SPINNER[spinner_frame % SCANNER_SPINNER.len()];
         let text = format!("{} Scanning packages...", ch);
-        let paragraph = Paragraph::new(text).style(Style::default().fg(colors.primary));
+        let paragraph = Paragraph::new(text).style(Style::default().fg(colors.accent));
         frame.render_widget(paragraph, area);
         return;
     }
@@ -99,7 +99,7 @@ pub fn render_package_select(
 
     if total == 0 {
         let paragraph = Paragraph::new("No packages found in selected groups.")
-            .style(Style::default().fg(colors.muted));
+            .style(Style::default().fg(colors.text_dim));
         frame.render_widget(paragraph, area);
         return;
     }
@@ -119,9 +119,9 @@ pub fn render_package_select(
             let is_cursor = i == cursor;
             let status_fg = status_color(colors, item.status);
             let mark_fg = if item.selected {
-                colors.success
+                colors.ok
             } else {
-                colors.muted
+                colors.text_dim
             };
 
             // Checkbox and status icon are glyphs: they keep their colour on the cursor row.
@@ -138,10 +138,10 @@ pub fn render_package_select(
 
             let package_style = if is_cursor {
                 Style::default()
-                    .fg(colors.secondary)
+                    .fg(colors.text)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(colors.secondary)
+                Style::default().fg(colors.text)
             };
             let glyph_width: usize = glyphs.iter().map(Span::width).sum();
             let word = status_word(item.status);
@@ -152,7 +152,7 @@ pub fn render_package_select(
                 ),
                 Span::styled(
                     format!("{}{}  ", item.group_display, " ".repeat(item.group_pad)),
-                    Style::default().fg(colors.muted),
+                    Style::default().fg(colors.text_dim),
                 ),
                 Span::styled(word.clone(), Style::default().fg(status_fg)),
             ];
@@ -163,7 +163,7 @@ pub fn render_package_select(
                 let detail = elide(&format!("({})", item.preview.join(", ")), room);
                 content.push(Span::styled(
                     format!("{}  {detail}", " ".repeat(word_pad)),
-                    Style::default().fg(colors.muted),
+                    Style::default().fg(colors.text_dim),
                 ));
             }
 

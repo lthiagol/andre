@@ -20,6 +20,12 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Changed
 
+- Theme colour roles are renamed by purpose (no colour changes): `background`→`bg`,
+  `secondary`→`text`, `muted`→`text_dim`, `primary`→`accent`, `highlight`→`value`,
+  `indicator`→`key`, `success`→`ok`, `warning`→`warn`, `error`→`err`. `ThemeColors`
+  gains `on_accent` (the action pill's text, the old background value in every theme)
+  and `banner` (the five banner letters, the current built-in colours). The
+  `selection` glyph fallback names follow the rename. Rendering is unchanged.
 - Main menu is a list and a detail panel. The list on the left shows each action
   with an icon, its label and a jump digit (`1`–`7`) at the right edge. The
   selected row is filled edge to edge with a new `selection` theme colour and

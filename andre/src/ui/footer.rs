@@ -14,7 +14,7 @@ use crate::theme::ThemeColors;
 const GAP: usize = 2;
 
 fn key_span(s: &str, colors: &ThemeColors) -> Span<'static> {
-    Span::styled(s.to_string(), Style::default().fg(colors.indicator))
+    Span::styled(s.to_string(), Style::default().fg(colors.key))
 }
 
 /// The bottom bar: the current screen's key hints on the left, then the theme
@@ -32,7 +32,7 @@ pub fn render_footer(
     }
     let line = footer_line(colors, screen_id, theme_name, area.width as usize);
     frame.render_widget(
-        Paragraph::new(line).style(Style::default().fg(colors.muted)),
+        Paragraph::new(line).style(Style::default().fg(colors.text_dim)),
         area,
     );
 }
@@ -76,23 +76,21 @@ fn join(mut left: Vec<Span<'static>>, right: Vec<Span<'static>>, width: usize) -
     Line::from(left)
 }
 
-/// `t` in the indicator colour and bold, `heme` muted, then the theme name in
-/// the highlight colour when there is room for it.
+/// `t` in the `key` colour and bold, `heme` `text_dim`, then the theme name in
+/// the `value` colour when there is room for it.
 fn theme_chip(colors: &ThemeColors, name: Option<&str>) -> Vec<Span<'static>> {
     let mut spans = vec![
         Span::styled(
             "t",
-            Style::default()
-                .fg(colors.indicator)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(colors.key).add_modifier(Modifier::BOLD),
         ),
-        Span::styled("heme", Style::default().fg(colors.muted)),
+        Span::styled("heme", Style::default().fg(colors.text_dim)),
     ];
     if let Some(name) = name {
         spans.push(Span::raw(" "));
         spans.push(Span::styled(
             name.to_string(),
-            Style::default().fg(colors.highlight),
+            Style::default().fg(colors.value),
         ));
     }
     spans
@@ -101,7 +99,7 @@ fn theme_chip(colors: &ThemeColors, name: Option<&str>) -> Vec<Span<'static>> {
 fn quit_spans(colors: &ThemeColors) -> Vec<Span<'static>> {
     vec![
         key_span("q", colors),
-        Span::styled(" quit", Style::default().fg(colors.muted)),
+        Span::styled(" quit", Style::default().fg(colors.text_dim)),
     ]
 }
 
@@ -140,7 +138,7 @@ fn clip(spans: Vec<Span<'static>>, max: usize) -> Vec<Span<'static>> {
     out
 }
 
-/// Key hints for one screen, as spans. Keys are drawn in the indicator colour.
+/// Key hints for one screen, as spans. Keys are drawn in the `key` colour.
 pub fn screen_hints(screen_id: &str, colors: &ThemeColors) -> Vec<Span<'static>> {
     let arrows = key_span("\u{2191}\u{2193}", colors);
     let enter = key_span("Enter", colors);
@@ -310,7 +308,7 @@ mod tests {
     fn test_key_names_use_indicator_colour() {
         let spans = screen_hints("Settings", &colors());
         let enter = spans.iter().find(|s| s.content == "Enter").unwrap();
-        assert_eq!(enter.style.fg, Some(colors().indicator));
+        assert_eq!(enter.style.fg, Some(colors().key));
     }
 
     #[test]
@@ -355,17 +353,17 @@ mod tests {
     fn test_theme_chip_colours_are_pinned() {
         let line = footer_line(&colors(), "MainMenu", "nord", INNER_WIDTH);
         let t = span(&line, "t");
-        assert_eq!(t.style.fg, Some(colors().indicator));
+        assert_eq!(t.style.fg, Some(colors().key));
         assert!(t.style.add_modifier.contains(Modifier::BOLD));
-        assert_eq!(span(&line, "heme").style.fg, Some(colors().muted));
-        assert_eq!(span(&line, "nord").style.fg, Some(colors().highlight));
+        assert_eq!(span(&line, "heme").style.fg, Some(colors().text_dim));
+        assert_eq!(span(&line, "nord").style.fg, Some(colors().value));
     }
 
     #[test]
     fn test_quit_key_is_indicator_and_label_is_muted() {
         let line = footer_line(&colors(), "MainMenu", "nord", INNER_WIDTH);
-        assert_eq!(span(&line, "q").style.fg, Some(colors().indicator));
-        assert_eq!(span(&line, " quit").style.fg, Some(colors().muted));
+        assert_eq!(span(&line, "q").style.fg, Some(colors().key));
+        assert_eq!(span(&line, " quit").style.fg, Some(colors().text_dim));
     }
 
     #[test]
@@ -398,8 +396,8 @@ mod tests {
         let t = line_text(&line);
         assert!(t.contains("theme"), "word stub expected: {t:?}");
         assert!(!t.contains("catppuccin"), "name must be dropped: {t:?}");
-        assert_eq!(span(&line, "t").style.fg, Some(colors.indicator));
-        assert_eq!(span(&line, "heme").style.fg, Some(colors.muted));
+        assert_eq!(span(&line, "t").style.fg, Some(colors.key));
+        assert_eq!(span(&line, "heme").style.fg, Some(colors.text_dim));
 
         // At exactly the width the full chip needs, the name is back; one
         // column less drops it.

@@ -10,11 +10,11 @@ use crate::theme::ThemeColors;
 use crate::ui::widgets::scrollbar::{border_track, render_scrollbar};
 
 fn k(label: &str, colors: &ThemeColors) -> Span<'static> {
-    Span::styled(label.to_string(), Style::default().fg(colors.indicator))
+    Span::styled(label.to_string(), Style::default().fg(colors.key))
 }
 
 fn h(label: &str, colors: &ThemeColors) -> Span<'static> {
-    Span::styled(label.to_string(), Style::default().fg(colors.highlight))
+    Span::styled(label.to_string(), Style::default().fg(colors.value))
 }
 
 pub fn help_item_count() -> usize {
@@ -106,7 +106,7 @@ fn items(colors: &ThemeColors) -> Vec<ListItem<'static>> {
         ListItem::new(Line::from("")),
         ListItem::new(Line::from(vec![Span::styled(
             "Press Esc to return",
-            Style::default().fg(colors.muted),
+            Style::default().fg(colors.text_dim),
         )])),
     ]
 }

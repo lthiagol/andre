@@ -19,16 +19,16 @@ pub fn render_adopt_preview(
 ) {
     if let Some(result) = result {
         let (fg, msg) = if result.starts_with("Adoption completed") {
-            (colors.success, result)
+            (colors.ok, result)
         } else {
-            (colors.error, result)
+            (colors.err, result)
         };
         let paragraph = Paragraph::new(Text::from(vec![
             Line::from(Span::styled(msg, Style::default().fg(fg))),
             Line::from(""),
             Line::from(Span::styled(
                 "Press Esc to continue",
-                Style::default().fg(colors.muted),
+                Style::default().fg(colors.text_dim),
             )),
         ]))
         .block(crate::ui::themed_panel(colors).title(title))
@@ -40,7 +40,7 @@ pub fn render_adopt_preview(
     let plan = match plan {
         Some(p) => p,
         None => {
-            let msg = Paragraph::new("Building plan...").style(Style::default().fg(colors.warning));
+            let msg = Paragraph::new("Building plan...").style(Style::default().fg(colors.warn));
             frame.render_widget(msg, area);
             return;
         }
@@ -52,24 +52,24 @@ pub fn render_adopt_preview(
     let sep = "\u{2550}".repeat(sep_width);
     lines.push(Line::from(Span::styled(
         "Adoption Plan",
-        Style::default().fg(colors.primary),
+        Style::default().fg(colors.accent),
     )));
     lines.push(Line::from(Span::styled(
         sep.clone(),
-        Style::default().fg(colors.muted),
+        Style::default().fg(colors.text_dim),
     )));
 
     lines.push(Line::from(Span::styled(
         format!("Target:   {}", plan.target_path.display()),
-        Style::default().fg(colors.secondary),
+        Style::default().fg(colors.text),
     )));
     lines.push(Line::from(Span::styled(
         format!("Source:   {}", plan.source_path.display()),
-        Style::default().fg(colors.secondary),
+        Style::default().fg(colors.text),
     )));
     lines.push(Line::from(Span::styled(
         format!("Package:  {}", plan.package_name),
-        Style::default().fg(colors.highlight),
+        Style::default().fg(colors.value),
     )));
     lines.push(Line::from(""));
 
@@ -91,24 +91,24 @@ pub fn render_adopt_preview(
             }
             lines.push(Line::from(Span::styled(
                 format!("Step {} \u{2014} {}:", step_num, step_header),
-                Style::default().fg(colors.primary),
+                Style::default().fg(colors.accent),
             )));
         }
 
         lines.push(Line::from(Span::styled(
             format!("  {}", step.description),
-            Style::default().fg(colors.secondary),
+            Style::default().fg(colors.text),
         )));
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         sep,
-        Style::default().fg(colors.muted),
+        Style::default().fg(colors.text_dim),
     )));
     lines.push(Line::from(Span::styled(
         "Press y to execute, n to cancel",
-        Style::default().fg(colors.muted),
+        Style::default().fg(colors.text_dim),
     )));
 
     let paragraph = Paragraph::new(Text::from(lines))

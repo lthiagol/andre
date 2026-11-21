@@ -19,7 +19,7 @@ pub fn render_adopt_confirm(
 
     lines.push(Line::from(Span::styled(
         "Adopt and create package for:",
-        Style::default().fg(colors.primary),
+        Style::default().fg(colors.accent),
     )));
     lines.push(Line::from(""));
 
@@ -30,14 +30,14 @@ pub fn render_adopt_confirm(
             .unwrap_or_else(|| file.display().to_string());
         lines.push(Line::from(Span::styled(
             format!("  {}", name),
-            Style::default().fg(colors.secondary),
+            Style::default().fg(colors.text),
         )));
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "Press y to proceed, n to go back",
-        Style::default().fg(colors.muted),
+        Style::default().fg(colors.text_dim),
     )));
 
     let paragraph = Paragraph::new(Text::from(lines))

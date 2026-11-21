@@ -38,11 +38,11 @@ pub const STATUS_WORD_WIDTH: usize = 8;
 /// The colour of a status's glyph and word.
 pub fn status_color(colors: &ThemeColors, status: StowStatus) -> Color {
     match status {
-        StowStatus::Stowed => colors.success,
-        StowStatus::Unstowed => colors.primary,
-        StowStatus::Partial => colors.warning,
-        StowStatus::Conflict => colors.error,
-        StowStatus::Missing | StowStatus::Empty => colors.muted,
+        StowStatus::Stowed => colors.ok,
+        StowStatus::Unstowed => colors.accent,
+        StowStatus::Partial => colors.warn,
+        StowStatus::Conflict => colors.err,
+        StowStatus::Missing | StowStatus::Empty => colors.text_dim,
     }
 }
 
@@ -66,7 +66,7 @@ pub fn render_legend(frame: &mut Frame, area: Rect, colors: &ThemeColors, icons:
                     format!("{:<8}  ", status_word(status)),
                     Style::default().fg(fg),
                 ),
-                Span::styled(meaning, Style::default().fg(colors.muted)),
+                Span::styled(meaning, Style::default().fg(colors.text_dim)),
             ]))
         })
         .collect();
@@ -94,12 +94,12 @@ mod tests {
     fn test_status_colours_are_one_table_for_every_theme() {
         for theme in Theme::ALL {
             let colors = ThemeColors::from_theme(theme);
-            assert_eq!(status_color(&colors, StowStatus::Stowed), colors.success);
-            assert_eq!(status_color(&colors, StowStatus::Unstowed), colors.primary);
-            assert_eq!(status_color(&colors, StowStatus::Partial), colors.warning);
-            assert_eq!(status_color(&colors, StowStatus::Conflict), colors.error);
-            assert_eq!(status_color(&colors, StowStatus::Missing), colors.muted);
-            assert_eq!(status_color(&colors, StowStatus::Empty), colors.muted);
+            assert_eq!(status_color(&colors, StowStatus::Stowed), colors.ok);
+            assert_eq!(status_color(&colors, StowStatus::Unstowed), colors.accent);
+            assert_eq!(status_color(&colors, StowStatus::Partial), colors.warn);
+            assert_eq!(status_color(&colors, StowStatus::Conflict), colors.err);
+            assert_eq!(status_color(&colors, StowStatus::Missing), colors.text_dim);
+            assert_eq!(status_color(&colors, StowStatus::Empty), colors.text_dim);
         }
     }
 

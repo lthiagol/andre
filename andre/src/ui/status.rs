@@ -91,7 +91,7 @@ pub fn render_status(
 fn status_item(row: &StatusRow, colors: &ThemeColors, icons: &Icons) -> ListItem<'static> {
     match row {
         StatusRow::Group(name) => {
-            ListItem::new(name.clone()).style(Style::default().fg(colors.primary))
+            ListItem::new(name.clone()).style(Style::default().fg(colors.accent))
         }
         StatusRow::Package { name, status } => ListItem::new(format!(
             "  {} {}  {}",
@@ -100,9 +100,9 @@ fn status_item(row: &StatusRow, colors: &ThemeColors, icons: &Icons) -> ListItem
             status_word(*status)
         ))
         .style(Style::default().fg(status_color(colors, *status))),
-        StatusRow::Spacer => ListItem::new("").style(Style::default().fg(colors.primary)),
+        StatusRow::Spacer => ListItem::new("").style(Style::default().fg(colors.accent)),
         StatusRow::NoPackages => ListItem::new("No packages found in any configured group.")
-            .style(Style::default().fg(colors.muted)),
+            .style(Style::default().fg(colors.text_dim)),
     }
 }
 

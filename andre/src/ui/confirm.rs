@@ -35,21 +35,21 @@ pub fn render_confirm(
         .iter()
         .map(|row| match row {
             ConfirmRow::Action(text) => {
-                ListItem::new(text.as_str()).style(Style::default().fg(colors.primary))
+                ListItem::new(text.as_str()).style(Style::default().fg(colors.accent))
             }
             ConfirmRow::Group(text) => {
-                ListItem::new(text.as_str()).style(Style::default().fg(colors.success))
+                ListItem::new(text.as_str()).style(Style::default().fg(colors.ok))
             }
             ConfirmRow::Command(text) => {
-                ListItem::new(text.as_str()).style(Style::default().fg(colors.secondary))
+                ListItem::new(text.as_str()).style(Style::default().fg(colors.text))
             }
-            ConfirmRow::Blank => ListItem::new("").style(Style::default().fg(colors.primary)),
+            ConfirmRow::Blank => ListItem::new("").style(Style::default().fg(colors.accent)),
         })
         .collect();
 
     items.push(
         ListItem::new("Press 'y' to confirm, 'n' to cancel")
-            .style(Style::default().fg(colors.muted)),
+            .style(Style::default().fg(colors.text_dim)),
     );
 
     let total = items.len();

@@ -27,9 +27,9 @@ fn gauge_ratio(completed: usize, total: usize) -> f64 {
 
 fn row_icon_style(success: bool, colors: &ThemeColors) -> (String, ratatui::style::Color) {
     if success {
-        ("\u{2713}".to_string(), colors.success)
+        ("\u{2713}".to_string(), colors.ok)
     } else {
-        ("\u{2717}".to_string(), colors.error)
+        ("\u{2717}".to_string(), colors.err)
     }
 }
 
@@ -97,7 +97,7 @@ pub fn render_execute(
     let gauge = Gauge::default()
         .ratio(gauge_ratio(results.len(), total))
         .label(label)
-        .gauge_style(Style::default().fg(colors.primary).bg(colors.muted))
+        .gauge_style(Style::default().fg(colors.accent).bg(colors.text_dim))
         .use_unicode(true);
     frame.render_widget(gauge, chunks[0]);
 
@@ -112,7 +112,7 @@ pub fn render_execute(
             } else {
                 format!(" [{spinner}] Executing...")
             };
-            items.push(ListItem::new(progress).style(Style::default().fg(colors.primary)));
+            items.push(ListItem::new(progress).style(Style::default().fg(colors.accent)));
             items
         }
         ExecutionState::Completed => {
@@ -121,7 +121,7 @@ pub fn render_execute(
 
             let mut items = Vec::new();
             items.push(
-                ListItem::new("Results:".to_string()).style(Style::default().fg(colors.primary)),
+                ListItem::new("Results:".to_string()).style(Style::default().fg(colors.accent)),
             );
 
             for result in results {
@@ -137,17 +137,17 @@ pub fn render_execute(
                 );
             }
 
-            items.push(ListItem::new(String::new()).style(Style::default().fg(colors.primary)));
+            items.push(ListItem::new(String::new()).style(Style::default().fg(colors.accent)));
             items.push(
                 ListItem::new(summary).style(Style::default().fg(if has_problems {
-                    colors.warning
+                    colors.warn
                 } else {
-                    colors.success
+                    colors.ok
                 })),
             );
             items.push(
                 ListItem::new("Press Enter to continue".to_string())
-                    .style(Style::default().fg(colors.muted)),
+                    .style(Style::default().fg(colors.text_dim)),
             );
             items
         }
@@ -160,7 +160,7 @@ pub fn render_execute(
         "execute_list_len must match rendered items"
     );
 
-    let list = List::new(items).highlight_style(Style::default().bg(colors.muted));
+    let list = List::new(items).highlight_style(Style::default().bg(colors.text_dim));
     let page_size = list_area.height.max(1) as usize;
 
     let mut list_state = ratatui::widgets::ListState::default();

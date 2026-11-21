@@ -81,9 +81,9 @@ impl<'a> StatefulWidget for GroupListWidget<'a> {
                 if let Some(selected) = self.selected_groups {
                     let checked = selected.contains(*group_name);
                     let fg = if checked {
-                        self.colors.success
+                        self.colors.ok
                     } else {
-                        self.colors.muted
+                        self.colors.text_dim
                     };
                     glyphs.push(Span::styled(
                         format!("{} ", self.icons.checkbox(checked)),
@@ -93,10 +93,10 @@ impl<'a> StatefulWidget for GroupListWidget<'a> {
 
                 let name_style = if is_cursor {
                     Style::default()
-                        .fg(self.colors.secondary)
+                        .fg(self.colors.text)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(self.colors.secondary)
+                    Style::default().fg(self.colors.text)
                 };
                 spans.push(Span::styled(group_name.to_string(), name_style));
 
@@ -104,7 +104,7 @@ impl<'a> StatefulWidget for GroupListWidget<'a> {
                     let resolved = resolve_path(&group.target, self.config_dir, self.home_dir);
                     spans.push(Span::styled(
                         format!("  ({}: {})", self.target_label, resolved.display()),
-                        Style::default().fg(self.colors.muted),
+                        Style::default().fg(self.colors.text_dim),
                     ));
                 }
 

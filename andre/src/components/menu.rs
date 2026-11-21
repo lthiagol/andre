@@ -202,15 +202,15 @@ impl Component for MainMenuComponent {
         frame.render_widget(detail_block, detail_area);
         let mut lines = vec![Line::from(Span::styled(
             self.detail.description,
-            Style::default().fg(colors.secondary),
+            Style::default().fg(colors.text),
         ))];
         if !self.detail.facts.is_empty() {
             lines.push(Line::raw(""));
         }
         for (label, value) in &self.detail.facts {
             lines.push(Line::from(vec![
-                Span::styled(format!("{label:<10}"), Style::default().fg(colors.muted)),
-                Span::styled(value.clone(), Style::default().fg(colors.primary)),
+                Span::styled(format!("{label:<10}"), Style::default().fg(colors.text_dim)),
+                Span::styled(value.clone(), Style::default().fg(colors.accent)),
             ]));
         }
         frame.render_widget(
@@ -273,15 +273,15 @@ fn list_row(
     let label = item.label(action);
     let label_style = if selected {
         Style::default()
-            .fg(colors.secondary)
+            .fg(colors.text)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(colors.secondary)
+        Style::default().fg(colors.text)
     };
     let digit_style = if selected {
-        Style::default().fg(colors.secondary)
+        Style::default().fg(colors.text)
     } else {
-        Style::default().fg(colors.muted)
+        Style::default().fg(colors.text_dim)
     };
 
     // Icon, two spaces, label, the gap, the digit and one column of margin. The accent
@@ -291,7 +291,7 @@ fn list_row(
 
     selection::row(
         vec![
-            Span::styled(item.icon(icons), Style::default().fg(colors.primary)),
+            Span::styled(item.icon(icons), Style::default().fg(colors.accent)),
             Span::raw("  "),
             Span::styled(label, label_style),
             Span::raw(" ".repeat(gap)),

@@ -45,19 +45,19 @@ pub fn render_toast(frame: &mut Frame, area: Rect, colors: &ThemeColors, toast: 
     let toast_area = h[1];
 
     let fg = match toast.kind {
-        ToastKind::Success => colors.success,
-        ToastKind::Error => colors.error,
+        ToastKind::Success => colors.ok,
+        ToastKind::Error => colors.err,
     };
     let border = match toast.kind {
-        ToastKind::Success => colors.highlight,
-        ToastKind::Error => colors.error,
+        ToastKind::Success => colors.value,
+        ToastKind::Error => colors.err,
     };
 
     frame.render_widget(Clear, toast_area);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border))
-        .style(Style::default().bg(colors.background).fg(colors.primary));
+        .style(Style::default().bg(colors.bg).fg(colors.accent));
     let paragraph = Paragraph::new(Line::from(Span::styled(
         msg,
         Style::default().fg(fg).add_modifier(Modifier::BOLD),

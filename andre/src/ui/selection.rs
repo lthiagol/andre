@@ -1,9 +1,9 @@
 //! The cursor style shared by every list screen. The cursor row is filled edge to edge
-//! with the theme's `selection` colour and starts with a `▌` accent in the primary
-//! colour, which sits on the normal background. Unselected rows get the same one-column
+//! with the theme's `selection` colour and starts with a `▌` bar in the `accent` colour,
+//! which sits on the normal background. Unselected rows get the same one-column
 //! gutter, so text lines up down the list. No screen draws its own cursor marker.
 //!
-//! On the selected row, text takes the label colour (secondary), so it reads in every
+//! On the selected row, text takes the `text` colour, so it reads in every
 //! theme. A single-glyph mark (a checkbox or a status icon) keeps its own colour when
 //! that colour reaches 3:1 against the fill, the WCAG 1.4.11 minimum for non-text
 //! graphics. Where it does not, the glyph falls back to the label colour and the glyph
@@ -45,7 +45,7 @@ pub fn row_with_glyphs(
     let mut spans = Vec::with_capacity(glyphs.len() + content.len() + 2);
     if selected {
         let fill = Style::default().bg(colors.selection);
-        spans.push(Span::styled(ACCENT, Style::default().fg(colors.primary)));
+        spans.push(Span::styled(ACCENT, Style::default().fg(colors.accent)));
         for glyph in glyphs {
             spans.push(glyph_on_fill(glyph, colors).patch_style(fill));
         }
@@ -71,10 +71,10 @@ pub fn row_with_glyphs(
 /// Text on the cursor row keeps the accent colour and takes the label colour otherwise.
 /// Modifiers such as bold are kept.
 fn text_on_fill(span: Span<'static>, colors: &ThemeColors) -> Span<'static> {
-    if span.style.fg == Some(colors.primary) {
+    if span.style.fg == Some(colors.accent) {
         span
     } else {
-        Span::styled(span.content, span.style.fg(colors.secondary))
+        Span::styled(span.content, span.style.fg(colors.text))
     }
 }
 
@@ -87,7 +87,7 @@ fn glyph_on_fill(span: Span<'static>, colors: &ThemeColors) -> Span<'static> {
     if readable {
         span
     } else {
-        Span::styled(span.content, span.style.fg(colors.secondary))
+        Span::styled(span.content, span.style.fg(colors.text))
     }
 }
 
@@ -109,11 +109,11 @@ mod tests {
     /// The glyph colours a list row can draw: checkbox on and off, and the status colours.
     fn glyph_colours(colors: &ThemeColors) -> [(&'static str, Color); 5] {
         [
-            ("success", colors.success),
-            ("primary", colors.primary),
-            ("warning", colors.warning),
-            ("error", colors.error),
-            ("muted", colors.muted),
+            ("ok", colors.ok),
+            ("accent", colors.accent),
+            ("warn", colors.warn),
+            ("err", colors.err),
+            ("text_dim", colors.text_dim),
         ]
     }
 
@@ -123,7 +123,7 @@ mod tests {
         let line = row(vec![Span::raw("alpha")], true, &colors, 10);
         let accent = &line.spans[0];
         assert_eq!(accent.content, ACCENT);
-        assert_eq!(accent.style.fg, Some(colors.primary));
+        assert_eq!(accent.style.fg, Some(colors.accent));
         assert_eq!(accent.style.bg, None, "accent is not filled");
     }
 
@@ -149,10 +149,10 @@ mod tests {
     #[test]
     fn test_selected_row_uses_the_label_colour_for_other_text() {
         let colors = colors();
-        for fg in [colors.muted, colors.success, colors.error, colors.highlight] {
+        for fg in [colors.text_dim, colors.ok, colors.err, colors.value] {
             let span = Span::styled("value", Style::default().fg(fg));
             let line = row(vec![span], true, &colors, 20);
-            assert_eq!(line.spans[1].style.fg, Some(colors.secondary));
+            assert_eq!(line.spans[1].style.fg, Some(colors.text));
             assert_eq!(line.spans[1].style.bg, Some(colors.selection));
         }
     }
@@ -160,9 +160,9 @@ mod tests {
     #[test]
     fn test_selected_row_keeps_the_accent_colour_on_text() {
         let colors = colors();
-        let icon = Span::styled("i", Style::default().fg(colors.primary));
+        let icon = Span::styled("i", Style::default().fg(colors.accent));
         let line = row(vec![icon], true, &colors, 10);
-        assert_eq!(line.spans[1].style.fg, Some(colors.primary));
+        assert_eq!(line.spans[1].style.fg, Some(colors.accent));
     }
 
     #[test]
@@ -171,7 +171,7 @@ mod tests {
         let bold = Span::styled(
             "label",
             Style::default()
-                .fg(colors.muted)
+                .fg(colors.text_dim)
                 .add_modifier(ratatui::style::Modifier::BOLD),
         );
         let line = row(vec![bold], true, &colors, 10);
@@ -184,9 +184,9 @@ mod tests {
     #[test]
     fn test_unselected_row_keeps_every_span_colour() {
         let colors = colors();
-        let ok = Span::styled("ON", Style::default().fg(colors.success));
+        let ok = Span::styled("ON", Style::default().fg(colors.ok));
         let line = row(vec![ok], false, &colors, 10);
-        assert_eq!(line.spans[1].style.fg, Some(colors.success));
+        assert_eq!(line.spans[1].style.fg, Some(colors.ok));
     }
 
     #[test]
@@ -198,19 +198,19 @@ mod tests {
 
     #[test]
     fn test_selected_row_glyph_keeps_its_colour_when_it_reads_at_3_to_1() {
-        // Nord: success, primary and warning reach 3:1 on the fill and keep their colour.
-        // Error and muted do not, so they fall back (see FALLBACKS).
+        // Nord: ok, accent and warn reach 3:1 on the fill and keep their colour.
+        // Err and text_dim do not, so they fall back (see FALLBACKS).
         let colors = colors();
         for (name, fg, keeps) in [
-            ("success", colors.success, true),
-            ("primary", colors.primary, true),
-            ("warning", colors.warning, true),
-            ("error", colors.error, false),
-            ("muted", colors.muted, false),
+            ("ok", colors.ok, true),
+            ("accent", colors.accent, true),
+            ("warn", colors.warn, true),
+            ("err", colors.err, false),
+            ("text_dim", colors.text_dim, false),
         ] {
             let glyph = Span::styled("\u{f00c}", Style::default().fg(fg));
             let line = row_with_glyphs(vec![glyph], vec![Span::raw("x")], true, &colors, 10);
-            let expected = if keeps { fg } else { colors.secondary };
+            let expected = if keeps { fg } else { colors.text };
             assert_eq!(line.spans[1].style.fg, Some(expected), "nord {name}");
             assert_eq!(
                 line.spans[1].style.bg,
@@ -226,7 +226,7 @@ mod tests {
         let colors = colors();
         let glyph = Span::styled("x", Style::default().fg(colors.selection));
         let line = row_with_glyphs(vec![glyph], Vec::new(), true, &colors, 4);
-        assert_eq!(line.spans[1].style.fg, Some(colors.secondary));
+        assert_eq!(line.spans[1].style.fg, Some(colors.text));
     }
 
     #[test]
@@ -234,15 +234,15 @@ mod tests {
         let colors = colors();
         let glyph = Span::raw("x");
         let line = row_with_glyphs(vec![glyph], Vec::new(), true, &colors, 4);
-        assert_eq!(line.spans[1].style.fg, Some(colors.secondary));
+        assert_eq!(line.spans[1].style.fg, Some(colors.text));
     }
 
     #[test]
     fn test_unselected_row_glyph_keeps_every_colour() {
         let colors = colors();
-        let glyph = Span::styled("x", Style::default().fg(colors.error));
+        let glyph = Span::styled("x", Style::default().fg(colors.err));
         let line = row_with_glyphs(vec![glyph], Vec::new(), false, &colors, 4);
-        assert_eq!(line.spans[1].style.fg, Some(colors.error));
+        assert_eq!(line.spans[1].style.fg, Some(colors.err));
         assert_eq!(line.spans[1].style.bg, None);
     }
 
@@ -263,21 +263,21 @@ mod tests {
     /// cursor row. Each one reads below 3:1 against that theme's `selection` fill, so the
     /// glyph shape alone carries the state there. Listed in theme order. Default has none.
     const FALLBACKS: &[(Theme, &str)] = &[
-        (Theme::Dracula, "error"),
-        (Theme::Dracula, "muted"),
-        (Theme::CatppuccinMocha, "muted"),
-        (Theme::CatppuccinLatte, "success"),
-        (Theme::CatppuccinLatte, "warning"),
-        (Theme::CatppuccinLatte, "muted"),
-        (Theme::CatppuccinFrappe, "error"),
-        (Theme::CatppuccinFrappe, "muted"),
-        (Theme::CatppuccinMacchiato, "muted"),
-        (Theme::Nord, "error"),
-        (Theme::Nord, "muted"),
-        (Theme::Gruvbox, "success"),
-        (Theme::Gruvbox, "warning"),
-        (Theme::Gruvbox, "error"),
-        (Theme::Gruvbox, "muted"),
+        (Theme::Dracula, "err"),
+        (Theme::Dracula, "text_dim"),
+        (Theme::CatppuccinMocha, "text_dim"),
+        (Theme::CatppuccinLatte, "ok"),
+        (Theme::CatppuccinLatte, "warn"),
+        (Theme::CatppuccinLatte, "text_dim"),
+        (Theme::CatppuccinFrappe, "err"),
+        (Theme::CatppuccinFrappe, "text_dim"),
+        (Theme::CatppuccinMacchiato, "text_dim"),
+        (Theme::Nord, "err"),
+        (Theme::Nord, "text_dim"),
+        (Theme::Gruvbox, "ok"),
+        (Theme::Gruvbox, "warn"),
+        (Theme::Gruvbox, "err"),
+        (Theme::Gruvbox, "text_dim"),
     ];
 
     #[test]
