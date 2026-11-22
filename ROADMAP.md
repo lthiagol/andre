@@ -9,7 +9,7 @@ in [`CHANGELOG.md`](CHANGELOG.md).
 | Field | Value |
 |-------|--------|
 | **Version** | `1.0.0-rc1` — published as a [pre-release](https://github.com/lthiagol/andre/releases/tag/v1.0.0-rc1); installs are Homebrew or from source (binary releases dropped 2026-11-02) |
-| **Branch** | `wip` is ahead of `stable`; `stable` is fast-forwarded from `wip` once CI is green |
+| **Branch** | `wip` is ahead of `stable` with the unreleased work below; `stable` is fast-forwarded from `wip` once CI is green |
 | **Open work** | see [`todo.txt`](todo.txt) |
 | **Tests** | `make test` / `make ci` (coverage: andre-core ≥ 90%, TUI ≥ 38%) |
 
@@ -30,6 +30,16 @@ All planned work through the v1.0 release-candidate line is complete.
 | **Link engine** | `native` engine is now the default; GNU Stow remains opt-in via `global.engine: stow` (BREAKING) |
 | **Testing** | `cargo-nextest` default, tiered `make test-unit`/`test-tui`/`test-e2e`, coverage floor gate |
 
+### On `wip`, not yet released (breaking config changes)
+
+| Area | What landed |
+|------|-------------|
+| **Config** | `~/.config/andre/` is the only config home; `--config-folder` for a fresh machine; legacy lookups removed |
+| **Packages** | One packages folder (`packages:`), every subfolder a package, all linked into one target (`~`); `groups:` removed |
+| **Profiles** | `profiles/<name>.yml` collections with includes; stow/unstow/status per profile; `--yolo --profile` |
+| **New package** | Wizard: empty or from live files (move + link back), `.gitignore` / `.stow-local-ignore`, add to profiles |
+| **TUI** | Every screen on one list + detail pattern, 8 refreshed themes, Nerd/Unicode icons, mouse support |
+
 ---
 
 ## Versioning
@@ -49,7 +59,6 @@ Parked from the original project charter:
 
 - More themes
 - Richer config validation
-- Adoption-UX expansions
 - Whether to expand scope beyond Stow post-1.0 (undecided)
 
 ---

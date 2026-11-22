@@ -11,6 +11,9 @@ bumps and release dates are decided when `wip` promotes to `stable`.
 
 ### Added
 
+- **Design specs in `docs/design/`.** The screen pattern, profiles and flat-packages specs
+  behind this release line, kept as rationale; `AGENTS.md`, `ROADMAP.md` and `todo.txt`
+  updated to the current model.
 - **`*` marks every package on the packages browser.** It marks them all, or unmarks
   them all when every package is already marked.
 

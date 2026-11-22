@@ -77,8 +77,9 @@ the `FLOORS` list in `scripts/coverage-check.py` and record the new % in the
 
 ```
 andre/
-├── andre-core/      # Business logic (config, stow, path, state, adopt)
+├── andre-core/      # Business logic (config, packages, profiles, create, ignore, engine, bootstrap)
 ├── andre/           # TUI binary (components, ui, app, execute)
+├── docs/design/     # Design specs behind the current UI and model (see its README)
 ├── todo.txt         # Open work items (temporary, hand-maintained)
 ├── AGENTS.md
 └── REFERENCE.md        # Full documentation reference
@@ -132,7 +133,7 @@ Borrow seams from mature TUIs (e.g. herdr / ratatui event-driven templates), not
 - `dirs` → `andre/src/paths.rs` — XDG-first `$HOME` / `$XDG_CONFIG_HOME`→`~/.config` (Unix) + `%APPDATA%` (Windows); macOS discovery also probes `~/Library/Application Support` (former `dirs` path).
 - `thiserror` → hand-written `Display`/`Error`/`From` impls on `andre_core::Error` (`andre-core/src/error.rs`).
 - `anyhow` → `andre_core::Result` in the binary and `App` constructors.
-- `clap` → hand-rolled `std::env::args` parser in `andre/src/main.rs` (`--config/-c`, `--yolo`, `--onboard`, `--debug`, `--log-file`, `-h/--help`).
+- `clap` → hand-rolled `std::env::args` parser in `andre/src/main.rs` (`--config/-c`, `--config-folder`, `--profile`, `--yolo`, `--onboard`, `--debug`, `--log-file`, `-h/--help`).
 - Removed dead deps: `assert_cmd`, `predicates`, and `andre-core` dev-deps `crossterm` + `anyhow`.
 - `serde_yaml` → `serde_yaml_ng`: `serde_yaml` is archived and `serde_yml` is deprecated (unmaintained shim); `serde_yaml_ng` is the maintained drop-in fork (verified: `deny_unknown_fields` round-trip + unknown-field wording unchanged).
 - `unicode-width` retained (documented): a hand-rolled width helper would mis-measure CJK/emoji; correctness depends on the unicode tables the crate provides.
@@ -174,7 +175,7 @@ Modal dialogs stored as `Option<SomeState>` fields on the component. Rendered as
 `PendingSettings` snapshot created on first entry → mutations go to pending → `save_config()` applies to `ctx.core` + persists to disk. Global keys (`t`/`v`/`d`/`n`/`a`/`o`) intercepted via `Transition::Handled` to prevent bypassing the snapshot.
 
 ### InputMode Pattern
-Components with text input or modal popups override `fn input_mode(&self) -> InputMode` (default: `Normal`). `App::component_dispatch` skips global shortcuts when mode is `Modal` or `TextInput`. Example: `AdoptNamePromptComponent` → `TextInput`, `SettingsComponent` → dynamic based on `picker`/`dialog` state.
+Components with text input or modal popups override `fn input_mode(&self) -> InputMode` (default: `Normal`). `App::component_dispatch` skips global shortcuts when mode is `Modal` or `TextInput`. Example: `NewPackageWizard` → `TextInput` on its name step, `SettingsComponent` → dynamic based on `picker`/`dialog` state.
 
 ### Path Resolution
 Always via `resolve_path(path, config_dir, home_dir)` from `andre-core/src/path.rs`, called by the `Config` methods: `packages_dir()` (the packages folder), `target_dir()` (where links go) and `package(name)` / `package_entries()` (one package or all of them, with `source`, `target` and `ignores`). Screens get them through `AppContext::package_entries()` / `package(name)`, never `resolve_path` directly. Existence is checked by `validate_sources()`.
@@ -274,6 +275,12 @@ PYEOF
 | Stow command building | `andre-core/src/stow.rs` |
 | Async executor | `andre/src/execute.rs` |
 | File browser widget | `andre/src/ui/widgets/file_browser.rs` |
+| Profiles model (load, includes, resolve, save) | `andre-core/src/profile.rs` |
+| Package creation (empty / from live files) | `andre-core/src/create.rs` |
+| `.stow-local-ignore` semantics | `andre-core/src/ignore.rs` |
+| Shared screen kit (layout, list panel, detail, dialog, package list) | `andre/src/ui/{layout,list_panel,detail,dialog,package_list}.rs` |
+| Mouse hit areas for the top bar and footer | `andre/src/ui/hits.rs` |
 | Test helpers (key events, app setup) | `andre/tests/helpers/mod.rs` |
 | Open work items | `todo.txt` |
 | Historical record of shipped changes | `CHANGELOG.md` |
+| Design specs (screen pattern, profiles, flat packages) | `docs/design/` |

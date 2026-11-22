@@ -26,7 +26,13 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 - Regenerate `docs/screenshots/*.png` with `make screenshots` now that the redesign batches are done (they still show the old UI).
 - Decide whether to keep ratatui's scrollbar thumb-length convention (6 of 8 rows visible draws a 3-of-6 thumb); if not, size the thumb from `content_len - viewport_len + 1`.
 
-- Move the TUI adopt flow to `andre_core::plan_package` / `execute_package` (F4 "new package").
+- Test the redesign, profiles and flat packages by hand (`make run`; links land in `demo/target/`), including Nerd Font glyphs and mouse.
+- Decide whether non-package folders in the packages folder (`docs/`, `scripts/`) need an `exclude:` list; today every subfolder except dot-folders is a package (`discover_packages`).
+- Decide whether `andre-core/src/adopt.rs` should be renamed: only `list_target_entries` / `list_target_dirs` are left in it (used by `components/browser.rs`).
+
+## Release next
+
+- Promote `wip` → `stable` after the manual test; `wip` holds breaking config changes (config folder, `groups:` removed), so pick the next version (e.g. `1.0.0-rc2`) and update `ROADMAP.md`.
 
 ## Documentation
 
@@ -39,7 +45,6 @@ shipped changes lives in `CHANGELOG.md`. Direction and version status live in
 
 - More themes.
 - Richer config validation.
-- Adoption-UX expansions.
 - Whether to expand scope beyond Stow post-1.0 (undecided).
 
 ## Release state (as of v1.0.0-rc1, 2026-10-30)
